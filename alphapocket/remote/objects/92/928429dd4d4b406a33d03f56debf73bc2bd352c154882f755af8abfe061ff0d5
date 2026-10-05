@@ -1,0 +1,156 @@
+{
+  "id": "global",
+  "name": "全球成长",
+  "base_ccy": "CNY",
+  "as_of": "2026-09-30",
+  "total_value_cny": 986400,
+  "day_pnl_cny": 8340,
+  "day_ret": 0.0085,
+  "strategy_binding": "global_growth_v1",
+  "positions": [
+    {
+      "secid": "600519.SH",
+      "name": "贵州茅台",
+      "market": "A",
+      "weight": 22.0,
+      "trade_ccy": "CNY",
+      "grades": {
+        "估值": "B",
+        "成长": "C+",
+        "质量": "A",
+        "动量": "B+",
+        "预期": "B"
+      },
+      "you": "A-"
+    },
+    {
+      "secid": "00700.HK",
+      "name": "腾讯控股",
+      "market": "H",
+      "weight": 14.0,
+      "trade_ccy": "HKD",
+      "flags": [
+        "数据陈旧(半年报)"
+      ],
+      "grades": {
+        "估值": "B+",
+        "成长": "B+",
+        "质量": "A",
+        "动量": "B",
+        "预期": "C+"
+      },
+      "you": "B-"
+    },
+    {
+      "secid": "AAPL.US",
+      "name": "苹果",
+      "market": "US",
+      "weight": 12.0,
+      "trade_ccy": "USD",
+      "flags": [
+        "non-GAAP 口径"
+      ],
+      "grades": {
+        "估值": "C+",
+        "成长": "B+",
+        "质量": "A-",
+        "动量": "A",
+        "预期": "B"
+      },
+      "you": "B-"
+    },
+    {
+      "secid": "NVDA.US",
+      "name": "英伟达",
+      "market": "US",
+      "weight": 7.0,
+      "trade_ccy": "USD",
+      "grades": {
+        "估值": "D+",
+        "成长": "A+",
+        "质量": "B+",
+        "动量": "A+",
+        "预期": "B+"
+      },
+      "you": null
+    },
+    {
+      "secid": "510300.SH",
+      "name": "沪深300ETF",
+      "market": "A",
+      "weight": 16.5,
+      "trade_ccy": "CNY",
+      "asset_type": "ETF",
+      "fund_checkup": "A"
+    },
+    {
+      "secid": "000001.OF",
+      "name": "华夏成长混合",
+      "market": "A",
+      "weight": 7.4,
+      "trade_ccy": "CNY",
+      "asset_type": "OEF",
+      "fund_checkup": "B+",
+      "flags": [
+        "净值 09-29"
+      ]
+    },
+    {
+      "secid": "300750.SZ",
+      "name": "某新能源",
+      "market": "A",
+      "weight": 3.1,
+      "trade_ccy": "CNY",
+      "grades": {
+        "估值": "D+",
+        "成长": "B-",
+        "质量": "B",
+        "动量": "D",
+        "预期": "D"
+      },
+      "you": "D"
+    }
+  ],
+  "health": {
+    "score": 74,
+    "delta": "+2",
+    "positions": 7,
+    "ge_b": 5,
+    "review_pending": 1,
+    "fx_contrib": -0.007
+  },
+  "market_split": [
+    [
+      "A",
+      25
+    ],
+    [
+      "H",
+      14
+    ],
+    [
+      "US",
+      19
+    ],
+    [
+      "ETF",
+      17
+    ],
+    [
+      "OF",
+      7
+    ],
+    [
+      "CASH",
+      18
+    ]
+  ],
+  "performance": {
+    "年化收益": "+16.2%",
+    "最大回撤": "-11.8%",
+    "夏普": "1.18",
+    "年化波动": "13.9%",
+    "换手率": "38%",
+    "股息率": "2.3%"
+  }
+}

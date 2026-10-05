@@ -1,0 +1,87 @@
+{
+  "fetched_at": "2026-10-04T08:19:38",
+  "akshare_version": "1.19.1",
+  "today": "2026-10-04",
+  "universe": [
+    "601058.SH",
+    "002014.SZ",
+    "600660.SH",
+    "002027.SZ"
+  ],
+  "sources": [
+    {
+      "dataset": "dwd_trade_calendar",
+      "interface": "ak.tool_trade_date_hist_sina()",
+      "upstream": "新浪财经",
+      "params": {},
+      "file": "market/trade_calendar.json",
+      "sha256": "d68143324d596e6ac9f25bd1e7e03d3205e3eb8061767f1463e07ecdaea7158a",
+      "bytes": 123158
+    },
+    {
+      "dataset": "dwd_daily_bar",
+      "interface": "ak.stock_zh_a_daily(adjust='qfq')",
+      "upstream": "新浪财经",
+      "params": {
+        "start": "2021-01-01",
+        "end": "2026-10-04"
+      },
+      "file": "market/daily_bars.json",
+      "sha256": "afdd0478941e2638fd81ec6fb2fb9c4623a35bbf28ee7e6feb8ba6a47bd99c76",
+      "bytes": 841911
+    },
+    {
+      "dataset": "dwd_daily_bar_raw",
+      "interface": "ak.stock_zh_a_daily(adjust='')",
+      "upstream": "新浪财经",
+      "params": {
+        "start": "2021-01-01",
+        "end": "2026-10-04"
+      },
+      "file": "market/daily_bars_raw.json",
+      "sha256": "c518f8662f78e783867fc68ecd9809ad87d459f6184d9262e9f80df007aa6c55",
+      "bytes": 208642
+    },
+    {
+      "dataset": "cross_check_tx",
+      "interface": "ak.stock_zh_a_hist_tx()",
+      "upstream": "腾讯证券",
+      "params": {
+        "window_days": 120
+      },
+      "file": "market/cross_check_tx.json",
+      "sha256": "0e6714533f487bfa9bdab1e7ed387be8f77fcbd9eadaff7402367206bac3d20f",
+      "bytes": 12246
+    },
+    {
+      "dataset": "dwd_financial_report",
+      "interface": "ak.stock_financial_analysis_indicator()",
+      "upstream": "新浪财经",
+      "params": {
+        "start_year": "2019"
+      },
+      "file": "factors/fundamental_values.json",
+      "sha256": "5639ce4e58dc41c6941d674c81e1622fd5462bd915c9f8a166cb1429ef59ee92",
+      "bytes": 30071
+    }
+  ],
+  "pit_rules": {
+    "financial_report_lag_days": {
+      "3": 30,
+      "6": 62,
+      "9": 31,
+      "12": 120
+    },
+    "note": "报告期+保守披露窗口=可用人时点（Q1→+30d，H1→+62d，Q3→+31d，FY→+120d）；α 未逐笔核对公告日，取监管截止日兜底"
+  },
+  "methods": {
+    "pe_ttm": "close/TTM摊薄EPS；TTT EPS=上年FY+本年YTD−上年同期YTD（PIT 阶梯函数，报告期按 announce_date 对齐）",
+    "pb": "close/最新可用人报告期每股净资产(调整前；新浪'调整后'列对部分标的异常，弃用)",
+    "div_yield_ttm": "近365日除权除息（闭区间[as_of-365d, as_of]）每股派息合计/close",
+    "vol": "日收益率样本标准差(ddof=1)年化×√252",
+    "mom_12_1": "close[t-21]/close[t-252]−1（剔除最近一月）",
+    "mom_20d": "close[-1]/close[-20]−1（20收盘窗口）",
+    "ma20_break": "close/MA20−1，±2% 确认带"
+  },
+  "note": "永新=永新股份(002014.SZ)；组合未提供成本与权重 → 等权名义组合(每标的25%)"
+}

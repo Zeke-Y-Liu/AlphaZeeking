@@ -1,0 +1,83 @@
+/**
+ * 设计令牌（Design Tokens）— 提炼自 v3.1 原型 prototype-v2.html 的「纸质档案 + 印章红」体系。
+ * 仅取样式变量，不照搬原型业务 HTML 结构。
+ * 命名统一 `--ap-` 前缀（与既有 --ap-paper/--ap-ink/--ap-seal 保持一致）。
+ */
+:root {
+  /* ── 色：桌面/纸底 ───────────────────────────── */
+  --ap-desk: #26231e; /* 原型 --desk：深色工作台背景 */
+  --ap-desk2: #1c1a16; /* 原型 --desk2：页面最外层底色 */
+  --ap-paper: #efebe2; /* 原型 --paper：纸张底色（主背景） */
+  --ap-card: #fbfaf6; /* 原型 --card：卡片面 */
+  --ap-card2: #f5f2ea; /* 原型 --card2：次级面/内嵌块（code、flat 卡） */
+
+  /* ── 色：线/字 ─────────────────────────────── */
+  --ap-line: #dcd5c6; /* 原型 --line：卡片/表格描边 */
+  --ap-hair: rgba(28, 27, 24, 0.075); /* 原型 --hair：极细分隔线（表格行内） */
+  --ap-ink: #1c1b18; /* 原型 --ink：正文墨色 */
+  --ap-dim: #6e6859; /* 原型 --dim：次级文字 */
+  --ap-mute: #9c9585; /* 原型 --mute：弱提示/表头小字 */
+
+  /* ── 色：印章红（品牌）与语义色 ─────────────────── */
+  --ap-seal: #a93226; /* 原型 --seal：印章红（品牌主色/强调） */
+  --ap-seal-soft: rgba(169, 50, 38, 0.075); /* 原型 --sealSoft */
+  --ap-seal-line: rgba(169, 50, 38, 0.28); /* 原型 --sealLine */
+  --ap-info: #2c5f8a; /* 原型 --blue：证据 E1 / 信息强调 */
+  --ap-success: #1e7a5e; /* 原型 --down：绿（成功/正向） */
+  --ap-warn: #b08c3c; /* 原型琥珀（.g.gc / .mk-a）：警告 */
+  --ap-danger: #c0392b; /* 原型 --up：红（危险/负向/涨红） */
+  --ap-up: #c0392b; /* 行情：涨（A 股红涨） */
+  --ap-down: #1e7a5e; /* 行情：跌（A 股绿跌） */
+
+  /* ── 字体族（原型同名体系；不引外部字体，走本地回退） ───── */
+  --ap-font-serif: 'Noto Serif SC', 'Songti SC', Georgia, serif;
+  --ap-font-sans:
+    'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --ap-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* ── 字号阶梯（原型 9.5/11/12/15/26/34/44 取整） ─────── */
+  --ap-fs-xs: 10px;
+  --ap-fs-sm: 12px;
+  --ap-fs-base: 13px;
+  --ap-fs-md: 15px;
+  --ap-fs-lg: 20px;
+  --ap-fs-xl: 26px; /* 原型 .phead h2 */
+  --ap-fs-2xl: 34px; /* 原型 .hn / .meta h1 */
+  --ap-fs-hero: 44px; /* 原型 .hero .v */
+
+  /* ── 间距刻度 ──────────────────────────────── */
+  --ap-sp-1: 4px;
+  --ap-sp-2: 8px;
+  --ap-sp-3: 12px;
+  --ap-sp-4: 16px;
+  --ap-sp-5: 20px;
+  --ap-sp-6: 24px;
+  --ap-sp-8: 32px;
+  --ap-sp-10: 40px;
+
+  /* ── 圆角（原型 3/4/6/8/11/44） ─────────────────── */
+  --ap-radius-xs: 3px; /* 证据徽章 .ev / 印章 .stamp */
+  --ap-radius-sm: 6px; /* 小标签/小块 */
+  --ap-radius: 8px; /* 按钮/输入/横向链块 */
+  --ap-radius-card: 11px; /* 卡片 .card */
+  --ap-radius-lg: 16px;
+  --ap-radius-pill: 99px; /* 圆形 chip */
+
+  /* ── 阴影 ─────────────────────────────────── */
+  --ap-shadow-sm: 0 1px 2px rgba(28, 27, 24, 0.06);
+  --ap-shadow: 0 4px 16px -8px rgba(28, 27, 24, 0.35);
+  --ap-shadow-lg: 0 24px 60px -24px rgba(28, 27, 24, 0.45);
+
+  /* ── 表格行高（紧凑/舒适，§8 表格密度） ────────────── */
+  --ap-row-compact: 32px;
+  --ap-row-comfortable: 44px;
+  --ap-table-head-h: 34px;
+
+  /* ── 布局度量（H5/PC 骨架） ───────────────────── */
+  --ap-tabbar-h: 56px; /* 底部 tabbar（不含安全区） */
+  --ap-header-h: 52px; /* H5 顶部品牌栏 */
+  --ap-nav-w: 208px; /* PC 左侧导航树 */
+  --ap-context-w: 280px; /* PC 右侧上下文栏 */
+  --ap-disclaimer-h: 30px; /* 全局固定免责声明条 */
+  --ap-safe-bottom: env(safe-area-inset-bottom, 0px); /* iOS 底部安全区 */
+}

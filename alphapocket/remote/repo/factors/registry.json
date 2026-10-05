@@ -1,0 +1,169 @@
+{
+  "factors": [
+    {
+      "id": "val_pe_ttm",
+      "name": "市盈率TTM",
+      "type": "alpha",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ]
+    },
+    {
+      "id": "val_pb",
+      "name": "市净率",
+      "type": "alpha",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ]
+    },
+    {
+      "id": "val_pe_pct",
+      "name": "PE五年分位",
+      "type": "alpha",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ]
+    },
+    {
+      "id": "val_pb_pct",
+      "name": "PB五年分位",
+      "type": "alpha",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ]
+    },
+    {
+      "id": "div_yield_ttm",
+      "name": "股息率TTM",
+      "type": "alpha",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ]
+    },
+    {
+      "id": "qua_roe_ttm",
+      "name": "ROE TTM",
+      "type": "alpha",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ]
+    },
+    {
+      "id": "qua_margin",
+      "name": "主营业务利润率",
+      "type": "alpha",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ]
+    },
+    {
+      "id": "grow_rev_yoy",
+      "name": "营收同比",
+      "type": "alpha",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ]
+    },
+    {
+      "id": "grow_np_yoy",
+      "name": "净利同比",
+      "type": "alpha",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ]
+    },
+    {
+      "id": "mom_12_1",
+      "name": "12-1月动量",
+      "type": "alpha",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ]
+    },
+    {
+      "id": "vol_250",
+      "name": "250日年化波动",
+      "type": "alpha",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ]
+    },
+    {
+      "id": "mom_20d",
+      "name": "20日动量",
+      "type": "signal",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ],
+      "horizon_days": 20
+    },
+    {
+      "id": "vol_20d",
+      "name": "20日年化波动",
+      "type": "signal",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ],
+      "horizon_days": 20
+    },
+    {
+      "id": "ma20_break",
+      "name": "MA20突破",
+      "type": "signal",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ],
+      "horizon_days": 20
+    },
+    {
+      "id": "high20_touch",
+      "name": "20日新高",
+      "type": "signal",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ],
+      "horizon_days": 20
+    },
+    {
+      "id": "dist_high20",
+      "name": "距20日高点",
+      "type": "signal",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ],
+      "horizon_days": 20
+    }
+  ]
+}

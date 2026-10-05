@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alphapocket-core"
+version = "0.1.0"
+description = "AlphaPocket V4-β 量化服务（FastAPI）—— 组合/评估/回测/调仓 与数据层"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+authors = [{ name = "AlphaPocket" }]
+
+# 运行 + 测试依赖（与实施书 §3.3 / T0.1 一致）
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "sqlalchemy>=2.0",
+  "alembic>=1.13",
+  "psycopg[binary]>=3.2",
+  "redis>=5.0",
+  "minio>=7.2",
+  "httpx>=0.27",
+  "python-jose[cryptography]>=3.3",
+  "passlib[argon2]>=1.7",
+  # 测试与静态检查（实施书 T0.1 依赖清单）
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.6",
+  # —— V4-α 计算内核（applib）单点引用，不复制 ——
+  # 构建期挂载：生产镜像在 /workspace 构建上下文中 COPY alphapocket 后安装；
+  # 本地开发不安装此本体（/workspace/alphapocket 当前为纯包目录，无 pyproject.toml），
+  # 改用 sys.path 注入（core/.venv 中通过 PYTHONPATH 指向 /workspace/alphapocket）。
+  "alphapocket @ file:///workspace/alphapocket",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

@@ -1,0 +1,21 @@
+# 单次任务：cn4 组合复盘（V4-α 真实数据版）
+# 组合：赛轮集团/永新股份/福耀玻璃/分众传媒（等权名义 25%×4）
+id: review_cn4_once
+runtime:
+  sandbox: quant-std        # 生产=Docker 镜像；α=目录级隔离模拟
+  network: akshare-direct   # α 取数经 datasource.fetch（新浪/腾讯公开接口）；生产走云端 Pre-Signed URL
+steps:
+  - tool: data.sync
+    args: {datasets: [dwd_daily_bar, dwd_daily_bar_raw, dwd_financial_report, dwd_dividend, dwd_trade_calendar, dim_security]}
+  - tool: factor.compute_alpha
+    args: {as_of: auto, factors: [val_pe_ttm, val_pb, val_pe_pct, val_pb_pct, div_yield_ttm, qua_roe_ttm, qua_margin, grow_rev_yoy, grow_np_yoy, mom_12_1, vol_250]}
+  - tool: factor.compute
+    args: {as_of: auto, factors: [mom_20d, vol_20d, ma20_break, high20_touch, dist_high20]}
+  - tool: portfolio.review
+    args: {portfolio: cn4}
+  - tool: portfolio.rebalance_plan
+    args: {portfolio: cn4}
+  - tool: report.generate
+    args: {template: cn4_review, out: [md, html]}
+verify: [pit_audit, golden_test, cross_source, calendar_check, adjust_check, provenance_check]   # §15.2：全绿才允许 push
+notify: {on: [risk_warn, signal_fired], channel: [cloud_inbox]}

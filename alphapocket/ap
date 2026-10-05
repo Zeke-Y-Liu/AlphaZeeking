@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""AlphaPocket ap CLI 入口（V4-α 原型）"""
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from applib.cli import main
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,22 @@
+# 单次任务：multi5 多资产组合复盘（V4-α 真实数据版）
+# 组合：沪深300ETF/南方原油LOF/黄金ETF/纳指ETF/十年国债ETF（等权名义 20%×5）
+# 注：ETF/LOF 无财报 → 引擎A仅价格类因子（动量/波动），五维综合不适用；引擎B与验证管线与 cn4 同一章程
+id: review_multi5_once
+runtime:
+  sandbox: quant-std        # 生产=Docker 镜像；α=目录级隔离模拟
+  network: akshare-direct   # α 取数经 datasource.fetch（新浪/东财公开接口）；生产走云端 Pre-Signed URL
+steps:
+  - tool: data.sync
+    args: {datasets: [dwd_daily_bar, dwd_daily_bar_raw, dwd_financial_report, dwd_dividend, dwd_trade_calendar, dim_security]}
+  - tool: factor.compute_alpha
+    args: {as_of: auto, factors: [val_pe_ttm, val_pb, val_pe_pct, val_pb_pct, div_yield_ttm, qua_roe_ttm, qua_margin, grow_rev_yoy, grow_np_yoy, mom_12_1, vol_250]}
+  - tool: factor.compute
+    args: {as_of: auto, factors: [mom_20d, vol_20d, ma20_break, high20_touch, dist_high20]}
+  - tool: portfolio.review
+    args: {portfolio: multi5}
+  - tool: portfolio.rebalance_plan
+    args: {portfolio: multi5}
+  - tool: report.generate
+    args: {template: multi5_review, out: [md, html], portfolio: multi5}
+verify: [pit_audit, golden_test, cross_source, calendar_check, adjust_check, provenance_check]   # §15.2：全绿才允许 push
+notify: {on: [risk_warn, signal_fired], channel: [cloud_inbox]}

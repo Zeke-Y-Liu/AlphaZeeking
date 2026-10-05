@@ -1,0 +1,6 @@
+{
+  "as_of": "2026-09-30",
+  "atr_regime": "high",
+  "position_coef": 0.95,
+  "note": "sig_atr_regime 高波 Regime · 月内第 1 次 · 微调上限 ±10%"
+}

@@ -1,0 +1,34 @@
+[
+  {
+    "secid": "601058.SH",
+    "name": "赛轮集团",
+    "market": "A",
+    "asset_type": "STOCK",
+    "industry": "汽车零部件·轮胎",
+    "source": "组合定义（行业为申万口径常识标注）"
+  },
+  {
+    "secid": "002014.SZ",
+    "name": "永新股份",
+    "market": "A",
+    "asset_type": "STOCK",
+    "industry": "塑料软包装",
+    "source": "组合定义（行业为申万口径常识标注）"
+  },
+  {
+    "secid": "600660.SH",
+    "name": "福耀玻璃",
+    "market": "A",
+    "asset_type": "STOCK",
+    "industry": "汽车零部件·汽车玻璃",
+    "source": "组合定义（行业为申万口径常识标注）"
+  },
+  {
+    "secid": "002027.SZ",
+    "name": "分众传媒",
+    "market": "A",
+    "asset_type": "STOCK",
+    "industry": "广告传媒",
+    "source": "组合定义（行业为申万口径常识标注）"
+  }
+]

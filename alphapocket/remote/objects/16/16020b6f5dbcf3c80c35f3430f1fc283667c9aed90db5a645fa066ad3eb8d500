@@ -1,0 +1,43 @@
+{
+  "plan_id": "RP-20260930-01",
+  "portfolio": "global",
+  "generated_by": "engine_a+engine_b",
+  "diff_trades": [
+    {
+      "side": "sell",
+      "secid": "00700.HK",
+      "name": "腾讯控股",
+      "from": 14.0,
+      "to": 11.0,
+      "reason": "引擎B sig_ma20_break 卖出预警（下穿MA20 −2.4%）+ 港股通交易样本偏少（4笔2盈）",
+      "evidence": "E2+E3",
+      "settle": "T+0回转/结算T+2",
+      "cost": "印花税双边0.1%+佣金"
+    },
+    {
+      "side": "sell",
+      "secid": "300750.SZ",
+      "name": "某新能源",
+      "from": 3.1,
+      "to": 0.0,
+      "reason": "五维 D（动量/预期 D）+ 处于能力圈外（历史年化拖累 −7.3%）",
+      "evidence": "E2+E3",
+      "settle": "T+1",
+      "cost": "印花税卖出0.05%+过户费"
+    },
+    {
+      "side": "subscribe",
+      "secid": "000198.OF",
+      "name": "货币基金",
+      "from": 0.0,
+      "to": 6.1,
+      "reason": "高波 Regime 仓位系数 95% → 现金部分入货基（未知价法，T+1确认）",
+      "evidence": "E2",
+      "settle": "T日净值/T+1确认",
+      "cost": "申购费折后~0.15%"
+    }
+  ],
+  "turnover_est": "6.2%（双边）",
+  "cost_est_cny": 1180,
+  "status": "confirmed_by_user"
+}

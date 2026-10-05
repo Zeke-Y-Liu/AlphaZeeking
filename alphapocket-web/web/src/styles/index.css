@@ -1,0 +1,157 @@
+/**
+ * 全局样式：重置 + 基础排版 + 通用工具类。设计令牌见 ./tokens.css。
+ */
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--ap-paper);
+  color: var(--ap-ink);
+  font-family: var(--ap-font-sans);
+  font-size: var(--ap-fs-base);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-family: var(--ap-font-serif);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cdc5b4;
+  border-radius: var(--ap-radius-pill);
+}
+
+/* ── 基础排版工具 ───────────────────────────── */
+.ap-title {
+  font-family: var(--ap-font-serif);
+  font-size: var(--ap-fs-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ap-sub {
+  color: var(--ap-dim);
+  font-weight: 300;
+}
+
+.ap-muted {
+  color: var(--ap-mute);
+}
+
+.ap-mono {
+  font-family: var(--ap-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 弱提示小字：对应原型 .lbl / .ev 的等宽风格 */
+.ap-kicker {
+  font-family: var(--ap-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ap-mute);
+}
+
+.ap-divider {
+  height: 1px;
+  background: var(--ap-hair);
+}
+
+/* 页面容器：占位视图统一留白 */
+.ap-page {
+  padding: var(--ap-sp-6);
+}
+
+.ap-page__head {
+  margin-bottom: var(--ap-sp-5);
+}
+
+.ap-page__desc {
+  margin-top: var(--ap-sp-2);
+  color: var(--ap-dim);
+  font-weight: 300;
+}
+
+/* 待实现标记块（占位视图用） */
+.ap-todo {
+  border: 1px dashed #c9c1b0;
+  background: var(--ap-card2);
+  border-radius: var(--ap-radius);
+  padding: var(--ap-sp-4);
+  color: var(--ap-dim);
+  font-weight: 300;
+}
+
+/* 通用上下堆叠 / 横向排列 */
+.ap-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ap-sp-3);
+}
+
+.ap-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ap-sp-3);
+}
+
+/* 全局固定免责声明（合规，占位由 App.vue 渲染） */
+.ap-disclaimer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  height: var(--ap-disclaimer-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ap-sp-2);
+  padding: 0 var(--ap-sp-4);
+  font-size: 11px;
+  font-weight: 300;
+  color: var(--ap-mute);
+  background: rgba(239, 235, 226, 0.94);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid var(--ap-line);
+  text-align: center;
+}

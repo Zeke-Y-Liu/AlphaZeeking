@@ -1,0 +1,106 @@
+{
+  "fetched_at": "2026-10-05T05:57:08",
+  "akshare_version": "1.19.1",
+  "today": "2026-10-05",
+  "universe": [
+    "601058.SH",
+    "002014.SZ",
+    "600660.SH",
+    "002027.SZ",
+    "510300.SH",
+    "501018.SH",
+    "518880.SH",
+    "513100.SH",
+    "511260.SH"
+  ],
+  "sources": [
+    {
+      "dataset": "dwd_trade_calendar",
+      "interface": "ak.tool_trade_date_hist_sina()",
+      "upstream": "新浪财经",
+      "params": {},
+      "file": "market/trade_calendar.json",
+      "sha256": "d68143324d596e6ac9f25bd1e7e03d3205e3eb8061767f1463e07ecdaea7158a",
+      "bytes": 123158
+    },
+    {
+      "dataset": "dwd_daily_bar",
+      "interface": "ak.stock_zh_a_daily(adjust='qfq') + ak.fund_etf_hist_sina",
+      "upstream": "新浪财经",
+      "params": {
+        "start": "2021-01-01",
+        "end": "2026-10-05",
+        "note": "股票 qfq 前复权；ETF/LOF 无复权接口（raw）"
+      },
+      "file": "market/daily_bars.json",
+      "sha256": "b98b0eb3fa28f9491097b0a7db96b5b39cfc4fbe87c458d1068fc0a33e5cca3a",
+      "bytes": 1927130
+    },
+    {
+      "dataset": "dwd_daily_bar_raw",
+      "interface": "ak.stock_zh_a_daily(adjust='')",
+      "upstream": "新浪财经",
+      "params": {
+        "start": "2021-01-01",
+        "end": "2026-10-05",
+        "note": "仅股票（基金无复权对，由 cross_source 双源覆盖）"
+      },
+      "file": "market/daily_bars_raw.json",
+      "sha256": "c518f8662f78e783867fc68ecd9809ad87d459f6184d9262e9f80df007aa6c55",
+      "bytes": 208642
+    },
+    {
+      "dataset": "cross_check_tx",
+      "interface": "ak.stock_zh_a_hist_tx()",
+      "upstream": "腾讯证券",
+      "params": {
+        "window_days": 120,
+        "note": "股票与基金（ETF/LOF）均对腾讯（独立源交叉）"
+      },
+      "file": "market/cross_check_tx.json",
+      "sha256": "b1bf309c9309cce6b312766b1f7f36ef5439c4efcfde5d0fbb0f1a8d251aa295",
+      "bytes": 27829
+    },
+    {
+      "dataset": "dwd_financial_report",
+      "interface": "ak.stock_financial_analysis_indicator()",
+      "upstream": "新浪财经",
+      "params": {
+        "start_year": "2019"
+      },
+      "file": "factors/fundamental_values.json",
+      "sha256": "5639ce4e58dc41c6941d674c81e1622fd5462bd915c9f8a166cb1429ef59ee92",
+      "bytes": 30071
+    }
+  ],
+  "pit_rules": {
+    "financial_report_lag_days": {
+      "3": 30,
+      "6": 62,
+      "9": 31,
+      "12": 120
+    },
+    "note": "报告期+保守披露窗口=可用人时点（Q1→+30d，H1→+62d，Q3→+31d，FY→+120d）；α 未逐笔核对公告日，取监管截止日兜底"
+  },
+  "methods": {
+    "pe_ttm": "close/TTM摊薄EPS；TTT EPS=上年FY+本年YTD−上年同期YTD（PIT 阶梯函数，报告期按 announce_date 对齐）",
+    "pb": "close/最新可用人报告期每股净资产(调整前；新浪'调整后'列对部分标的异常，弃用)",
+    "div_yield_ttm": "近365日除权除息（闭区间[as_of-365d, as_of]）每股派息合计/close",
+    "vol": "日收益率样本标准差(ddof=1)年化×√252",
+    "mom_12_1": "close[t-21]/close[t-252]−1（剔除最近一月）",
+    "mom_20d": "close[-1]/close[-20]−1（20收盘窗口）",
+    "ma20_break": "close/MA20−1，±2% 确认带",
+    "fund_bars": "ETF/LOF（multi5）：新浪 fund_etf_hist_sina（对 ETF/LOF 均适用）无复权接口，序列即不复权 raw；无财报/分红数据 → 估值/质量/成长因子与股息率不适用，动量/波动照常；交叉源为腾讯 stock_zh_a_hist_tx（东财接口当前网络出口不可达，弃用）"
+  },
+  "note": "永新=永新股份(002014.SZ)；cn4 未提供成本与权重 → 等权名义组合(每标的25%)；multi5 五资产等权 20%×5，纳指以纳指100ETF(513100)近似（A股无综指ETF）",
+  "fund_corporate_actions": [
+    {
+      "secid": "513100.SH",
+      "dt": "2022-01-14",
+      "prev_close": 5.192,
+      "close": 1.015,
+      "chg": -0.8045,
+      "note": "疑似份额折算/拆分（新浪无复权接口），该日 pct 置 None"
+    }
+  ]
+}

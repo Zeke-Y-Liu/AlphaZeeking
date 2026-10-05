@@ -1,0 +1,44 @@
+{
+  "name": "alphapocket-web",
+  "version": "0.1.0",
+  "description": "AlphaPocket V4-β 前端（Vue3 + Vite5 + TS + Pinia + UnoCSS + ECharts）",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint \"src/**/*.{ts,vue}\"",
+    "test": "vitest",
+    "typecheck": "vue-tsc --noEmit",
+    "gen:api": "npx --yes openapi-typescript http://localhost:8082/openapi.json -o src/api/generated/schema.d.ts"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "echarts": "^5.5.1",
+    "pinia": "^2.2.4",
+    "vue": "^3.4.38",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "@vitejs/plugin-vue": "^5.1.4",
+    "@vue/test-utils": "^2.4.6",
+    "eslint": "^8.57.0",
+    "eslint-plugin-vue": "^9.28.0",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.5.4",
+    "unocss": "^0.63.4",
+    "vite": "^5.4.9",
+    "vitest": "^2.1.2",
+    "vue-eslint-parser": "^9.4.3",
+    "vue-tsc": "^2.1.6"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "vue-demi"
+    ]
+  }
+}

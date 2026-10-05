@@ -1,0 +1,38 @@
+# 构建上下文根 = /workspace（三个 Dockerfile 共用，见 alphapocket-web/core|bff|web/Dockerfile）
+# 注意：Docker 只读取「构建上下文根」的 .dockerignore，
+# 子目录内的 alphapocket-web/*/.dockerignore 在 context=/workspace 时不生效。
+
+# ── Node / 前端 ────────────────────────────────────────
+**/node_modules
+**/dist
+**/.vite
+**/.pnpm-store
+**/*.tsbuildinfo
+
+# ── Python ────────────────────────────────────────────
+**/__pycache__
+**/*.py[cod]
+**/.venv
+**/venv
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/*.egg-info
+
+# ── V4-α 运行期数据（镜像只需 applib 源码 + ap + tasks）──
+# 排除本地工作区/远端替身/产物，避免把大数据与历史产物烤进镜像
+alphapocket/remote
+alphapocket/sandbox/data
+alphapocket/sandbox/artifacts
+alphapocket/sandbox/logs
+alphapocket/sandbox/repo
+alphapocket/sandbox/.ap
+
+# ── 通用 ──────────────────────────────────────────────
+.git
+.gitignore
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+**/var

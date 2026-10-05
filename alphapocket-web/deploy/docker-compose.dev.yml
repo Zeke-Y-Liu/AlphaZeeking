@@ -1,0 +1,189 @@
+# AlphaPocket V4-β · dev 全栈编排（T0.2）
+# ---------------------------------------------------------------------------
+# 六服务：pg / redis / minio（+ 一次性 minio-init）/ core / bff / web
+# 依赖链（全部用 condition: service_healthy 串接）：
+#   pg/redis/minio ──▶ core ──▶ bff ──▶ web
+#   minio ──▶ minio-init（建桶后退出）
+#
+# 用法（仓库根 /workspace/alphapocket-web 下执行）：
+#   cp .env.example .env
+#   make up                 # = docker compose -f deploy/docker-compose.dev.yml up -d --build
+#
+# 说明：
+#   - 构建上下文统一为 /workspace（monorepo 父目录，同时含 alphapocket/ 与 alphapocket-web/），
+#     与三个 Dockerfile 的注释约定一致（T0.1 已定，T0.2 不改）。
+#   - 容器内访问宿主机服务必须用 compose 服务名（pg/redis/minio），不能用 localhost；
+#     core 的 AP_* 地址在此用 environment 覆盖根 .env 里的 localhost 值。
+#   - 云上映射（GA，非本阶段）：compose→ECS 单机 · MinIO→OSS · PG→RDS（实施书 §14.2）。
+# ---------------------------------------------------------------------------
+
+name: alphapocket-dev
+
+services:
+  # ---------------- 基础设施 ----------------
+  pg:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ap
+      POSTGRES_PASSWORD: ap
+      POSTGRES_DB: ap
+    ports:
+      - "5432:5432"                       # 便于宿主 psql 调试（实施书 §3.2 为内网，调试可映射）
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro   # 首次初始化执行扩展脚本
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ap -d ap"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - ap-net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - ap-net
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      # 与 core / minio-init 使用同一插值来源，保证凭据始终一致（见文件头说明）
+      MINIO_ROOT_USER: ${AP_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${AP_MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"                       # S3 API
+      - "9001:9001"                       # Web 控制台
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - ap-net
+
+  # 一次性容器：等 minio 健康后建桶 ap-artifacts，幂等（存在则跳过），随后退出
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      AP_MINIO_ACCESS_KEY: ${AP_MINIO_ACCESS_KEY:-minioadmin}
+      AP_MINIO_SECRET_KEY: ${AP_MINIO_SECRET_KEY:-minioadmin}
+      AP_MINIO_BUCKET: ${AP_MINIO_BUCKET:-ap-artifacts}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mc alias set local "$$MINIO_ENDPOINT" "$$AP_MINIO_ACCESS_KEY" "$$AP_MINIO_SECRET_KEY"
+        mc mb --ignore-existing "local/$$AP_MINIO_BUCKET"
+        echo "[minio-init] bucket ready: $$AP_MINIO_BUCKET"
+    restart: "no"
+    networks:
+      - ap-net
+
+  # ---------------- 应用服务 ----------------
+  core:
+    build:
+      context: /workspace
+      dockerfile: alphapocket-web/core/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      pg:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    env_file:
+      - ../.env                           # 注入 AP_JWT_*、AP_WORKSPACE_ROOT 等
+    environment:
+      # 覆盖根 .env 内的 localhost —— 容器内必须走 compose 服务名
+      AP_DATABASE_URL: postgresql+psycopg://ap:ap@pg:5432/ap
+      AP_REDIS_URL: redis://redis:6379/0
+      AP_MINIO_ENDPOINT: minio:9000
+      AP_MINIO_ACCESS_KEY: ${AP_MINIO_ACCESS_KEY:-minioadmin}
+      AP_MINIO_SECRET_KEY: ${AP_MINIO_SECRET_KEY:-minioadmin}
+      AP_MINIO_BUCKET: ${AP_MINIO_BUCKET:-ap-artifacts}
+    ports:
+      - "${CORE_PORT:-8082}:8082"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - ap-net
+
+  bff:
+    build:
+      context: /workspace
+      dockerfile: alphapocket-web/bff/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      core:
+        condition: service_healthy
+    env_file:
+      - ../.env
+    environment:
+      PORT: "8081"
+      CORE_URL: http://core:8082
+    ports:
+      - "${BFF_PORT:-8081}:8081"
+    healthcheck:
+      # node:20-alpine 无 curl，用 busybox wget 探活
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - ap-net
+
+  web:
+    build:
+      context: /workspace
+      dockerfile: alphapocket-web/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      bff:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - ap-net
+
+networks:
+  ap-net:
+    driver: bridge
+
+volumes:
+  pg_data:
+  redis_data:
+  minio_data:

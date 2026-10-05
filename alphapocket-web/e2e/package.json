@@ -1,0 +1,14 @@
+{
+  "name": "alphapocket-e2e",
+  "version": "0.1.0",
+  "description": "AlphaPocket V4-β 端到端冒烟（Playwright，T7.1 两剧本 + 409/429 分支）",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

@@ -1,0 +1,2204 @@
+{
+  "components": {
+    "schemas": {
+      "BacktestRequest": {
+        "description": "回测入参（§6.2）。默认值与 applib T3.1 锚点一致。",
+        "properties": {
+          "benchmark_secid": {
+            "default": "510300.SH",
+            "title": "Benchmark Secid",
+            "type": "string"
+          },
+          "cost_bps": {
+            "default": 2.5,
+            "title": "Cost Bps",
+            "type": "number"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "rebalance": {
+            "default": "monthly",
+            "title": "Rebalance",
+            "type": "string"
+          },
+          "rf": {
+            "default": 0.0,
+            "title": "Rf",
+            "type": "number"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          }
+        },
+        "title": "BacktestRequest",
+        "type": "object"
+      },
+      "CancelIn": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "CancelIn",
+        "type": "object"
+      },
+      "ConfirmIn": {
+        "description": "确认入参：``ack_discipline`` 必须显式为 true（§7 不变量 2）。",
+        "properties": {
+          "ack_discipline": {
+            "default": false,
+            "title": "Ack Discipline",
+            "type": "boolean"
+          }
+        },
+        "title": "ConfirmIn",
+        "type": "object"
+      },
+      "ExecCreateIn": {
+        "description": "执行单入参（§6.2）：基准资金，默认 ¥1,000,000。",
+        "properties": {
+          "capital_cny": {
+            "default": 1000000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Capital Cny",
+            "type": "number"
+          }
+        },
+        "title": "ExecCreateIn",
+        "type": "object"
+      },
+      "FillBody": {
+        "description": "成交登记入参：至少一笔。",
+        "properties": {
+          "fills": {
+            "items": {
+              "$ref": "#/components/schemas/FillIn"
+            },
+            "minItems": 1,
+            "title": "Fills",
+            "type": "array"
+          }
+        },
+        "required": [
+          "fills"
+        ],
+        "title": "FillBody",
+        "type": "object"
+      },
+      "FillIn": {
+        "description": "单笔成交登记。",
+        "properties": {
+          "price": {
+            "title": "Price",
+            "type": "number"
+          },
+          "secid": {
+            "title": "Secid",
+            "type": "string"
+          },
+          "shares": {
+            "title": "Shares",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "secid",
+          "price",
+          "shares"
+        ],
+        "title": "FillIn",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LoginIn": {
+        "properties": {
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginIn",
+        "type": "object"
+      },
+      "PortfolioCreate": {
+        "properties": {
+          "equal_weight": {
+            "default": false,
+            "title": "Equal Weight",
+            "type": "boolean"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/PositionIn"
+            },
+            "minItems": 1,
+            "title": "Positions",
+            "type": "array"
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy"
+          }
+        },
+        "required": [
+          "name",
+          "positions"
+        ],
+        "title": "PortfolioCreate",
+        "type": "object"
+      },
+      "PortfolioOut": {
+        "properties": {
+          "base_ccy": {
+            "title": "Base Ccy",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "latest_run": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Run"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "pid": {
+            "title": "Pid",
+            "type": "string"
+          },
+          "position_count": {
+            "title": "Position Count",
+            "type": "integer"
+          },
+          "positions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PositionOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Positions"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "strategy": {
+            "additionalProperties": true,
+            "title": "Strategy",
+            "type": "object"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "pid",
+          "name",
+          "base_ccy",
+          "strategy",
+          "status",
+          "created_at",
+          "updated_at",
+          "position_count"
+        ],
+        "title": "PortfolioOut",
+        "type": "object"
+      },
+      "PortfolioUpdate": {
+        "properties": {
+          "equal_weight": {
+            "default": false,
+            "title": "Equal Weight",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "positions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PositionIn"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Positions"
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy"
+          }
+        },
+        "title": "PortfolioUpdate",
+        "type": "object"
+      },
+      "PositionIn": {
+        "description": "持仓入参；``equal_weight=true`` 时 ``weight`` 可省略（被忽略）。",
+        "properties": {
+          "secid": {
+            "title": "Secid",
+            "type": "string"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          }
+        },
+        "required": [
+          "secid"
+        ],
+        "title": "PositionIn",
+        "type": "object"
+      },
+      "PositionOut": {
+        "properties": {
+          "asset_type": {
+            "title": "Asset Type",
+            "type": "string"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "secid": {
+            "title": "Secid",
+            "type": "string"
+          },
+          "settle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settle"
+          },
+          "weight": {
+            "title": "Weight",
+            "type": "number"
+          }
+        },
+        "required": [
+          "secid",
+          "weight",
+          "name",
+          "asset_type"
+        ],
+        "title": "PositionOut",
+        "type": "object"
+      },
+      "RefreshIn": {
+        "properties": {
+          "refresh": {
+            "title": "Refresh",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh"
+        ],
+        "title": "RefreshIn",
+        "type": "object"
+      },
+      "RegisterIn": {
+        "description": "注册入参；仅 ``code`` 必填，其余可选以免破坏 ``{code}`` 契约。",
+        "properties": {
+          "asset_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Type"
+          },
+          "code": {
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "ftype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ftype"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "RegisterIn",
+        "type": "object"
+      },
+      "SecurityOut": {
+        "description": "标的响应体（securities 表可见字段）。",
+        "properties": {
+          "asset_type": {
+            "title": "Asset Type",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "ftype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ftype"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          },
+          "market": {
+            "title": "Market",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "secid": {
+            "title": "Secid",
+            "type": "string"
+          },
+          "settle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settle"
+          },
+          "sina_symbol": {
+            "title": "Sina Symbol",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secid",
+          "code",
+          "name",
+          "market",
+          "asset_type",
+          "sina_symbol",
+          "source"
+        ],
+        "title": "SecurityOut",
+        "type": "object"
+      },
+      "SyncIn": {
+        "description": "同步入参（§6.2）。",
+        "properties": {
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "secid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secid"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "SyncIn",
+        "type": "object"
+      },
+      "TokenOut": {
+        "properties": {
+          "access": {
+            "title": "Access",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "refresh": {
+            "title": "Refresh",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
+          }
+        },
+        "required": [
+          "access",
+          "refresh",
+          "expires_in",
+          "user"
+        ],
+        "title": "TokenOut",
+        "type": "object"
+      },
+      "UserOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "role"
+        ],
+        "title": "UserOut",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "AlphaPocket V4-β 量化服务（core）",
+    "title": "AlphaPocket Quant Core",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/_ping": {
+      "get": {
+        "description": "前缀挂载自检端点（仅用于验证 /api/v1 挂载正确）。",
+        "operationId": "ping_api_v1__ping_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Ping Api V1  Ping Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ping",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/audit": {
+      "get": {
+        "description": "审计列表查询（按 ``entity`` / ``entity_id`` 过滤，时间倒序）。",
+        "operationId": "list_audit_api_v1_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "entity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Audit Api V1 Audit Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Audit",
+        "tags": [
+          "exec-orders"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "用户名+密码登录；失败统一返回 401（不区分用户是否存在），连续失败触发 429 锁定。",
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "description": "返回当前登录用户（需有效 access token）。",
+        "operationId": "me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "description": "用 refresh token 换新 token 三件套；无效/过期/类型不符 → 401。",
+        "operationId": "refresh_api_v1_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/data/status": {
+      "get": {
+        "description": "各标的最后 bar 日期 / 缺口 / 距今、universe 汇总、最近验证与 sync 状态。",
+        "operationId": "get_data_status_api_v1_data_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Data Status Api V1 Data Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Data Status",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/v1/data/sync": {
+      "post": {
+        "description": "触发同步 job（§4.2 / §6.1）：202 + job_id + poll；冲突 409；熔断 503。",
+        "operationId": "create_sync_api_v1_data_sync_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Sync",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/v1/data/verifications": {
+      "get": {
+        "description": "六项验证明细列表（``limit`` 默认 20，合法区间 [1, 200]）。",
+        "operationId": "list_verifications_api_v1_data_verifications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Verifications Api V1 Data Verifications Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Verifications",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/v1/exec-orders/{exec_id}": {
+      "get": {
+        "description": "执行单详情（含完整 sheet 与状态时间线）。",
+        "operationId": "get_exec_order_api_v1_exec_orders__exec_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exec_id",
+            "required": true,
+            "schema": {
+              "title": "Exec Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Exec Order Api V1 Exec Orders  Exec Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Exec Order",
+        "tags": [
+          "exec-orders"
+        ]
+      }
+    },
+    "/api/v1/exec-orders/{exec_id}/cancel": {
+      "post": {
+        "description": "取消执行单：``draft`` / ``confirmed`` → ``cancelled``。",
+        "operationId": "cancel_exec_order_api_v1_exec_orders__exec_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exec_id",
+            "required": true,
+            "schema": {
+              "title": "Exec Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cancel Exec Order Api V1 Exec Orders  Exec Id  Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Exec Order",
+        "tags": [
+          "exec-orders"
+        ]
+      }
+    },
+    "/api/v1/exec-orders/{exec_id}/confirm": {
+      "post": {
+        "description": "确认执行单：强制 ACK（否则 422 ``ACK_REQUIRED``），``draft`` → ``confirmed``。",
+        "operationId": "confirm_exec_order_api_v1_exec_orders__exec_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exec_id",
+            "required": true,
+            "schema": {
+              "title": "Exec Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Confirm Exec Order Api V1 Exec Orders  Exec Id  Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Exec Order",
+        "tags": [
+          "exec-orders"
+        ]
+      }
+    },
+    "/api/v1/exec-orders/{exec_id}/fill": {
+      "post": {
+        "description": "登记成交：校验后 ``confirmed`` → ``executed``（允许部分成交）。",
+        "operationId": "fill_exec_order_api_v1_exec_orders__exec_id__fill_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exec_id",
+            "required": true,
+            "schema": {
+              "title": "Exec Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FillBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Fill Exec Order Api V1 Exec Orders  Exec Id  Fill Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fill Exec Order",
+        "tags": [
+          "exec-orders"
+        ]
+      }
+    },
+    "/api/v1/jobs/{job_id}": {
+      "get": {
+        "description": "返回 job 状态（§6.1 响应体）；不存在抛 ``AppError(NOT_FOUND)`` → 404。",
+        "operationId": "get_job_api_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Job Api V1 Jobs  Job Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/v1/plans/{plan_id}": {
+      "get": {
+        "description": "plan 详情（含完整 ``payload``）；不存在 → 404。",
+        "operationId": "get_plan_api_v1_plans__plan_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Plan Api V1 Plans  Plan Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Plan",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/v1/plans/{plan_id}/exec-orders": {
+      "post": {
+        "description": "由存量 plan + 最新 review 机械换算生成执行单（同步，§9.5 T4.2）。",
+        "operationId": "create_exec_order_api_v1_plans__plan_id__exec_orders_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Exec Order Api V1 Plans  Plan Id  Exec Orders Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Exec Order",
+        "tags": [
+          "exec-orders"
+        ]
+      }
+    },
+    "/api/v1/portfolios": {
+      "get": {
+        "description": "组合列表：默认仅 active（归档不返回）；含持仓数与最近一次 run 摘要。",
+        "operationId": "list_portfolios_api_v1_portfolios_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PortfolioOut"
+                  },
+                  "title": "Response List Portfolios Api V1 Portfolios Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Portfolios",
+        "tags": [
+          "portfolios"
+        ]
+      },
+      "post": {
+        "description": "新建组合：校验 → 事务写 portfolios+positions+audit → 物化 JSON。",
+        "operationId": "create_portfolio_api_v1_portfolios_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortfolioCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Portfolio",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
+    "/api/v1/portfolios/{pid}": {
+      "delete": {
+        "description": "归档软删：``status=\"archived\"`` + 审计；不存在 → 404。",
+        "operationId": "archive_portfolio_api_v1_portfolios__pid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "title": "Pid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive Portfolio",
+        "tags": [
+          "portfolios"
+        ]
+      },
+      "get": {
+        "description": "组合详情（含 positions）。",
+        "operationId": "get_portfolio_api_v1_portfolios__pid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "title": "Pid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Portfolio",
+        "tags": [
+          "portfolios"
+        ]
+      },
+      "put": {
+        "description": "更新组合（name/note/positions/strategy）；重跑校验并重新物化 + 审计。",
+        "operationId": "update_portfolio_api_v1_portfolios__pid__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "title": "Pid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortfolioUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Portfolio",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
+    "/api/v1/portfolios/{pid}/backtest": {
+      "post": {
+        "description": "触发回测 job（§6.2）：404 → 门禁 409 → 参数 422 → 202 + job_id + poll。\n\n``payload`` 可省略（全部字段有默认值，缺省按 T3.1 锚点参数）。",
+        "operationId": "create_backtest_api_v1_portfolios__pid__backtest_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "title": "Pid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/BacktestRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Backtest",
+        "tags": [
+          "backtest"
+        ]
+      }
+    },
+    "/api/v1/portfolios/{pid}/exec-orders": {
+      "get": {
+        "description": "该组合执行单列表（按创建时间倒序）。",
+        "operationId": "list_portfolio_exec_orders_api_v1_portfolios__pid__exec_orders_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "title": "Pid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Portfolio Exec Orders Api V1 Portfolios  Pid  Exec Orders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Portfolio Exec Orders",
+        "tags": [
+          "exec-orders"
+        ]
+      }
+    },
+    "/api/v1/portfolios/{pid}/plans": {
+      "get": {
+        "description": "该组合 plan 列表：``draft`` 优先，其余按 ``created_at`` desc（不含大 payload）。",
+        "operationId": "list_plans_api_v1_portfolios__pid__plans_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "title": "Pid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Plans Api V1 Portfolios  Pid  Plans Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Plans",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/v1/portfolios/{pid}/rebalance-history": {
+      "get": {
+        "description": "调仓历史：plans + exec_orders + fills 归一化时间线。",
+        "operationId": "get_rebalance_history_api_v1_portfolios__pid__rebalance_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "title": "Pid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Rebalance History Api V1 Portfolios  Pid  Rebalance History Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Rebalance History",
+        "tags": [
+          "exec-orders"
+        ]
+      }
+    },
+    "/api/v1/portfolios/{pid}/rebalance-plan": {
+      "post": {
+        "description": "触发调仓评估单 job（§6.2）：404 → 门禁 409 → 202 + job_id + poll。",
+        "operationId": "create_rebalance_plan_api_v1_portfolios__pid__rebalance_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "title": "Pid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Rebalance Plan",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/v1/portfolios/{pid}/review": {
+      "post": {
+        "description": "触发评估 job（§6.2）：前置数据门禁全绿（否则 409，不提交 job）→ 202 + job_id。\n\n门禁通过后不重复检查数据缺口（缺口由 job 内 ``_ensure_gap`` 处理）。",
+        "operationId": "create_review_api_v1_portfolios__pid__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "title": "Pid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Review",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
+    "/api/v1/runs": {
+      "get": {
+        "description": "运行历史（§6.2）：可按 type / portfolio_id 过滤，limit 默认 20。",
+        "operationId": "list_runs_api_v1_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "portfolio_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Portfolio Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Runs Api V1 Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Runs",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_uid}/artifacts/{file}": {
+      "get": {
+        "description": "产物流（§6.2 / §9.3）：``runs/{run_uid}/{file}`` 流式下载。\n\n- 路径段含 ``/`` / ``\\`` / ``..`` 或为空 → 404（不拼接逃逸）；\n- 对象不存在（S3 ``NoSuchKey`` / ``NoSuchBucket``）→ 404 ``NOT_FOUND``；\n- 扩展名决定 content-type；未知扩展名按 ``application/octet-stream`` 照常 200。",
+        "operationId": "get_run_artifact_api_v1_runs__run_uid__artifacts__file__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_uid",
+            "required": true,
+            "schema": {
+              "title": "Run Uid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file",
+            "required": true,
+            "schema": {
+              "title": "File",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run Artifact",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/securities/register": {
+      "post": {
+        "description": "注册标的：规范化 → 幂等检查 → 探测可达 → 落库 + 审计（§6.2/T1.3）。",
+        "operationId": "register_security_api_v1_securities_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Security",
+        "tags": [
+          "securities"
+        ]
+      }
+    },
+    "/api/v1/securities/search": {
+      "get": {
+        "description": "本地 PG 前缀检索：``code``/``secid`` 用 ``LIKE``，中文 ``name`` 用 ``ILIKE``。",
+        "operationId": "search_securities_api_v1_securities_search_get",
+        "parameters": [
+          {
+            "description": "代码/名称/secid 前缀；空则返回最近 20 条",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "代码/名称/secid 前缀；空则返回最近 20 条",
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SecurityOut"
+                  },
+                  "title": "Response Search Securities Api V1 Securities Search Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Securities",
+        "tags": [
+          "securities"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "description": "存活 + 依赖探测；依赖不可达时返回 200 + degraded，绝不 5xx。",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Healthz Healthz Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthz",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "id": "multi5",
+  "name": "multi5 · 沪深300/南方原油/黄金/纳指/十年国债",
+  "base_ccy": "CNY",
+  "strategy_binding": "multi_asset_v1",
+  "note": "五资产等权名义组合 20%×5（A股宽基/原油/黄金/美股/国债）；全部 A 股上市、人民币计价（QDII 为人民币份额，无直接汇率敞口，存在场内溢价/折价风险）；A股无纳斯达克综合指数ETF，以纳指100ETF(513100)近似",
+  "positions": [
+    {
+      "secid": "510300.SH",
+      "name": "沪深300ETF",
+      "market": "A",
+      "asset_type": "ETF",
+      "weight": 20.0,
+      "trade_ccy": "CNY",
+      "settle": "T+1",
+      "cost": "ETF 免印花税·佣金约万2.5"
+    },
+    {
+      "secid": "501018.SH",
+      "name": "南方原油LOF",
+      "market": "A",
+      "asset_type": "LOF",
+      "weight": 20.0,
+      "trade_ccy": "CNY",
+      "settle": "T+0(跨境LOF)",
+      "cost": "LOF 免印花税·佣金约万2.5"
+    },
+    {
+      "secid": "518880.SH",
+      "name": "黄金ETF",
+      "market": "A",
+      "asset_type": "ETF",
+      "weight": 20.0,
+      "trade_ccy": "CNY",
+      "settle": "T+0",
+      "cost": "ETF 免印花税·佣金约万2.5"
+    },
+    {
+      "secid": "513100.SH",
+      "name": "纳指ETF",
+      "market": "A",
+      "asset_type": "ETF",
+      "weight": 20.0,
+      "trade_ccy": "CNY",
+      "settle": "T+0(跨境)",
+      "cost": "ETF 免印花税·佣金约万2.5"
+    },
+    {
+      "secid": "511260.SH",
+      "name": "十年国债ETF",
+      "market": "A",
+      "asset_type": "ETF",
+      "weight": 20.0,
+      "trade_ccy": "CNY",
+      "settle": "T+0",
+      "cost": "ETF 免印花税·佣金约万2.5"
+    }
+  ]
+}

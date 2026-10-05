@@ -1,0 +1,68 @@
+{
+  "factors": [
+    {
+      "id": "val_pe_ttm",
+      "name": "市盈率TTM",
+      "type": "alpha",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ]
+    },
+    {
+      "id": "qua_roe_ttm",
+      "name": "ROE TTM",
+      "type": "alpha",
+      "status": "active",
+      "version": "v1.1",
+      "universe": [
+        "CN"
+      ]
+    },
+    {
+      "id": "mom_12_1",
+      "name": "12-1月动量",
+      "type": "alpha",
+      "status": "weakening",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ],
+      "fail_label": "大盘成长环境失效（2026H1 起IC衰减62%）"
+    },
+    {
+      "id": "sig_ma20_break",
+      "name": "MA20突破",
+      "type": "signal",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ],
+      "horizon_days": 20
+    },
+    {
+      "id": "sig_high20_touch",
+      "name": "20日新高",
+      "type": "signal",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ],
+      "horizon_days": 20
+    },
+    {
+      "id": "sig_atr_regime",
+      "name": "波动Regime",
+      "type": "signal",
+      "status": "active",
+      "version": "v1.0",
+      "universe": [
+        "CN"
+      ],
+      "horizon_days": 20
+    }
+  ]
+}

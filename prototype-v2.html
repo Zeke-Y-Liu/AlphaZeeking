@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>个人投资引擎 · 再设计原型 v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --desk:#26231E;--desk2:#1C1A16;
+  --paper:#EFEBE2;--card:#FBFAF6;--card2:#F5F2EA;
+  --line:#DCD5C6;--hair:rgba(28,27,24,.075);
+  --ink:#1C1B18;--dim:#6E6859;--mute:#9C9585;
+  --seal:#A93226;--sealSoft:rgba(169,50,38,.075);--sealLine:rgba(169,50,38,.28);
+  --up:#C0392B;--down:#1E7A5E;--blue:#2C5F8A;
+  --serif:'Noto Serif SC','Songti SC',Georgia,serif;
+  --sans:'Noto Sans SC',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+}
+html,body{background:var(--desk2)}
+body{
+  font-family:var(--sans);color:#E8E2D6;min-height:100vh;
+  display:flex;align-items:center;justify-content:center;gap:58px;padding:38px 32px;flex-wrap:wrap;
+  background:
+    radial-gradient(880px 520px at 10% 0%,rgba(169,50,38,.10),transparent 62%),
+    radial-gradient(760px 560px at 94% 100%,rgba(110,104,89,.16),transparent 60%),
+    var(--desk2);
+}
+
+/* ═══════ 左侧说明 ═══════ */
+.meta{width:318px;flex:0 0 auto}
+.meta .kick{font-family:var(--mono);font-size:9.5px;letter-spacing:.32em;text-transform:uppercase;color:#B8897F;margin-bottom:16px;display:flex;align-items:center;gap:9px}
+.meta .kick::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,#8A5548,transparent)}
+.meta h1{font-family:var(--serif);font-size:34px;font-weight:600;line-height:1.18;letter-spacing:-.01em}
+.meta h1 em{font-style:normal;color:#D98A78}
+.meta .sub{margin-top:13px;font-size:12px;line-height:1.9;color:#A79F8E;font-weight:300}
+.meta .sub b{color:#E8E2D6;font-weight:500}
+.rule{height:1px;background:rgba(255,255,255,.09);margin:22px 0}
+.lbl{font-family:var(--mono);font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:#7E7767;margin-bottom:11px}
+.navlist{display:flex;flex-direction:column;gap:1px}
+.navlist button{all:unset;cursor:pointer;display:flex;align-items:baseline;gap:10px;padding:8px 10px;border-radius:8px;transition:.2s;font-size:12px;color:#A79F8E}
+.navlist button:hover{background:rgba(255,255,255,.045);color:#E8E2D6}
+.navlist button.on{background:rgba(169,50,38,.22);color:#E8A594}
+.navlist button i{font-family:var(--mono);font-style:normal;font-size:8.5px;color:#6E6859;letter-spacing:.1em}
+.navlist button.on i{color:#C4695C}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+.two div{font-size:10.5px;color:#A79F8E;font-weight:300;line-height:1.5}
+.two div b{display:block;font-family:var(--mono);font-size:12.5px;color:#E8E2D6;font-weight:500;margin-bottom:2px}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.tags span{font-size:10px;padding:4px 9px;border:1px solid rgba(255,255,255,.14);border-radius:99px;color:#A79F8E;font-weight:300}
+.disc{margin-top:20px;font-size:10.5px;line-height:1.75;color:#7E7767;font-weight:300;border-left:2px solid rgba(169,50,38,.5);padding-left:12px}
+.disc b{color:#D98A78;font-weight:500}
+
+/* ═══════ 手机 ═══════ */
+.device{
+  position:relative;width:382px;height:min(818px,88vh);flex:0 0 auto;
+  background:var(--paper);color:var(--ink);border-radius:44px;overflow:hidden;
+  border:1px solid #4A443A;
+  box-shadow:0 0 0 9px #35302A,0 0 0 10px #4A443A,0 40px 84px -20px rgba(0,0,0,.85),0 0 120px -30px rgba(169,50,38,.18);
+}
+.device::after{content:'';position:absolute;inset:0;pointer-events:none;z-index:60;border-radius:44px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+  opacity:.05;mix-blend-mode:multiply}
+.notch{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:108px;height:26px;background:#1C1A16;border-radius:99px;z-index:50;display:flex;align-items:center;justify-content:flex-end;padding-right:11px}
+.notch i{width:6px;height:6px;border-radius:50%;background:#332F27;box-shadow:inset 0 0 2px #514B40}
+.statusbar{position:absolute;top:0;left:0;right:0;height:48px;z-index:45;display:flex;align-items:center;justify-content:space-between;padding:0 30px;font-family:var(--mono);font-size:11.5px;color:var(--ink);pointer-events:none}
+.statusbar .r{display:flex;align-items:center;gap:5px}
+.statusbar .bars{display:flex;gap:2px;align-items:flex-end}
+.statusbar .bars i{width:2.5px;background:var(--ink);border-radius:1px;display:block}
+.statusbar .bars i:nth-child(1){height:4px}.statusbar .bars i:nth-child(2){height:6px}
+.statusbar .bars i:nth-child(3){height:8px}.statusbar .bars i:nth-child(4){height:10px;opacity:.35}
+.batt{width:20px;height:10px;border:1px solid var(--ink);border-radius:3px;position:relative;opacity:.8}
+.batt::before{content:'';position:absolute;inset:1.5px;width:11px;background:var(--ink);border-radius:1.5px}
+.batt::after{content:'';position:absolute;right:-3px;top:3px;width:2px;height:4px;background:var(--ink);border-radius:0 1px 1px 0}
+
+/* ═══════ 屏幕 ═══════ */
+.viewport{position:absolute;inset:0;overflow:hidden}
+.screen{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding:54px 18px 96px;display:none;scrollbar-width:none}
+.screen::-webkit-scrollbar{display:none}
+.screen.active{display:block}
+.screen.active>*{animation:fade .46s cubic-bezier(.2,.7,.2,1) both}
+.screen.active>*:nth-child(1){animation-delay:.02s}
+.screen.active>*:nth-child(2){animation-delay:.05s}
+.screen.active>*:nth-child(3){animation-delay:.09s}
+.screen.active>*:nth-child(4){animation-delay:.13s}
+.screen.active>*:nth-child(5){animation-delay:.17s}
+.screen.active>*:nth-child(6){animation-delay:.21s}
+.screen.active>*:nth-child(7){animation-delay:.25s}
+.screen.active>*:nth-child(8){animation-delay:.29s}
+@keyframes fade{from{opacity:0;transform:translateY(13px)}to{opacity:1;transform:none}}
+
+.phead{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:17px}
+.phead h2{font-family:var(--serif);font-size:26px;font-weight:600;letter-spacing:-.01em;line-height:1}
+.phead .dt{font-family:var(--mono);font-size:9px;color:var(--mute);letter-spacing:.12em;text-align:right;line-height:1.7}
+.phead .dt b{color:var(--seal);font-weight:500}
+.back{all:unset;cursor:pointer;font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;color:var(--dim);display:flex;align-items:center;gap:6px;margin-bottom:14px;text-transform:uppercase}
+.back:hover{color:var(--seal)}
+.back span{font-size:15px;line-height:1}
+
+.sec{display:flex;align-items:baseline;justify-content:space-between;margin:22px 0 10px}
+.sec h3{font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--ink)}
+.sec h3 em{font-family:var(--mono);font-style:normal;font-size:8.5px;color:var(--mute);letter-spacing:.14em;margin-left:7px;text-transform:uppercase}
+.sec .more{font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);cursor:pointer}
+.sec .more:hover{color:var(--seal)}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:14px 15px;position:relative}
+.card.flat{background:var(--card2)}
+
+/* 档号标签 */
+.tab{position:absolute;top:-1px;left:14px;font-family:var(--mono);font-size:8px;letter-spacing:.16em;color:var(--mute);background:var(--paper);padding:2px 7px;border:1px solid var(--line);border-top:0;border-radius:0 0 4px 4px;text-transform:uppercase}
+
+/* 证据等级 */
+.ev{font-family:var(--mono);font-size:8.5px;letter-spacing:.08em;padding:2.5px 6px;border-radius:3px;border:1px solid;display:inline-block;vertical-align:middle;white-space:nowrap}
+.ev.e0{color:#8A8478;border-color:#BCB4A3;border-style:dashed}
+.ev.e1{color:var(--blue);border-color:#9CBBD6;background:rgba(44,95,138,.07)}
+.ev.e2{color:var(--down);border-color:#8FC7B4;background:rgba(30,122,94,.07)}
+.ev.e3{color:var(--seal);border-color:var(--sealLine);background:var(--sealSoft)}
+
+/* 印章 */
+.stamp{display:inline-flex;align-items:center;gap:4px;font-family:var(--serif);font-size:10px;font-weight:600;color:var(--seal);border:1.4px solid var(--seal);border-radius:3px;padding:2px 6px;letter-spacing:.06em;transform:rotate(-3deg);opacity:.9}
+
+/* 晨报 */
+.brief{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--seal);border-radius:11px;padding:14px 15px 12px}
+.brief .bh{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.brief .bh b{font-family:var(--serif);font-size:15px;font-weight:600}
+.brief .item{padding:10px 0;border-top:1px solid var(--hair)}
+.brief .item:first-of-type{border-top:0;padding-top:2px}
+.brief .item p{font-size:11.5px;line-height:1.75;color:#3A3833;font-weight:300;margin-bottom:7px}
+.brief .item p b{color:var(--ink);font-weight:500}
+.brief .item .mt{display:flex;align-items:center;gap:7px}
+.brief .item .mt i{font-family:var(--mono);font-style:normal;font-size:8.5px;color:var(--mute);letter-spacing:.06em}
+
+/* 待办 */
+.todo{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--hair)}
+.todo:last-child{border-bottom:0}
+.todo .ck{width:17px;height:17px;border:1.4px solid #BFB7A6;border-radius:4px;flex:0 0 auto;cursor:pointer;position:relative;transition:.2s}
+.todo .ck.on{background:var(--seal);border-color:var(--seal)}
+.todo .ck.on::after{content:'';position:absolute;left:5px;top:1.5px;width:4px;height:8px;border:solid #fff;border-width:0 1.8px 1.8px 0;transform:rotate(42deg)}
+.todo .tx{flex:1;min-width:0}
+.todo .tx b{font-size:12px;font-weight:500;display:block;margin-bottom:3px}
+.todo .tx span{font-size:9.5px;color:var(--mute);font-weight:300}
+.todo .min{font-family:var(--mono);font-size:9px;color:var(--mute);letter-spacing:.06em;white-space:nowrap}
+
+/* 风险条 */
+.rbar{display:flex;align-items:center;gap:10px;padding:9px 0}
+.rbar .nm{font-size:11px;color:var(--dim);width:66px;flex:0 0 auto;font-weight:300}
+.rbar .tr{flex:1;height:5px;background:#E8E3D8;border-radius:99px;overflow:hidden}
+.rbar .tr i{display:block;height:100%;width:0;border-radius:99px;transition:width .9s cubic-bezier(.2,.7,.2,1)}
+.rbar .vl{font-family:var(--mono);font-size:10px;width:44px;text-align:right;flex:0 0 auto}
+
+/* 组合 */
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -18px 15px;padding:0 18px}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;font-size:11.5px;padding:6px 13px;border-radius:99px;border:1px solid var(--line);color:var(--dim);background:var(--card);cursor:pointer;transition:.2s;font-family:var(--sans);font-weight:300}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#F3F0E8;font-weight:500}
+.hero .k{font-family:var(--mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute)}
+.hero .v{font-family:var(--serif);font-size:44px;line-height:1.08;font-weight:600;letter-spacing:-.02em;margin-top:4px}
+.hero .v small{font-size:19px;color:var(--dim);margin-right:2px;font-weight:400}
+.hero .d{font-family:var(--mono);font-size:11.5px;margin-top:5px}
+.up{color:var(--up)}.down{color:var(--down)}
+
+.chart{width:100%;height:112px;display:block;margin:8px 0 2px;overflow:visible}
+.chart .ln{fill:none;stroke:var(--seal);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.legend{display:flex;justify-content:space-between;font-family:var(--mono);font-size:8.5px;color:var(--mute);letter-spacing:.08em}
+
+/* 四象限 */
+.quad{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.quad div{background:var(--card);padding:11px 12px}
+.quad .t{font-size:10.5px;color:var(--dim);font-weight:300;margin-bottom:6px;line-height:1.4}
+.quad .n{font-family:var(--serif);font-size:23px;font-weight:600;line-height:1}
+.quad .n small{font-family:var(--mono);font-size:9px;color:var(--mute);font-weight:400;margin-left:3px}
+
+/* 指标格 */
+.mgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.mgrid div{background:var(--card);padding:11px 10px}
+.mgrid .k{font-size:9.5px;color:var(--mute);font-weight:300;margin-bottom:5px}
+.mgrid .v{font-family:var(--mono);font-size:14px;font-weight:500;letter-spacing:-.02em}
+
+/* 能力圈地图 */
+.egrid{display:grid;grid-template-columns:44px repeat(5,1fr);gap:3px;font-size:8.5px}
+.egrid .hx{font-family:var(--mono);color:var(--mute);font-size:7.5px;text-align:center;align-self:end;padding-bottom:3px;letter-spacing:.02em;line-height:1.3}
+.egrid .hy{font-size:9px;color:var(--dim);align-self:center;font-weight:300;padding-right:3px}
+.egrid .cl{aspect-ratio:1.5;border-radius:5px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;cursor:pointer;transition:.2s}
+.egrid .cl:hover{outline:1.5px solid var(--ink)}
+.egrid .cl.ns{background:repeating-linear-gradient(45deg,#EDE9DF,#EDE9DF 3px,#E4DFD3 3px,#E4DFD3 6px);color:var(--mute);font-size:8px}
+
+/* 挖掘入口 */
+.eng{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:14px 15px;margin-bottom:9px;cursor:pointer;transition:.22s;position:relative;overflow:hidden}
+.eng:hover{border-color:var(--sealLine);transform:translateX(2px)}
+.eng .t{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.eng .t b{font-family:var(--serif);font-size:16px;font-weight:600}
+.eng .t .no{font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;color:var(--seal);border:1px solid var(--sealLine);border-radius:99px;padding:2.5px 8px}
+.eng p{font-size:10.5px;line-height:1.7;color:var(--dim);font-weight:300;margin-bottom:9px}
+.eng .st{display:flex;gap:18px;border-top:1px solid var(--hair);padding-top:9px}
+.eng .st div{font-family:var(--mono);font-size:11.5px;font-weight:500}
+.eng .st div span{display:block;font-family:var(--sans);font-size:8.5px;color:var(--mute);font-weight:300;margin-top:2px}
+
+/* 证据图例 */
+.evrow{display:flex;gap:11px;padding:10px 0;border-bottom:1px solid var(--hair);align-items:flex-start}
+.evrow:last-child{border-bottom:0}
+.evrow .nm{width:66px;flex:0 0 auto;padding-top:1px}
+.evrow .tx{flex:1;font-size:10.5px;color:var(--dim);font-weight:300;line-height:1.65}
+.evrow .tx b{color:var(--ink);font-weight:500}
+
+/* Agent */
+.agent{display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--hair)}
+.agent:last-child{border-bottom:0}
+.agent .av{width:38px;height:38px;border-radius:9px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:15px;font-weight:600;background:var(--card2);border:1px solid var(--line);color:var(--dim)}
+.agent.new .av{background:var(--sealSoft);border-color:var(--sealLine);color:var(--seal)}
+.agent .tx{flex:1;min-width:0}
+.agent .tx b{font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.agent .tx .nt{font-family:var(--mono);font-size:7.5px;letter-spacing:.1em;color:#fff;background:var(--seal);border-radius:2px;padding:1.5px 4px;font-weight:400}
+.agent .tx p{font-size:10.5px;color:var(--dim);font-weight:300;line-height:1.65}
+.agent .tx .st{font-family:var(--mono);font-size:9px;color:var(--mute);margin-top:5px}
+
+/* 大师模板 */
+.master{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--hair)}
+.master:last-child{border-bottom:0}
+.master .nm{flex:1;min-width:0}
+.master .nm b{font-size:11.5px;font-weight:500;display:block;margin-bottom:3px}
+.master .nm span{font-family:var(--mono);font-size:8.5px;color:var(--mute);letter-spacing:.04em}
+.master .hit{font-family:var(--mono);font-size:10px;color:var(--seal);text-align:right;white-space:nowrap;line-height:1.4}
+.master .hit span{display:block;font-size:8px;color:var(--mute)}
+
+/* 步骤 */
+.steps{position:relative;padding-left:22px}
+.steps::before{content:'';position:absolute;left:6px;top:6px;bottom:8px;width:1px;background:var(--line)}
+.step{position:relative;padding-bottom:15px}
+.step:last-child{padding-bottom:0}
+.step::before{content:'';position:absolute;left:-22px;top:4px;width:9px;height:9px;border-radius:50%;background:var(--card);border:1.5px solid var(--line)}
+.step.done::before{background:var(--seal);border-color:var(--seal)}
+.step b{font-size:11.5px;font-weight:500;display:block;margin-bottom:4px}
+.step p{font-size:10.5px;color:var(--dim);font-weight:300;line-height:1.65}
+
+/* 代码块 */
+.code{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:11px 12px;font-family:var(--mono);font-size:9.5px;line-height:1.85;color:#3A3833;overflow-x:auto;white-space:pre}
+.code b{color:var(--seal);font-weight:500}
+.code i{color:var(--mute);font-style:normal}
+
+/* 传导链 */
+.chain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:10.5px}
+.chain span{padding:5px 9px;border-radius:6px;background:var(--card2);border:1px solid var(--line);color:var(--dim);font-weight:300}
+.chain span.hot{background:var(--sealSoft);border-color:var(--sealLine);color:var(--seal);font-weight:500}
+.chain em{color:var(--mute);font-style:normal;font-size:10px}
+
+/* 影响力排序 */
+.imp{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--hair)}
+.imp:last-child{border-bottom:0}
+.imp .rk{font-family:var(--mono);font-size:9px;color:var(--mute);width:14px}
+.imp .nm{flex:1;font-size:11.5px;font-weight:400}
+.imp .nm span{display:block;font-family:var(--mono);font-size:8.5px;color:var(--mute);margin-top:2px;letter-spacing:.04em}
+.imp .tr{width:74px;height:5px;background:#E8E3D8;border-radius:99px;overflow:hidden;flex:0 0 auto}
+.imp .tr i{display:block;height:100%;width:0;border-radius:99px;transition:width .9s cubic-bezier(.2,.7,.2,1)}
+.imp .vl{font-family:var(--mono);font-size:10.5px;width:34px;text-align:right}
+.warnbox{display:flex;gap:8px;font-size:10.5px;line-height:1.7;color:var(--dim);font-weight:300;background:var(--card2);border:1px dashed #C9C1B0;border-radius:8px;padding:10px 12px;margin-top:10px}
+.warnbox b{color:var(--seal);font-weight:500}
+
+/* 知识层 */
+.layer{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--hair)}
+.layer:last-child{border-bottom:0}
+.layer .ix{font-family:var(--mono);font-size:9px;color:var(--mute);width:16px}
+.layer .nm{flex:1}
+.layer .nm b{font-size:11.5px;font-weight:500;display:block;margin-bottom:2px}
+.layer .nm span{font-size:9.5px;color:var(--mute);font-weight:300}
+.layer .ct{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--ink)}
+
+/* 预算条 */
+.bud{height:7px;background:#E8E3D8;border-radius:99px;overflow:hidden;margin:9px 0 7px}
+.bud i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--seal),#C4695C);transition:width 1s cubic-bezier(.2,.7,.2,1)}
+
+/* ── 海外参照组件 S1–S5 ── */
+/* S1 组合健康度 */
+.health{display:flex;align-items:center;gap:15px;margin-bottom:12px}
+.hsc{flex:0 0 auto;text-align:center;padding:9px 15px;border:1.4px solid var(--sealLine);border-radius:10px;background:var(--sealSoft)}
+.hn{font-family:var(--serif);font-size:34px;font-weight:600;color:var(--seal);line-height:1}
+.hk{font-family:var(--mono);font-size:8px;color:var(--mute);letter-spacing:.14em;margin-top:3px}
+.hmeta{flex:1;min-width:0}
+.hmeta .hd{font-family:var(--mono);font-size:10px;margin-bottom:5px}
+.hmeta p{font-size:10.5px;line-height:1.7;color:var(--dim);font-weight:300}
+.hmeta p b{color:var(--ink);font-weight:500}
+.hbar{height:6px;background:#E8E3D8;border-radius:99px;overflow:hidden;margin:2px 0 11px}
+.hbar i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#C4695C,var(--seal));transition:width 1s cubic-bezier(.2,.7,.2,1)}
+.hsub{display:flex;border-top:1px solid var(--hair);padding-top:10px}
+.hsub div{flex:1;text-align:center;font-family:var(--mono);font-size:13px;font-weight:500}
+.hsub div span{display:block;font-family:var(--sans);font-size:8.5px;color:var(--mute);font-weight:300;margin-top:2px}
+
+/* S2 持仓评分卡 */
+.gtable{display:grid;grid-template-columns:1.55fr repeat(6,1fr);gap:4px 4px;align-items:center}
+.gtable .gh{font-family:var(--mono);font-size:7.5px;color:var(--mute);letter-spacing:.05em;text-align:center;line-height:1.35}
+.gtable .gh:first-child{text-align:left}
+.gtable .gh.you{color:var(--seal)}
+.gtable .gn{font-size:10.5px;font-weight:500;line-height:1.3}
+.gtable .gn span{display:block;font-family:var(--mono);font-size:7.5px;color:var(--mute);font-weight:400;margin-top:1px;letter-spacing:.02em}
+.g{font-family:var(--mono);font-size:9.5px;text-align:center;padding:4.5px 0;border-radius:5px;border:1px solid transparent;font-weight:500}
+.g.ga{color:var(--down);background:rgba(30,122,94,.10);border-color:rgba(30,122,94,.25)}
+.g.gb{color:#4C7A5E;background:rgba(30,122,94,.05);border-color:rgba(30,122,94,.14)}
+.g.gc{color:#8A6D2F;background:rgba(178,140,60,.09);border-color:rgba(178,140,60,.25)}
+.g.gd{color:#B05A4A;background:rgba(196,105,92,.10);border-color:rgba(196,105,92,.28)}
+.g.gns{color:var(--mute);background:var(--card2);border-style:dashed;border-color:#C9C1B0;font-size:8px}
+.g.you{border-width:1.4px}
+
+/* S3 多视角评级 */
+.pv{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--hair)}
+.pv:last-of-type{border-bottom:0}
+.pv .src{width:72px;flex:0 0 auto;font-size:10px;color:var(--dim);font-weight:400;line-height:1.4;padding-top:2px}
+.pv .src span{display:block;font-family:var(--mono);font-size:7.5px;color:var(--mute);margin-top:2px;letter-spacing:.03em}
+.pv .gd{font-family:var(--serif);font-size:17px;font-weight:600;width:42px;flex:0 0 auto;text-align:center}
+.pv .why{flex:1;font-size:10px;color:var(--dim);font-weight:300;line-height:1.6;padding-top:3px}
+.pv .why b{color:var(--ink);font-weight:500}
+
+/* S4 结论战绩 */
+.rec{font-family:var(--mono);font-size:8px;letter-spacing:.03em;color:var(--dim);border:1px solid var(--line);border-radius:99px;padding:2px 7px;background:var(--card2);white-space:nowrap}
+.rec b{color:var(--seal);font-weight:500}
+.brief .item .mt .rec{margin-left:auto}
+
+/* S6 基准对比 */
+.bench{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:9px;color:var(--mute);letter-spacing:.03em;margin-top:9px;padding:9px 11px;background:var(--card2);border:1px solid var(--line);border-radius:8px}
+.bench b{font-size:10.5px;font-weight:500}
+
+/* ── V3 多市场组件 ── */
+.mkt{display:inline-block;font-family:var(--mono);font-size:7px;letter-spacing:.08em;border:1px solid;border-radius:3px;padding:1px 4px;margin-left:5px;vertical-align:1px;font-style:normal;font-weight:400}
+.mk-a{color:#8A6D2F;border-color:rgba(178,140,60,.55);background:rgba(178,140,60,.08)}
+.mk-h{color:#A93226;border-color:rgba(169,50,38,.45);background:rgba(169,50,38,.07)}
+.mk-us{color:#2C5F8A;border-color:#9CBBD6;background:rgba(44,95,138,.07)}
+.mk-etf{color:#1E7A5E;border-color:#8FC7B4;background:rgba(30,122,94,.07)}
+.mk-of{color:#6E6859;border-color:#BCB4A3;background:var(--card2)}
+.flag{display:inline-block;font-family:var(--mono);font-size:6.5px;color:var(--seal);border:1px dashed var(--sealLine);border-radius:3px;padding:1px 3.5px;margin-left:4px;vertical-align:1px;letter-spacing:.02em;white-space:nowrap}
+.flag.gray{color:var(--mute);border-color:#C9C1B0}
+.mkbar{display:flex;height:15px;border-radius:5px;overflow:hidden;border:1px solid var(--line);margin:4px 0 8px}
+.mkbar i{display:block;height:100%;transition:width 1s cubic-bezier(.2,.7,.2,1)}
+.mkleg{display:flex;flex-wrap:wrap;gap:5px 13px;font-family:var(--mono);font-size:8.5px;color:var(--dim)}
+.mkleg span{display:flex;align-items:center;gap:5px}
+.mkleg b{display:inline-block;width:8px;height:8px;border-radius:2px;flex:0 0 auto}
+.fgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.fgrid div{background:var(--card);padding:8px 6px}
+.fgrid .k{font-size:8px;color:var(--mute);font-weight:300;margin-bottom:4px;line-height:1.35}
+.fgrid .v{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:-.01em}
+.ftitle{display:flex;align-items:center;justify-content:space-between;margin:12px 0 7px}
+.ftitle:first-child{margin-top:0}
+.ftitle b{font-size:11px;font-weight:500}
+.ftitle b span{font-family:var(--mono);font-size:8px;color:var(--mute);font-weight:400;margin-left:5px}
+.ftitle .gr{font-family:var(--serif);font-size:15px;font-weight:600}
+
+/* 底栏 */
+.tabbar{position:absolute;left:0;right:0;bottom:0;height:78px;z-index:40;display:flex;align-items:flex-start;padding:9px 5px 0;
+  background:rgba(251,250,246,.94);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid var(--line)}
+.tabbar button{all:unset;cursor:pointer;flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding-top:5px;color:#A79F8E;transition:.2s}
+.tabbar button svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.tabbar button span{font-size:9.5px;font-weight:300;letter-spacing:.04em}
+.tabbar button.on{color:var(--seal)}
+.tabbar button.on span{font-weight:500}
+.homebar{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:124px;height:4px;border-radius:99px;background:rgba(28,27,24,.25);z-index:41}
+@media(max-width:830px){body{padding:20px 14px;gap:32px}.meta{width:100%;max-width:382px}}
+</style>
+</head>
+<body>
+
+<aside class="meta">
+  <div class="kick">Redesign · v3.1 · Multi-Market</div>
+  <h1>个人投资引擎<br><em>一个人的虚拟研究所</em></h1>
+  <p class="sub">
+    基于 <b>华创金工 Seek-Alpha</b> 的设计理念与挖掘方法论，
+    以「<b>个人投资引擎</b>」为定位重新设计，
+    并参照海外 <b>Seeking Alpha</b> 的评分与信任机制。<br>
+    核心转向：<b>从「只向外挖」到「向内挖 + 向外接」</b><br>
+    V3 多市场版：<b>A股 / 港股 / 美股 + 场内外基金</b>，双引擎与多币种记账
+  </p>
+  <div class="rule"></div>
+  <div class="lbl">Screens</div>
+  <div class="navlist" id="navlist">
+    <button data-go="today" class="on"><i>01</i>今日 · 待办与晨报</button>
+    <button data-go="holdings"><i>02</i>持仓 · 向内归因</button>
+    <button data-go="mining"><i>03</i>挖掘 · 三个引擎</button>
+    <button data-go="desk"><i>04</i>研究所 · AI 团队</button>
+    <button data-go="me"><i>05</i>我的 · 知识与预算</button>
+  </div>
+  <div class="rule"></div>
+  <div class="lbl">What changed · V3</div>
+  <div class="two">
+    <div><b>A/H/US</b>三市场多币种</div>
+    <div><b>双引擎</b>核心因子+20日信号</div>
+    <div><b>体检卡</b>场内外基金五项</div>
+    <div><b>分离</b>汇兑损益单列</div>
+  </div>
+  <div class="lbl" style="margin-top:16px">From Seeking Alpha · S1–S6</div>
+  <div class="navlist" style="gap:5px">
+    <button style="pointer-events:none;cursor:default;padding:3px 0"><i>S1</i>组合健康度</button>
+    <button style="pointer-events:none;cursor:default;padding:3px 0"><i>S2</i>持仓五维评分卡（多市场）+ 你的战绩</button>
+    <button style="pointer-events:none;cursor:default;padding:3px 0"><i>S3</i>多视角评级并列</button>
+    <button style="pointer-events:none;cursor:default;padding:3px 0"><i>S4</i>结论战绩锚定可信度</button>
+    <button style="pointer-events:none;cursor:default;padding:3px 0"><i>S5</i>券商直连自动同步</button>
+    <button style="pointer-events:none;cursor:default;padding:3px 0"><i>S6</i>透明业绩与基准对比</button>
+  </div>
+  <div class="tags">
+    <span>错题挖掘</span><span>能力圈挖掘</span><span>策略克隆</span>
+    <span>风险官</span><span>纪律官</span><span>MCP 出口</span>
+    <span>多市场记账</span><span>AH溢价</span><span>基金体检</span>
+  </div>
+  <div class="disc">
+    <b>演示说明</b>：界面内所有持仓、收益、回测、能力圈数值均为<b>设计演示用模拟数据</b>，非真实市场数据，不构成投资建议。
+  </div>
+</aside>
+
+<div class="device">
+  <div class="notch"><i></i></div>
+  <div class="statusbar">
+    <span>07:52</span>
+    <span class="r">
+      <span class="bars"><i></i><i></i><i></i><i></i></span>
+      <svg width="14" height="11" viewBox="0 0 14 11" style="fill:currentColor"><path d="M7 9.6 4.9 7.4a3 3 0 0 1 4.2 0L7 9.6Z"/><path d="M7 6.1a5.4 5.4 0 0 0-3.8 1.5L1.8 6.2a7.5 7.5 0 0 1 10.4 0l-1.4 1.4A5.4 5.4 0 0 0 7 6.1Z" opacity=".55"/></svg>
+      <span class="batt"></span>
+    </span>
+  </div>
+
+  <div class="viewport">
+
+    <!-- ══ 01 今日 ══ -->
+    <section class="screen active" id="s-today">
+      <div class="phead"><h2>今日</h2><div class="dt">档号 AP-2609-30<br><b>09-30 周三</b></div></div>
+
+      <div class="brief">
+        <div class="bh"><b>晨报</b><span class="ev e2">E2 结构化数据</span></div>
+        <div class="item">
+          <p>北向资金连续 3 日净流入，落在<b>银行与电力</b>。你的组合对该方向重合度 <b>62%</b>，红利因子暴露处于近一年 <b>78 分位</b>。</p>
+          <div class="mt"><span class="ev e2">E2</span><i>DataHub · 2026-09-30 · lg_9a02f1</i><span class="rec">该类结论命中 <b>72%</b> · 36 次</span></div>
+        </div>
+        <div class="item">
+          <p>恒生 <b>AH 溢价指数 148.3</b>，处近一年 <b>82 分位</b>——你的 H 仓占比 14%，两地上市持仓已附溢价角标。美股财报季开启，持仓内 <b>2 家</b>公司本周披露 guidance。</p>
+          <div class="mt"><span class="ev e2">E2</span><i>DataHub · AH溢价/guidance · 2026-09-30</i></div>
+        </div>
+        <div class="item">
+          <p>你的「高股息核心」近 5 笔调仓中，有 <b>3 笔的逻辑与结果错配</b>——纪律官已归档，建议补录决策理由。</p>
+          <div class="mt"><span class="ev e3">E3 实盘验证</span><i>样本 5 笔 · 2026-04 至 2026-09</i></div>
+        </div>
+        <div class="item">
+          <p>市场传闻某龙头厂商上调资本开支指引，可能传导至<b>服务器与光模块</b>环节。</p>
+          <div class="mt"><span class="ev e1">E1 公开资料</span><i>需原文核实 · 尚未进入可执行</i><span class="rec">同类传闻命中 <b>41%</b> · 17 次</span></div>
+        </div>
+      </div>
+
+      <div class="sec"><h3>持仓风险 <em>风险官</em></h3><div class="more">详情</div></div>
+      <div class="card">
+        <div class="rbar"><div class="nm">行业集中度</div><div class="tr"><i data-w="72" style="background:var(--up)"></i></div><div class="vl up">偏高</div></div>
+        <div class="rbar"><div class="nm">风格暴露</div><div class="tr"><i data-w="78" style="background:var(--up)"></i></div><div class="vl up">78 分位</div></div>
+        <div class="rbar"><div class="nm">利率敏感</div><div class="tr"><i data-w="61" style="background:#C4695C"></i></div><div class="vl">+0.61</div></div>
+        <div class="rbar"><div class="nm">汇率敞口</div><div class="tr"><i data-w="42" style="background:#C4695C"></i></div><div class="vl">中</div></div>
+        <div class="warnbox"><span>⚠</span><div>红利因子拥挤度已进入 <b>近一年 91 分位</b>。历史上该分位持续 20 日后，板块有较大概率进入震荡。<b>历史统计类比，非预测。</b></div></div>
+      </div>
+
+      <div class="sec"><h3>今日待办 <em>4 项 · 约 5 分钟</em></h3><div class="more">全部</div></div>
+      <div class="card">
+        <div class="todo"><div class="ck" onclick="this.classList.toggle('on')"></div>
+          <div class="tx"><b>补录 2 笔调仓决策理由</b><span>缺失决策日志将无法进入错题挖掘</span></div><div class="min">2 min</div></div>
+        <div class="todo"><div class="ck" onclick="this.classList.toggle('on')"></div>
+          <div class="tx"><b>确认腾讯控股减仓评估单</b><span>引擎 B · MA20 下穿 −2.1% · 冷却期 10 日</span></div><div class="min">1 min</div></div>
+        <div class="todo"><div class="ck" onclick="this.classList.toggle('on')"></div>
+          <div class="tx"><b>确认低波红利再平衡信号</b><span>5 进 5 出 · 预计换手 8.4%</span></div><div class="min">1 min</div></div>
+        <div class="todo"><div class="ck" onclick="this.classList.toggle('on')"></div>
+          <div class="tx"><b>查看 AI 算力主题资金异动</b><span>资金 +18.4 亿 · 触发订阅规则</span></div><div class="min">1 min</div></div>
+      </div>
+      <div class="sec"></div>
+    </section>
+
+    <!-- ══ 02 持仓 ══ -->
+    <section class="screen" id="s-holdings">
+      <div class="phead"><h2>持仓</h2><div class="dt">3 个组合 · A/H/US<br><b>多市场 · 向内归因</b></div></div>
+
+      <div class="chips" id="pfChips">
+        <button class="chip" onclick="swpf('dividend',this)">高股息核心</button>
+        <button class="chip on" onclick="swpf('global',this)">全球成长</button>
+        <button class="chip">美债对冲</button>
+        <button class="chip">+ 新建</button>
+      </div>
+
+      <div class="hero" id="pfHero">
+        <div class="k">Total Value · CNY（本币折算）</div>
+        <div class="v"><small>¥</small>986,400</div>
+        <div class="d up">+8,340 今日 &nbsp;·&nbsp; +0.85%</div>
+      </div>
+      <div style="font-family:var(--mono);font-size:8.5px;color:var(--mute);margin-top:6px;letter-spacing:.03em">
+        含港股 HKD · 美股 USD · 场内外基金 — 按当日中间价折算 · 汇兑损益单列 <span class="flag">V3 多币种记账</span>
+      </div>
+
+      <div class="sec"><h3>组合健康度 <em>借鉴 Seeking Alpha</em></h3><div class="more">S1</div></div>
+      <div class="card">
+        <div class="health">
+          <div class="hsc"><div class="hn" id="hNum">74</div><div class="hk">HEALTH</div></div>
+          <div class="hmeta">
+            <div class="hd down" id="hDelta">较上周 +2</div>
+            <p>持仓评分的加权聚合（基金按体检等级折算、穿透后并入）。对应 Seeking Alpha 的 <b>Portfolio Health Score</b>——把个股评级上升为「<b>我的组合健康度</b>」，一屏一结论。</p>
+          </div>
+        </div>
+        <div class="hbar"><i data-w="74" id="hBar"></i></div>
+        <div class="hsub" id="hSub">
+          <div>7<span>持仓数</span></div>
+          <div class="down">5<span>评分 ≥ B</span></div>
+          <div style="color:#C4695C">1<span>待复核</span></div>
+          <div class="up">-0.7%<span>汇率贡献</span></div>
+        </div>
+        <div class="warnbox"><span>◇</span><div>「某新能源」评分连续 2 周降至 <b>D</b>，且处于你的<b>能力圈外</b>——已生成今日待办。</div></div>
+      </div>
+
+      <div class="sec"><h3>分市场市值 <em>mv_by_market</em></h3><div class="more">折算口径</div></div>
+      <div class="card">
+        <div class="mkbar" id="mkBar"></div>
+        <div class="mkleg" id="mkLeg"></div>
+        <div class="bench" style="margin-top:9px">HKD/CNY 0.9163 · USD/CNY 7.118 · 中间价 · 央行/FRED · 2026-09-30</div>
+      </div>
+
+      <svg class="chart" viewBox="0 0 340 112" preserveAspectRatio="none">
+        <defs><linearGradient id="pa" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="rgba(169,50,38,.20)"/><stop offset="1" stop-color="rgba(169,50,38,0)"/></linearGradient></defs>
+        <path id="areaP" fill="url(#pa)"/>
+        <path class="ln" id="lineP"/>
+      </svg>
+      <div class="legend"><span>2025-10</span><span>2026-01</span><span>2026-05</span><span>2026-09</span></div>
+
+      <div class="sec"><h3>信号增强 <em>引擎 B · 20 日窗口</em></h3><div class="more">A/B 对照</div></div>
+      <div class="card" id="sigCard"></div>
+
+      <div class="sec"><h3>决策四象限 <em>纪律官</em></h3><div class="more">近 12 月 22 笔</div></div>
+      <div class="quad">
+        <div><div class="t">逻辑对 · 结果对</div><div class="n up">9<small>笔</small></div></div>
+        <div><div class="t">逻辑对 · 结果错</div><div class="n">6<small>笔</small></div></div>
+        <div><div class="t">逻辑错 · 结果对</div><div class="n" style="color:#C4695C">4<small>笔</small></div></div>
+        <div><div class="t">逻辑错 · 结果错</div><div class="n down">3<small>笔</small></div></div>
+      </div>
+      <div class="warnbox"><span>⚠</span><div>"逻辑错 · 结果对"的 4 笔已被纪律官标记为<b>运气盈利</b>——它们会污染你的胜率认知，建议复核当时的买入理由。</div></div>
+
+      <div class="sec"><h3>绩效概览</h3><div class="more">近 1 年</div></div>
+      <div class="mgrid">
+        <div><div class="k">年化收益</div><div class="v up">+16.2%</div></div>
+        <div><div class="k">最大回撤</div><div class="v down">-11.8%</div></div>
+        <div><div class="k">夏普比率</div><div class="v">1.18</div></div>
+        <div><div class="k">年化波动</div><div class="v">13.9%</div></div>
+        <div><div class="k">股息率</div><div class="v">2.3%</div></div>
+        <div><div class="k">换手率</div><div class="v">38%</div></div>
+      </div>
+      <div class="bench" id="pfBench">基准 复合（沪深300×45 + 恒生×20 + 纳指100×30 + 现金×5）<b class="up">+11.2%</b> · 超额 <b class="up">+5.0%</b> · 区间 2025-10~2026-09 · 含成本与汇兑 <span>S6 透明业绩</span></div>
+
+      <div class="sec"><h3>持仓评分卡 <em>五维 + 你的战绩 · 多市场</em></h3><div class="more">S2</div></div>
+      <div class="card">
+        <div class="gtable" id="gtable"></div>
+        <div class="warnbox"><span>◇</span><div>前五维对应 Seeking Alpha 的 <b>Factor Grades</b>；<b>基金不参与五维打分</b>，首格显示体检等级。等级只在<b>各自市场同业内可比</b>（申万二级 / HSICS / GICS 分位），跨市场仅做展示层聚合；第六维「<b>你的战绩</b>」是个人引擎独有。</div></div>
+      </div>
+
+      <div class="sec"><h3>基金体检 <em>ETF · 场外 · 不做五维</em></h3><div class="more">V3</div></div>
+      <div class="card" id="fundCard"></div>
+
+      <div class="sec"><h3>向内归因 <em>Brinson 扩展</em></h3><div class="more">含汇率效应</div></div>
+      <div class="card" id="attrCard"></div>
+
+      <div class="sec"></div>
+      <div class="eng" onclick="go('edge')">
+        <div class="t"><b>能力圈挖掘</b><span class="no">向内挖 · E2</span></div>
+        <p>你在哪类标的、哪个持有周期上真的赚钱？哪些格子你其实没有样本？</p>
+        <div class="st"><div>已覆盖 18 格<span>行业 × 持有周期</span></div><div style="color:var(--seal)">查看地图 →</div></div>
+      </div>
+      <div class="sec"></div>
+    </section>
+
+    <!-- ══ 02b 能力圈地图 ══ -->
+    <section class="screen" id="s-edge">
+      <button class="back" onclick="go('holdings')"><span>‹</span> 返回持仓</button>
+      <div class="phead"><h2>能力圈地图</h2><div class="dt">E2 · 结构化数据<br><b>样本 142 笔</b></div></div>
+
+      <div class="card">
+        <div class="egrid" id="edgeGrid"></div>
+        <div class="legend" style="margin-top:12px;font-size:8px">
+          <span style="color:var(--down)">■ 稳定盈利</span><span style="color:#C4695C">■ 持续亏损</span>
+          <span style="color:var(--mute)">▨ 无样本</span><span>颜色深浅 = 年化贡献</span>
+        </div>
+      </div>
+
+      <div class="sec"><h3>结论 <em>纪律官</em></h3><div class="more">E2</div></div>
+      <div class="card">
+        <div class="step done" style="padding-bottom:13px"><b>你的真实能力圈：电力 · 银行 · 煤炭（3 个月以上持有）</b>
+          <p>这三个格子的年化贡献均为正且稳定，样本量充足（合计 61 笔），是你可复制的能力范围。</p></div>
+        <div class="step done" style="padding-bottom:13px"><b>已识别亏损区：半导体 · 新能源（任意周期）</b>
+          <p>合计 34 笔，均为负贡献。其中短期持有（&lt;1 月）亏损最集中。</p></div>
+        <div class="step"><b>无样本区：医药 · 消费</b>
+          <p>仅 3 笔交易，<b>样本不足，不可下结论</b>。系统不会给出任何评价。</p></div>
+        <div class="warnbox"><span>⚠</span><div>你在<b>能力圈外</b>的操作（半导体/新能源）贡献了 <b>-7.3%</b> 的年化拖累。建议设置边界外操作预警。</div></div>
+        <div class="acts" style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn" onclick="alert('已开启：将在你买入能力圈外标的时提醒')">开启边界预警</button>
+        </div>
+      </div>
+
+      <div class="sec"><h3>样本充足性说明</h3><div class="more">方法</div></div>
+      <div class="card flat" style="font-size:10.5px;line-height:1.85;color:var(--dim);font-weight:300">
+        能力圈结论仅在单元格样本量 ≥ 10 笔时给出评价；样本 3–9 笔标注「样本偏少」；低于 3 笔一律标注「样本不足，不可下结论」。
+        这是对 SeekAlpha「置信度」机制的反向应用——<b style="color:var(--ink)">对你自己也标注可信度</b>。
+      </div>
+      <div class="sec"></div>
+    </section>
+
+    <!-- ══ 03 挖掘 ══ -->
+    <section class="screen" id="s-mining">
+      <div class="phead"><h2>挖掘</h2><div class="dt">向内挖 3 · 向外接 3<br><b>证据分级</b></div></div>
+
+      <div class="sec" style="margin-top:0"><h3>证据分级 <em>每条结论自带可信度</em></h3><div class="more">规则</div></div>
+      <div class="card">
+        <div class="evrow"><div class="nm"><span class="ev e0">E0</span></div><div class="tx"><b>纯推测</b> · 模型推断无外部依据。仅作为待验证假设，不可执行。</div></div>
+        <div class="evrow"><div class="nm"><span class="ev e1">E1</span></div><div class="tx"><b>公开资料</b> · 引用新闻/研报/公告，可点开原文核对。</div></div>
+        <div class="evrow"><div class="nm"><span class="ev e2">E2</span></div><div class="tx"><b>结构化数据</b> · 引用行情/财务/宏观库，带数据血缘。可执行动作的最低门槛。</div></div>
+        <div class="evrow"><div class="nm"><span class="ev e3">E3</span></div><div class="tx"><b>实盘验证</b> · 结论来自你自己的交易记录或已验证回测，必须标注样本量。</div></div>
+      </div>
+
+      <div class="sec"><h3>双引擎 <em>核心定持仓 · 信号定时机</em></h3><div class="more">V3</div></div>
+
+      <div class="eng" onclick="go('holdings')">
+        <div class="t"><b>引擎 A · 中长期核心因子</b><span class="no">买什么</span></div>
+        <p>估值 · 质量 · 成长 · 动量(12-1) · 低波红利五族，周~季频再平衡，驱动选股与组合构建——目标持仓永远由它决定。</p>
+        <div class="st"><div>23 个因子<span>active · A 股</span></div><div>6 个<span>HK/US 检验中</span></div><div style="color:var(--seal)">因子注册中心 →</div></div>
+      </div>
+
+      <div class="eng" onclick="go('holdings')">
+        <div class="t"><b>引擎 B · 20 日信号增强</b><span class="no">何时动</span></div>
+        <p>趋势突破 · 动量反转 · 量价共振 · 波动 Regime · 资金确认；持有窗口 10–30 个交易日，日频计算、事件式触发，<b>只增强、不决策</b>。</p>
+        <div class="st"><div>11 个信号<span>factor_type: signal</span></div><div>+2.1pct<span>A/B 对照增强</span></div><div style="color:var(--seal)">今日信号 →</div></div>
+      </div>
+
+      <div class="sec"><h3>向内挖 <em>个人引擎的核心</em></h3><div class="more">3 个引擎</div></div>
+
+      <div class="eng" onclick="go('clone')">
+        <div class="t"><b>错题挖掘</b><span class="no">E1</span></div>
+        <p>把你的每笔决策与事后结果对账，聚类出「重复犯的错」，并在你下次即将重犯时拦住你。</p>
+        <div class="st"><div>3 个重复错误<span>近 12 月</span></div><div style="color:var(--seal)">已识别</div></div>
+      </div>
+
+      <div class="eng" onclick="go('edge')">
+        <div class="t"><b>能力圈挖掘</b><span class="no">E2</span></div>
+        <p>对全部历史交易分组归因，画出你真正赚钱的格子，并标出无样本区。</p>
+        <div class="st"><div>18 个格子<span>已覆盖</span></div><div style="color:var(--seal)">查看地图</div></div>
+      </div>
+
+      <div class="eng" onclick="go('clone')">
+        <div class="t"><b>策略克隆</b><span class="no">E3</span></div>
+        <p>把你标记为「满意」的历史交易反向工程成可复现策略——复现的对象是<b>你自己</b>，不是大师。</p>
+        <div class="st"><div>12 笔满意交易<span>可克隆</span></div><div style="color:var(--seal)">开始克隆</div></div>
+      </div>
+
+      <div class="sec"><h3>向外接 <em>继承 SeekAlpha</em></h3><div class="more">3 项</div></div>
+      <div class="eng" onclick="go('event')">
+        <div class="t"><b>事件影响分析</b><span class="no">保留</span></div>
+        <p>影响路径 · 传导链条 · 受益受损环节 · 影响程度 · 时间窗口，并<b>按对我的持仓影响排序</b>。</p>
+        <div class="st"><div>2 条待读<span>今日</span></div><div style="color:var(--seal)">查看</div></div>
+      </div>
+      <div class="eng" onclick="go('desk')">
+        <div class="t"><b>大师法则模板</b><span class="no">改造</span></div>
+        <p>34 位大师法则不再是「看板」，而是一键套用到<b>我的自选池</b>，回答"我的池子里有几只符合"。</p>
+        <div class="st"><div>34 条法则<span>可套用</span></div><div style="color:var(--seal)">去研究所</div></div>
+      </div>
+      <div class="eng">
+        <div class="t"><b>形态学与择时信号</b><span class="no">并入引擎 B</span></div>
+        <p>宽基 / 行业 / 风格 / 概念择时——短周期量价信号（含 101 Alphas 沙盒）经 A 股化检验后，择优升级为引擎 B 信号因子。</p>
+        <div class="st"><div>3 个信号<span>本周</span></div><div style="color:var(--mute)">查看</div></div>
+      </div>
+      <div class="sec"></div>
+    </section>
+
+    <!-- ══ 03b 策略克隆 ══ -->
+    <section class="screen" id="s-clone">
+      <button class="back" onclick="go('mining')"><span>‹</span> 返回挖掘</button>
+      <div class="phead"><h2>策略克隆</h2><div class="dt">复现你自己<br><b>12 笔满意交易</b></div></div>
+
+      <div class="sec" style="margin-top:0"><h3>克隆流程</h3><div class="more">5 步</div></div>
+      <div class="card">
+        <div class="steps">
+          <div class="step done"><b>选择样本集</b><p>已选 12 笔你标记为「满意」的历史交易（2025-03 至 2026-08）。</p></div>
+          <div class="step done"><b>特征提取</b><p>从这 12 笔中提取共同特征：买入时 PE 分位、ROE、股息率、行业、持有周期、买入前的资金流状态。</p></div>
+          <div class="step done"><b>生成候选规则</b><p>归纳出可编码的选股与交易条件，见下方 DSL。</p></div>
+          <div class="step"><b>回测验证</b><p>用同一套回测引擎验证（含成本、涨跌停、T+1），并与你自己的实盘记录交叉核对。</p></div>
+          <div class="step"><b>输出置信度</b><p>沿用 SeekAlpha 的置信度思想：衡量规则是否被<b>完整复现</b>，而非收益高低。</p></div>
+        </div>
+      </div>
+
+      <div class="sec"><h3>提取出的规则 <em>我的策略 v1</em></h3><div class="more">DSL</div></div>
+      <div class="code">universe: 我的自选池 + 沪深300
+filter:
+  <b>pe_percentile_5y &lt; 45</b>      <i># 12/12 笔命中</i>
+  <b>roe_ttm &gt; 11</b>              <i># 11/12 笔命中</i>
+  <b>dividend_yield &gt; 3.2</b>      <i># 10/12 笔命中</i>
+  industry in [电力, 银行, 煤炭]   <i># 12/12 笔命中</i>
+hold:
+  <b>周期 ≥ 90 天</b>              <i># 你的盈利集中区</i>
+exit: 估值分位 &gt; 80 或 基本面恶化</div>
+
+      <div class="sec"><h3>克隆结果</h3><div class="more">置信度</div></div>
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div><div style="font-family:var(--mono);font-size:9px;letter-spacing:.18em;color:var(--mute)">CONFIDENCE</div>
+            <div style="font-family:var(--serif);font-size:30px;font-weight:600;margin-top:4px">高</div></div>
+          <div style="text-align:right"><div style="font-family:var(--mono);font-size:9px;color:var(--mute)">规则完整复现率</div>
+            <div style="font-family:var(--mono);font-size:19px;color:var(--seal);margin-top:5px">10 / 12</div></div>
+        </div>
+        <div class="mgrid">
+          <div><div class="k">克隆后年化</div><div class="v up">+13.2%</div></div>
+          <div><div class="k">最大回撤</div><div class="v down">-8.9%</div></div>
+          <div><div class="k">样本外验证</div><div class="v">已通过</div></div>
+        </div>
+        <div class="warnbox"><span>◇</span><div>置信度衡量的是「<b>规则是否被完整复现</b>」，与收益高低无关。本策略 12 笔样本中有 2 笔因依赖主观判断（"感觉便宜了"）无法编码，已如实标注。</div></div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn" onclick="go('holdings')">绑定到组合</button>
+          <button class="btn" onclick="go('mining')">保存为策略</button>
+        </div>
+      </div>
+      <div class="sec"></div>
+    </section>
+
+    <!-- ══ 03c 事件影响 ══ -->
+    <section class="screen" id="s-event">
+      <button class="back" onclick="go('mining')"><span>‹</span> 返回挖掘</button>
+      <div class="phead"><h2>事件影响</h2><div class="dt">E1 · 公开资料<br><b>待核实原文</b></div></div>
+
+      <div class="card flat" style="margin-bottom:4px">
+        <div style="font-size:11.5px;line-height:1.8;color:#3A3833;font-weight:300">
+          「据产业链人士，某海外云厂商将 2027 年资本开支指引上调约 20%，重点投向 AI 服务器与高速互联。」
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+          <span class="ev e1">E1 公开资料</span>
+          <span style="font-family:var(--mono);font-size:8.5px;color:var(--mute)">原文链接 · 2026-09-30</span>
+        </div>
+      </div>
+
+      <div class="sec"><h3>传导链条</h3><div class="more">AI 分析</div></div>
+      <div class="card">
+        <div class="chain">
+          <span class="hot">资本开支上调</span><em>→</em><span class="hot">服务器 / 光模块</span><em>→</em>
+          <span>电子元件</span><em>→</em><span>电力需求</span><em>→</em><span>煤炭 ?</span>
+        </div>
+        <div style="margin-top:13px">
+          <div class="imp"><div class="rk">受益</div><div class="nm">通信设备 · 光模块<span>直接受益 · 时间窗 1–2 季度</span></div><div class="tr"><i data-w="86" style="background:var(--up)"></i></div><div class="vl up">高</div></div>
+          <div class="imp"><div class="rk">受益</div><div class="nm">服务器 / 算力<span>直接受益 · 时间窗 1–3 季度</span></div><div class="tr"><i data-w="80" style="background:var(--up)"></i></div><div class="vl up">高</div></div>
+          <div class="imp"><div class="rk">中性</div><div class="nm">电力<span>间接受益 · 存在时滞</span></div><div class="tr"><i data-w="44" style="background:#C4695C"></i></div><div class="vl">中</div></div>
+          <div class="imp"><div class="rk">受损</div><div class="nm">传统存储<span>预算挤出效应</span></div><div class="tr"><i data-w="30" style="background:var(--down)"></i></div><div class="vl down">低</div></div>
+        </div>
+      </div>
+
+      <div class="sec"><h3>对我持仓的影响 <em>按影响排序</em></h3><div class="more">你的组合</div></div>
+      <div class="card">
+        <div class="imp"><div class="rk">01</div><div class="nm">长江电力<span>600900 · 权重 8.4%</span></div><div class="tr"><i data-w="42" style="background:#C4695C"></i></div><div class="vl">+0.3%</div></div>
+        <div class="imp"><div class="rk">02</div><div class="nm">中国神华<span>601088 · 权重 7.2%</span></div><div class="tr"><i data-w="30" style="background:#C4695C"></i></div><div class="vl">+0.2%</div></div>
+        <div class="imp"><div class="rk">03</div><div class="nm">工商银行<span>601398 · 权重 7.9%</span></div><div class="tr"><i data-w="12" style="background:var(--down)"></i></div><div class="vl down">0.0%</div></div>
+        <div class="warnbox"><span>◇</span><div>你的组合<b>几乎不在这条传导链上</b>——高股息持仓与 AI 算力相关度低。若想参与，属于<b>能力圈外操作</b>，纪律官会提醒你。</div></div>
+      </div>
+      <div class="sec"></div>
+    </section>
+
+    <!-- ══ 04 研究所 ══ -->
+    <section class="screen" id="s-desk">
+      <div class="phead"><h2>研究所</h2><div class="dt">投资总管 + 专家组<br><b>6 位 Agent</b></div></div>
+
+      <div class="sec" style="margin-top:0"><h3>我的 AI 投研团队</h3><div class="more">多智能体</div></div>
+      <div class="card">
+        <div class="agent">
+          <div class="av">总</div>
+          <div class="tx"><b>投资总管 <span class="ev e2" style="font-size:7.5px">调度官</span></b>
+            <p>理解你的问题、拆解任务、派发给对应专家，并汇总为一份可追溯的结论。</p>
+            <div class="st">在线 · 已编排 42 次任务</div></div>
+        </div>
+        <div class="agent">
+          <div class="av">基</div>
+          <div class="tx"><b>基本面分析师</b>
+            <p>三张表、杜邦拆解、现金流质量、估值分位、公告事件；申万/HSICS/GICS 三源行业映射，HKFRS / US GAAP 科目对齐。</p>
+            <div class="st">在线 · 引用 E2 结构化数据</div></div>
+        </div>
+        <div class="agent">
+          <div class="av">技</div>
+          <div class="tx"><b>技术面分析师</b>
+            <p>形态学信号、宽基/行业/风格择时、ETF 评分。</p>
+            <div class="st">在线 · 引用 E2 信号库</div></div>
+        </div>
+        <div class="agent">
+          <div class="av">宏</div>
+          <div class="tx"><b>宏观流动性分析师</b>
+            <p>利率、社融、汇率 → 流动性 → 大类资产与行业的传导链。</p>
+            <div class="st">在线 · 敏感度为历史统计类比</div></div>
+        </div>
+        <div class="agent new">
+          <div class="av">险</div>
+          <div class="tx"><b>风险官 <span class="nt">新增</span></b>
+            <p>组合集中度、风格暴露、利率/汇率敏感度、拥挤度预警。个人最缺的岗位。</p>
+            <div class="st">在线 · 每日盘前巡检</div></div>
+        </div>
+        <div class="agent new">
+          <div class="av">纪</div>
+          <div class="tx"><b>纪律官 / 复盘师 <span class="nt">新增</span></b>
+            <p>决策日志对账、错误聚类、边界外操作拦截。负责让你<b>不重复犯错</b>。</p>
+            <div class="st">在线 · 已归档 3 个重复错误</div></div>
+        </div>
+      </div>
+
+      <div class="sec"><h3>多视角评级 <em>A/H/US · 同标的不同来源并列</em></h3><div class="more">S3</div></div>
+      <div class="card">
+        <div class="chips" style="margin:0 0 12px">
+          <button class="chip" onclick="swpv(this,'cj')">长江电力 A</button>
+          <button class="chip on" onclick="swpv(this,'tx')">腾讯控股 H</button>
+          <button class="chip" onclick="swpv(this,'ap')">苹果 US</button>
+        </div>
+
+        <div data-pv="cj" style="display:none">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
+            <div style="font-size:12.5px;font-weight:500">长江电力 <span style="font-family:var(--mono);font-size:9px;color:var(--mute);font-weight:400">600900.SH</span><i class="mkt mk-a">A</i></div>
+            <span class="ev e2">E2 结构化数据</span>
+          </div>
+          <div class="pv"><div class="src">量化<div style="font-family:var(--mono);font-size:7.5px;color:var(--mute);margin-top:2px">Quant · 申万二级</div></div><div class="gd down">A-</div><div class="why">估值分位低 + 质量高 + 预期稳定，五维加权后 <b>8.2/10</b>。</div></div>
+          <div class="pv"><div class="src">AI 研判<div style="font-family:var(--mono);font-size:7.5px;color:var(--mute);margin-top:2px">投资总管</div></div><div class="gd" style="color:#4C7A5E">B+</div><div class="why">现金流可预测性强，但<b>成长弹性有限</b>，属防御型底仓。</div></div>
+          <div class="pv"><div class="src">大师框架<div style="font-family:var(--mono);font-size:7.5px;color:var(--mute);margin-top:2px">格雷厄姆</div></div><div class="gd" style="color:#4C7A5E">B</div><div class="why">符合安全边际，但<b>不满足"低估 30%"</b>的严格折扣要求。</div></div>
+          <div class="pv"><div class="src">你的历史决策<div style="font-family:var(--mono);font-size:7.5px;color:var(--seal);margin-top:2px">E3 实盘</div></div><div class="gd down">A</div><div class="why">你在电力行业持仓 <b>14 笔，12 笔盈利</b>——这正是你的能力圈核心格。</div></div>
+        </div>
+
+        <div data-pv="tx">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
+            <div style="font-size:12.5px;font-weight:500">腾讯控股 <span style="font-family:var(--mono);font-size:9px;color:var(--mute);font-weight:400">00700.HK</span><i class="mkt mk-h">H</i><i class="flag gray">半年报 · 数据陈旧</i></div>
+            <span class="ev e2">E2 结构化数据</span>
+          </div>
+          <div class="pv"><div class="src">量化<div style="font-family:var(--mono);font-size:7.5px;color:var(--mute);margin-top:2px">Quant · HSICS 同业</div></div><div class="gd down">A-</div><div class="why">游戏与广告收入回升，<b>质量、动量在恒生科技同业</b>处前列，五维加权 <b>8.4/10</b>。</div></div>
+          <div class="pv"><div class="src">AI 研判<div style="font-family:var(--mono);font-size:7.5px;color:var(--mute);margin-top:2px">投资总管</div></div><div class="gd" style="color:#4C7A5E">B+</div><div class="why">基本面复苏，但<b>宏观消费与监管仍需观察</b>；分析师覆盖不足 5 家，预期修正已降级为业绩通告盈利惊喜。</div></div>
+          <div class="pv"><div class="src">大师框架<div style="font-family:var(--mono);font-size:7.5px;color:var(--mute);margin-top:2px">费雪 · 成长</div></div><div class="gd" style="color:#4C7A5E">B+</div><div class="why">符合"优秀成长企业"定义，护城河宽；<b>但当前估值不提供安全折扣</b>。</div></div>
+          <div class="pv"><div class="src">你的历史决策<div style="font-family:var(--mono);font-size:7.5px;color:var(--seal);margin-top:2px">E3 实盘</div></div><div class="gd" style="color:#4C7A5E">B</div><div class="why">港股通交易 <b>4 笔，2 笔盈利</b>——样本偏少，仅供参考。</div></div>
+        </div>
+
+        <div data-pv="ap" style="display:none">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
+            <div style="font-size:12.5px;font-weight:500">苹果 <span style="font-family:var(--mono);font-size:9px;color:var(--mute);font-weight:400">AAPL.US</span><i class="mkt mk-us">US</i><i class="flag">non-GAAP 口径</i></div>
+            <span class="ev e2">E2 结构化数据</span>
+          </div>
+          <div class="pv"><div class="src">量化<div style="font-family:var(--mono);font-size:7.5px;color:var(--mute);margin-top:2px">Quant · GICS 同业</div></div><div class="gd" style="color:#4C7A5E">B+</div><div class="why">动量与质量在 <b>GICS 信息技术同业</b>领先，估值分位偏高拖累总分，<b>8.0/10</b>。</div></div>
+          <div class="pv"><div class="src">AI 研判<div style="font-family:var(--mono);font-size:7.5px;color:var(--mute);margin-top:2px">投资总管</div></div><div class="gd" style="color:#4C7A5E">B+</div><div class="why">服务收入稳健 + AI 换机周期，但<b>预期已部分定价</b>；PIT 以 SEC EDGAR filing date 为准。</div></div>
+          <div class="pv"><div class="src">大师框架<div style="font-family:var(--mono);font-size:7.5px;color:var(--mute);margin-top:2px">林奇 · PEG</div></div><div class="gd" style="color:#4C7A5E">B</div><div class="why">PEG ≈ 1.4，成长质量优秀，<b>估值不便宜</b>。</div></div>
+          <div class="pv"><div class="src">你的历史决策<div style="font-family:var(--mono);font-size:7.5px;color:var(--seal);margin-top:2px">E3 实盘</div></div><div class="gd" style="color:#8A6D2F">B-</div><div class="why">美股交易 <b>2 笔，1 笔盈利</b>——样本不足，系统不给结论性评价。</div></div>
+        </div>
+
+        <div class="warnbox"><span>◇</span><div>四个来源<b>并不总是同向</b>——分歧本身就是信息。多市场修正：<b>港股</b>按半年报与业绩通告、<b>美股</b>按 guidance 偏离（non-GAAP 不与 GAAP 混算）；等级仅在<b>各自市场同业内可比</b>。</div></div>
+      </div>
+
+      <div class="sec"><h3>大师法则模板 <em>套用到我的自选池</em></h3><div class="more">34 条</div></div>
+      <div class="card">
+        <div class="master"><div class="nm"><b>格雷厄姆 · 经典价值投资法</b><span>价值五法 + 安全五法 · 高置信度</span></div>
+          <div class="hit">命中 4 只<span>你的自选池 23 只</span></div></div>
+        <div class="master"><div class="nm"><b>彼得·林奇 · 基层调查选股法</b><span>PEG 与成长质量 · 中置信度</span></div>
+          <div class="hit">命中 2 只<span>你的自选池 23 只</span></div></div>
+        <div class="master"><div class="nm"><b>格林布拉特 · 神奇公式</b><span>高 ROC + 低 PE 排序 · 高置信度</span></div>
+          <div class="hit">命中 6 只<span>你的自选池 23 只</span></div></div>
+        <div class="master"><div class="nm"><b>欧奈尔 · GALP 成长型</b><span>成长 + 动量 · 低置信度</span></div>
+          <div class="hit" style="color:var(--mute)">命中 0 只<span>规则部分无法复现</span></div></div>
+        <div class="warnbox"><span>◇</span><div>置信度来自 SeekAlpha 的原始口径（衡量规则能否被<b>完整复现</b>）。低置信度法则即使命中也不建议采用。</div></div>
+      </div>
+
+      <div class="sec"><h3>算力预算</h3><div class="more">本月</div></div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span style="font-size:11.5px;color:var(--dim);font-weight:300">已用 62 / 100 单位</span>
+          <span style="font-family:var(--mono);font-size:13px;color:var(--seal)">62%</span>
+        </div>
+        <div class="bud"><i data-w="62"></i></div>
+        <div style="font-size:10px;color:var(--mute);font-weight:300;line-height:1.7">
+          轻任务（检索/取数）走小模型，重任务（深度研判/挖掘）走大模型。
+          替代 SeekAlpha 的「积分分档」，个人不需要团队分摊。
+        </div>
+      </div>
+      <div class="sec"></div>
+    </section>
+
+    <!-- ══ 05 我的 ══ -->
+    <section class="screen" id="s-me">
+      <div class="phead"><h2>我的</h2><div class="dt">个人知识层<br><b>架构底座</b></div></div>
+
+      <div class="sec" style="margin-top:0"><h3>个人知识库 <em>五层</em></h3><div class="more">底座</div></div>
+      <div class="card">
+        <div class="layer"><div class="ix">01</div><div class="nm"><b>事实层</b><span>持仓 · 交易流水 · 成本</span></div><div class="ct">142</div></div>
+        <div class="layer"><div class="ix">02</div><div class="nm"><b>判断层</b><span>决策日志 · 买入理由 · 情绪</span></div><div class="ct">118</div></div>
+        <div class="layer"><div class="ix">03</div><div class="nm"><b>结论层</b><span>复盘笔记 · 错题归档 · 只追加不改写</span></div><div class="ct">37</div></div>
+        <div class="layer"><div class="ix">04</div><div class="nm"><b>主题层</b><span>订阅主题 · 关注清单</span></div><div class="ct">6</div></div>
+        <div class="layer"><div class="ix">05</div><div class="nm"><b>画像层</b><span>能力圈 · 行为特征 · 风格偏好</span></div><div class="ct">18</div></div>
+      </div>
+      <div class="card flat" style="margin-top:9px;font-size:10.5px;line-height:1.8;color:var(--dim);font-weight:300">
+        个人知识层是<b style="color:var(--ink)">整个引擎的事实来源</b>，不是 App 的一个模块——对应 SeekAlpha 把"机构自身沉淀"放在四层架构底部。所有 AI 输出都要与它对齐，才能回答"这对<b style="color:var(--ink)">我</b>意味着什么"。
+      </div>
+
+      <div class="sec"><h3>数据录入 <em>事实层入口</em></h3><div class="more">S5</div></div>
+      <div class="card">
+        <div class="todo" style="border-bottom:1px solid var(--hair)">
+          <div class="ck on" onclick="this.classList.toggle('on')"></div>
+          <div class="tx"><b>券商直连自动同步 <span class="ev e2" style="font-size:7.5px">已连接</span></b><span>招商证券 · 每日盘后同步 · 覆盖 9 只持仓</span></div>
+          <div class="min">只读</div>
+        </div>
+        <div class="todo">
+          <div class="ck" onclick="this.classList.toggle('on')"></div>
+          <div class="tx"><b>对冲账户手动录入</b><span>剩余 2 个账户需手动维护</span></div>
+          <div class="min">手动</div>
+        </div>
+        <div class="warnbox"><span>◇</span><div>借鉴 Seeking Alpha 的 <b>Broker Linking</b>：持仓自动同步，解决事实层最大的流失点——<b>手动录入</b>。仅使用只读授权，可随时撤销，<b>不保存券商账号密码</b>。</div></div>
+      </div>
+
+      <div class="sec"><h3>MCP 出口</h3><div class="more">双出口</div></div>
+      <div class="card">
+        <div style="font-size:10.5px;line-height:1.8;color:var(--dim);font-weight:300;margin-bottom:11px">
+          让你的 Claude / Cursor 直接调用<b style="color:var(--ink)">你自己的投研数据</b>——持仓、决策日志、能力圈、策略克隆结果。这是「个人知识可编程」的最终形态。
+        </div>
+        <div class="code">endpoint  https://mcp.alpha-pocket.app/rpc
+auth      Bearer ****-****-3f9a
+tools     <b>24</b> 个已开放 <i>(只读优先)</i>
+scope     portfolio · journal · edge · clone · markets</div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn">复制配置</button><button class="btn">重置凭证</button>
+        </div>
+      </div>
+
+      <div class="sec"><h3>证据规则</h3><div class="more">合规</div></div>
+      <div class="card">
+        <div class="evrow"><div class="nm"><span class="ev e2">门槛</span></div><div class="tx">涉及<b>可执行动作</b>的输出必须 ≥ E2；E0/E1 仅作为待验证假设入库。</div></div>
+        <div class="evrow"><div class="nm"><span class="ev e0">默认</span></div><div class="tx">所有 AI 结论默认状态为<b>「待验证假设」</b>，需你显式确认才转为「已采纳」。</div></div>
+        <div class="evrow"><div class="nm"><span class="ev e3">责任</span></div><div class="tx">决策日志由你填写，系统只做对账与提醒——<b>系统不替你做决策</b>。</div></div>
+      </div>
+
+      <div class="sec"><h3>数据源</h3><div class="more">沪深港美 + 宏观</div></div>
+      <div class="card flat" style="font-size:10.5px;line-height:1.9;color:var(--dim);font-weight:300">
+        沪深 A 股：交易所 / 巨潮 CNINFO · 日频盘后<br>
+        港股：港交所 HKEX / 披露易 · 日频盘后<br>
+        美股：Nasdaq / SEC EDGAR · T+1<br>
+        宏观：FRED / 国家统计局 · 月频<br>
+        资金流：沪深港通盘后披露口径（<b style="color:var(--ink)">非实时</b>）· 主力资金为推算口径
+      </div>
+
+      <div class="sec"></div>
+      <div class="disc" style="margin-top:0;border-color:#C9C1B0;color:var(--mute)">
+        本产品为投资数据分析工具，不构成投资建议。所有结论均为待验证假设，历史表现不代表未来。投资有风险。
+      </div>
+      <div class="sec"></div>
+    </section>
+
+  </div>
+
+  <nav class="tabbar" id="tabbar">
+    <button data-go="today" class="on"><svg viewBox="0 0 24 24"><path d="M4 5h16v15H4z"/><path d="M8 3v4M16 3v4M4 10h16"/></svg><span>今日</span></button>
+    <button data-go="holdings"><svg viewBox="0 0 24 24"><path d="M3 19h18"/><path d="M6 19V9M11 19V5M16 19v-7M21 19v-4"/></svg><span>持仓</span></button>
+    <button data-go="mining"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/><path d="M8.5 11h5M11 8.5v5"/></svg><span>挖掘</span></button>
+    <button data-go="desk"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16M3 10h18"/></svg><span>研究所</span></button>
+    <button data-go="me"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 21c0-3.8 3.4-5.6 7.5-5.6s7.5 1.8 7.5 5.6"/></svg><span>我的</span></button>
+  </nav>
+  <div class="homebar"></div>
+</div>
+
+<style>
+.btn{all:unset;cursor:pointer;font-family:var(--sans);font-size:11px;padding:8px 15px;border-radius:8px;border:1px solid var(--line);color:var(--dim);background:var(--card);transition:.2s}
+.btn:hover{border-color:var(--seal);color:var(--seal)}
+</style>
+
+<script>
+const TAB_OF={today:'today',holdings:'holdings',edge:'holdings',mining:'mining',clone:'mining',event:'mining',desk:'desk',me:'me'};
+
+function go(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  const el=document.getElementById('s-'+id);
+  if(el){el.classList.add('active');el.scrollTop=0;}
+  const tab=TAB_OF[id];
+  document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('on',b.dataset.go===tab));
+  document.querySelectorAll('#navlist button').forEach(b=>b.classList.toggle('on',b.dataset.go===tab));
+  if(id==='holdings')drawEquity();
+  grow();
+}
+document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
+
+function seeded(seed){let s=seed>>>0;return()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};}
+
+function buildPath(line,area,seed,drift,vol){
+  const rnd=seeded(seed),N=110,W=340,H=112,pad=6;
+  const pts=[];let v=42;
+  for(let i=0;i<N;i++){v+=drift+(rnd()-0.5)*vol;v=Math.max(8,Math.min(H-pad,v));pts.push(v);}
+  let d='';
+  pts.forEach((y,i)=>{d+=(i?'L':'M')+(i/(N-1)*W).toFixed(2)+' '+y.toFixed(2);});
+  line.setAttribute('d',d);
+  if(area)area.setAttribute('d',d+' L'+W+' '+H+' L0 '+H+' Z');
+  const len=line.getTotalLength?line.getTotalLength():600;
+  line.style.strokeDasharray=len;line.style.strokeDashoffset=len;line.style.transition='none';
+  requestAnimationFrame(()=>{line.style.transition='stroke-dashoffset 1.4s cubic-bezier(.3,.8,.3,1)';line.style.strokeDashoffset=0;});
+}
+let eq=false;
+function drawEquity(){if(eq)return;eq=true;
+  buildPath(document.getElementById('lineP'),document.getElementById('areaP'),20261,0.40,4.4);}
+
+/* 能力圈地图：行业 × 持有周期 */
+const ROWS=['电力','银行','煤炭','消费','医药','半导体','新能源'];
+const COLS=['<1周','1周-1月','1-3月','3-12月','>1年'];
+const VAL=[ // null = 无样本
+  [null, 2.1, 3.4, 5.8, 4.2],
+  [1.4, 2.6, 4.1, 5.1, 3.3],
+  [null, 1.8, 3.9, 5.5, 2.7],
+  [null, null, -1.2, 0.4, 1.1],
+  [null, null, null, -0.8, 0.3],
+  [-4.2, -6.1, -3.4, -2.1, null],
+  [-2.8, -5.4, -4.1, -1.6, null]
+];
+function cellColor(v){
+  if(v===null)return '';
+  if(v>=4)return 'background:rgba(30,122,94,.72);color:#fff';
+  if(v>=2)return 'background:rgba(30,122,94,.44)';
+  if(v>0) return 'background:rgba(30,122,94,.20)';
+  if(v>=-2)return 'background:rgba(196,105,92,.28)';
+  if(v>=-4)return 'background:rgba(196,105,92,.55)';
+  return 'background:rgba(196,105,92,.82);color:#fff';
+}
+function buildEdge(){
+  const g=document.getElementById('edgeGrid');if(!g||g.dataset.done)return;g.dataset.done='1';
+  let h='<div></div>'+COLS.map(c=>'<div class="hx">'+c+'</div>').join('');
+  ROWS.forEach((r,i)=>{
+    h+='<div class="hy">'+r+'</div>';
+    VAL[i].forEach(v=>{
+      h+= v===null ? '<div class="cl ns">无样本</div>'
+                   : '<div class="cl" style="'+cellColor(v)+'">'+(v>0?'+':'')+v.toFixed(1)+'</div>';
+    });
+  });
+  g.innerHTML=h;
+}
+
+/* 条形动画 */
+function grow(){
+  document.querySelectorAll('.rbar .tr i, .imp .tr i, .bud i, .hbar i').forEach(el=>{
+    const w=el.dataset.w;if(!w)return;
+    el.style.width='0';
+    setTimeout(()=>{el.style.width=w+'%';},180);
+  });
+}
+
+/* ═══ V3 多市场：组合数据与渲染 ═══ */
+const MKC={A:'#B28C3C',H:'#A93226',US:'#2C5F8A',ETF:'#1E7A5E',OF:'#6E6859',CASH:'#C9C1B0'};
+const MKN={A:'A 股',H:'港股',US:'美股',ETF:'场内基金',OF:'场外基金',CASH:'现金'};
+
+const PF={
+  dividend:{
+    hero:{v:'1,284,600',d:'+12,480 今日 &nbsp;·&nbsp; +1.02%'},
+    health:76,hdelta:'较上周 +3',
+    hsub:'<div>9<span>持仓数</span></div><div class="down">6<span>评分 ≥ B</span></div><div style="color:#C4695C">1<span>待复核</span></div><div class="up">-0.2%<span>汇率贡献</span></div>',
+    mk:[['A',71],['H',11],['OF',8],['CASH',10]],
+    bench:'基准 中证红利全收益 <b class="up">+8.1%</b> · 超额 <b class="up">+6.7%</b> · 区间 2025-10~2026-09 · 含成本与汇兑 <span>S6 透明业绩</span>',
+    rows:[
+      {n:'长江电力',s:'600900.SH · 8.4%',m:'A',g:['B+','C+','A','B','B-'],you:'A'},
+      {n:'工商银行',s:'601398.SH · 7.9%',m:'A',f:[{t:'AH溢价 1.32'}],g:['A-','C','B+','B','B'],you:'A-'},
+      {n:'中国神华',s:'601088.SH · 7.2%',m:'A',f:[{t:'AH溢价 1.41'}],g:['B','C+','A-','A-','B+'],you:'A'},
+      {n:'中国海油',s:'00883.HK · 6.8%',m:'H',f:[{t:'股息率权重↑'},{t:'数据陈旧',g:1}],g:['B+','C+','A-','B+','B'],you:'B-'},
+      {n:'某新能源',s:'300750.SZ · 3.1%',m:'A',g:['D+','B-','B','D','D'],you:'D'}
+    ],
+    fund:[
+      {t:'红利ETF<span>510880.SH · 6.5%</span>',g:'A-',gc:'#4C7A5E',
+       it:[['跟踪误差','1.4%','down'],['折溢价','+0.21%','down'],['日均成交','¥3.2亿','down'],['规模','¥92亿','down'],['综合费率','0.60%']]},
+      {t:'天弘余额货币<span>000198.OF · 8.0%</span>',g:'A',gc:'var(--down)',
+       it:[['7日年化','1.62%','down'],['最大回撤','-0.05%','down'],['经理任期','3.6年','down'],['规模/申购','T+0 · 开放','down'],['综合费率','0.63%']]}
+    ],
+    sig:[
+      {tag:'卖出预警',ev:'e3',n:'某新能源',s:'300750.SZ · sig_ma20_break 下穿 MA20 −2.4%',w:82,v:'评估单',c:'up'},
+      {tag:'持有确认',ev:'e2',n:'中国神华',s:'601088.SH · sig_high20_touch 创 20 日新高',w:76,v:'确认',c:'down'},
+      {tag:'仓位系数',ev:'e1',n:'组合层',s:'sig_atr_regime 波动正常 · 月内未触发',w:50,v:'100%',c:''}
+    ],
+    attr:[
+      ['市场配置','18','up','+1.8bp'],['行业配置','64','up','+6.4bp'],['个股选择','94','up','+9.8bp'],['汇率效应','22','down','-0.6bp'],['交易成本','14','down','-1.4bp']
+    ],
+    attrNote:'你的超额收益 <b>93% 来自选股</b>——这正是能力圈挖掘要回答的问题。'
+  },
+  global:{
+    hero:{v:'986,400',d:'+8,340 今日 &nbsp;·&nbsp; +0.85%'},
+    health:74,hdelta:'较上周 +2',
+    hsub:'<div>7<span>持仓数</span></div><div class="down">5<span>评分 ≥ B</span></div><div style="color:#C4695C">1<span>待复核</span></div><div class="up">-0.7%<span>汇率贡献</span></div>',
+    mk:[['A',25],['H',14],['US',19],['ETF',17],['OF',7],['CASH',18]],
+    bench:'基准 复合（沪深300×45 + 恒生×20 + 纳指100×30 + 现金×5）<b class="up">+11.2%</b> · 超额 <b class="up">+5.0%</b> · 区间 2025-10~2026-09 · 含成本与汇兑 <span>S6 透明业绩</span>',
+    rows:[
+      {n:'贵州茅台',s:'600519.SH · 22.0%',m:'A',g:['B','C+','A','B+','B'],you:'A-'},
+      {n:'腾讯控股',s:'00700.HK · 14.0%',m:'H',f:[{t:'数据陈旧',g:1}],g:['B+','B+','A','B','C+'],you:'B-'},
+      {n:'苹果',s:'AAPL.US · 12.0%',m:'US',f:[{t:'non-GAAP'}],g:['C+','B+','A-','A','B'],you:'B-'},
+      {n:'英伟达',s:'NVDA.US · 7.0%',m:'US',g:['D+','A+','B+','A+','B+'],you:'—'},
+      {n:'沪深300ETF',s:'510300.SH · 16.5%',m:'ETF',f:[{t:'基金体检',g:1}],g:['A','—','—','—','—'],you:'A-'},
+      {n:'华夏成长混合',s:'000001.OF · 7.4%',m:'OF',f:[{t:'净值 09-29',g:1}],g:['B+','—','—','—','—'],you:'—'},
+      {n:'某新能源',s:'300750.SZ · 3.1%',m:'A',g:['D+','B-','B','D','D'],you:'D'}
+    ],
+    fund:[
+      {t:'沪深300ETF<span>510300.SH · 16.5%</span>',g:'A',gc:'var(--down)',
+       it:[['跟踪误差','0.8%','down'],['折溢价','+0.12%','down'],['日均成交','¥18.6亿','down'],['规模','¥1,554亿','down'],['综合费率','0.50%']]},
+      {t:'华夏成长混合<span>000001.OF · 7.4%</span>',g:'B+',gc:'#4C7A5E',
+       it:[['同类分位','前 38%','down'],['最大回撤','-14.2%'],['经理任期','4.2年','down'],['规模/申购','开放','down'],['赎回费','&lt;7日 1.5%','up']]}
+    ],
+    sig:[
+      {tag:'卖出预警',ev:'e3',n:'腾讯控股',s:'00700.HK · sig_ma20_break 下穿 MA20 −2.1%',w:78,v:'评估单',c:'up'},
+      {tag:'持有确认',ev:'e2',n:'英伟达',s:'NVDA.US · sig_high20_touch 创 20 日新高',w:84,v:'确认',c:'down'},
+      {tag:'仓位系数',ev:'e1',n:'组合层',s:'sig_atr_regime 高波 Regime · 月内第 1 次',w:50,v:'95%',c:''}
+    ],
+    attr:[
+      ['市场配置','42','up','+4.2bp'],['行业配置','31','up','+3.1bp'],['个股选择','86','up','+8.6bp'],['汇率效应','27','down','-2.7bp'],['交易成本','14','down','-1.4bp']
+    ],
+    attrNote:'多市场四层分解（市场 × 行业 × 个股 + 汇率）：美股仓位贡献显著，但<b>美元走弱使汇率效应为负</b>——这就是汇兑损益单列（fx_pnl）的意义。'
+  }
+};
+
+function gcls(g){return g[0]==='A'?'ga':g[0]==='B'?'gb':g[0]==='C'?'gc':(g[0]==='D'||g[0]==='F')?'gd':'gns';}
+function mktB(m){return '<i class="mkt mk-'+({A:'a',H:'h',US:'us',ETF:'etf',OF:'of'}[m])+'">'+({A:'A',H:'H',US:'US',ETF:'ETF',OF:'场外'}[m])+'</i>';}
+
+function renderG(rows){
+  let h='<div class="gh">持仓</div><div class="gh">估值</div><div class="gh">成长</div><div class="gh">质量</div><div class="gh">动量</div><div class="gh">预期<br>修正</div><div class="gh you">你的<br>战绩</div>';
+  rows.forEach(r=>{
+    h+='<div class="gn">'+r.n+'<span>'+r.s+mktB(r.m)+(r.f||[]).map(x=>'<i class="flag'+(x.g?' gray':'')+'">'+x.t+'</i>').join('')+'</span></div>';
+    r.g.forEach(x=>{h+=(x==='—')?'<div class="g gns">—</div>':'<div class="g '+gcls(x)+'">'+x+'</div>';});
+    h+=(r.you==='—')?'<div class="g gns">—</div>':'<div class="g '+gcls(r.you)+' you">'+r.you+'</div>';
+  });
+  document.getElementById('gtable').innerHTML=h;
+}
+
+function renderFund(k){
+  let h=PF[k].fund.map(f=>'<div class="ftitle"><b>'+f.t+'</b><span class="gr" style="color:'+f.gc+'">'+f.g+'</span></div><div class="fgrid">'
+    +f.it.map(i=>'<div><div class="k">'+i[0]+'</div><div class="v '+(i[2]||'')+'">'+i[1]+'</div></div>').join('')+'</div>').join('');
+  h+='<div class="warnbox" style="margin-top:11px"><span>◇</span><div>基金不做行业相对分位，改用<b>体检卡</b>；场外按<b>未知价法</b>记账（T 日净值、T+1 确认），赎回费 &lt;7 日 1.5% 惩罚档强制提示。</div></div>';
+  document.getElementById('fundCard').innerHTML=h;
+}
+
+function renderSig(k){
+  let h=PF[k].sig.map(x=>'<div class="imp"><div class="rk" style="width:auto"><span class="ev '+x.ev+'" style="font-size:7px;padding:2px 5px">'+x.tag+'</span></div><div class="nm">'+x.n+'<span>'+x.s+'</span></div><div class="tr"><i data-w="'+x.w+'" style="background:'+(x.c==='up'?'var(--up)':x.c==='down'?'var(--down)':'#C4695C')+'"></i></div><div class="vl '+(x.c||'')+'">'+x.v+'</div></div>').join('');
+  h+='<div class="mgrid" style="margin-top:10px"><div><div class="k">A/B 对照增强</div><div class="v up">+2.1pct</div></div><div><div class="k">事件胜率</div><div class="v">58%</div></div><div><div class="k">年度触发</div><div class="v">14 次</div></div><div><div class="k">冷却期</div><div class="v">10 交易日</div></div></div>';
+  h+='<div class="warnbox" style="margin-top:11px"><span>⚠</span><div><b>增强不决策</b>：引擎 B 只产出「评估单 / 提醒 / 仓位系数（±10% 上限）」，永不改动引擎 A 的目标持仓——统一走拟调仓确认闭环。</div></div>';
+  document.getElementById('sigCard').innerHTML=h;grow();
+}
+
+function renderAttr(k){
+  const p=PF[k];
+  let h=p.attr.map(a=>'<div class="rbar"><div class="nm">'+a[0]+'</div><div class="tr"><i data-w="'+a[1]+'" style="background:var(--'+a[2]+')"></i></div><div class="vl '+a[2]+'">'+a[3]+'</div></div>').join('');
+  h+='<div class="warnbox" style="border-style:solid"><span>◇</span><div>'+p.attrNote+'</div></div>';
+  document.getElementById('attrCard').innerHTML=h;grow();
+}
+
+function renderAll(k){
+  const p=PF[k];if(!p)return;
+  const hero=document.getElementById('pfHero');
+  hero.querySelector('.v').innerHTML='<small>¥</small>'+p.hero.v;
+  hero.querySelector('.d').innerHTML=p.hero.d;
+  document.getElementById('hNum').textContent=p.health;
+  document.getElementById('hDelta').textContent=p.hdelta;
+  const hb=document.getElementById('hBar');hb.dataset.w=p.health;hb.style.width=p.health+'%';
+  document.getElementById('hSub').innerHTML=p.hsub;
+  document.getElementById('mkBar').innerHTML=p.mk.map(x=>'<i style="width:'+x[1]+'%;background:'+MKC[x[0]]+'"></i>').join('');
+  document.getElementById('mkLeg').innerHTML=p.mk.map(x=>'<span><b style="background:'+MKC[x[0]]+'"></b>'+MKN[x[0]]+' '+x[1]+'%</span>').join('');
+  document.getElementById('pfBench').innerHTML=p.bench;
+  renderG(p.rows);renderFund(k);renderSig(k);renderAttr(k);
+}
+
+function swpf(k,btn){
+  if(!PF[k]||!btn)return;
+  btn.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+  btn.classList.add('on');
+  renderAll(k);
+}
+
+/* 多视角评级切换（A/H/US） */
+function swpv(btn,id){
+  const card=btn.closest('.card');
+  card.querySelectorAll('.chips .chip').forEach(c=>c.classList.remove('on'));
+  btn.classList.add('on');
+  card.querySelectorAll('[data-pv]').forEach(d=>d.style.display=d.dataset.pv===id?'':'none');
+}
+
+requestAnimationFrame(()=>{buildEdge();grow();drawEquity();renderAll('global');});
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+{
+  "id": "cn4",
+  "name": "cn4 · 赛轮/永新/福耀/分众",
+  "base_ccy": "CNY",
+  "strategy_binding": "cn4_quality_v1",
+  "note": "用户指定四标的（永新=永新股份002014.SZ）；未提供权重 → 等权名义组合 25%×4",
+  "positions": [
+    {
+      "secid": "601058.SH",
+      "name": "赛轮集团",
+      "market": "A",
+      "weight": 25.0,
+      "trade_ccy": "CNY"
+    },
+    {
+      "secid": "002014.SZ",
+      "name": "永新股份",
+      "market": "A",
+      "weight": 25.0,
+      "trade_ccy": "CNY"
+    },
+    {
+      "secid": "600660.SH",
+      "name": "福耀玻璃",
+      "market": "A",
+      "weight": 25.0,
+      "trade_ccy": "CNY"
+    },
+    {
+      "secid": "002027.SZ",
+      "name": "分众传媒",
+      "market": "A",
+      "weight": 25.0,
+      "trade_ccy": "CNY"
+    }
+  ]
+}

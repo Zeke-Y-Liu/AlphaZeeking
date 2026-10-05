@@ -1,0 +1,20 @@
+{
+  "id": "global_growth_v1",
+  "name": "全球成长",
+  "universe": "CN+HK+US 多市场",
+  "rebalance": "monthly",
+  "exec": "next_day_vwap",
+  "factors": [
+    "val_pe_ttm",
+    "qua_roe_ttm",
+    "mom_12_1"
+  ],
+  "engine_b": {
+    "enabled": true,
+    "modes": [
+      "入场确认",
+      "执行择时",
+      "卖出触发"
+    ]
+  }
+}

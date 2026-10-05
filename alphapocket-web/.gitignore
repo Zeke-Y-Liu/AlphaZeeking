@@ -1,0 +1,30 @@
+# Node
+node_modules/
+dist/
+coverage/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# 环境变量 / 密钥
+.env
+.env.*
+!.env.example
+
+# 运行时数据（workspace）
+var/
+
+# Playwright
+e2e/test-results/
+e2e/playwright-report/
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+.vscode/

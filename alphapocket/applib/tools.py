@@ -1,0 +1,365 @@
+"""ap-mcp 工具集：data / factor / portfolio / report / sync（V4-α 真实数据版）
+
+纪律：ap 自身不调用任何大模型 API —— 推理由宿主 IDE agent（Trae/opencode/Codex）完成。
+数据：AKShare 公开接口（新浪行情/财务/分红 + 腾讯交叉源 + 交易日历），经 datasource.fetch 落库。
+"""
+from __future__ import annotations
+import json, datetime as dt
+import duckdb
+from .ctx import Ctx, new_run_id
+from . import data as D
+from . import repo as R
+from . import factors as F
+
+
+def _load(p):
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
+# ── factor ─────────────────────────────────────────────
+def factor_list(args, ctx):
+    return _load(ctx.local_repo / "factors" / "registry.json")
+
+
+def _bars_reports(ctx):
+    """从本地 repo 取真实 bars/报告/分红（review 独立可复现：review = f(repo)）"""
+    bars = _load(ctx.local_repo / "market" / "daily_bars.json")
+    fund = _load(ctx.local_repo / "factors" / "fundamental_values.json")
+    return bars, fund
+
+
+def factor_compute(args, ctx):
+    """引擎 B（20日信号）：真实行情 → mom/vol/MA20突破/20日新高/距高点 + 信号"""
+    con = duckdb.connect(str(ctx.db_path))
+    con.execute("DELETE FROM factor_value_daily WHERE factor_id IN (%s)" %
+                ",".join(f"'{f}'" for f in F.ENGINE_B_FACTORS))
+    bars, _ = _bars_reports(ctx)
+    out, signals = [], []
+    as_of = args.get("as_of") or "auto"
+    for secid, arr in bars.items():
+        b = F.compute_beta(secid, arr, None if as_of == "auto" else as_of)
+        vals = {"mom_20d": b["mom_20d"], "vol_20d": b["vol_20d"], "ma20_break": b["ma20_break"],
+                "high20_touch": b["high20_touch"], "dist_high20": b["dist_high20"]}
+        for fid, v in vals.items():
+            if v is not None:
+                con.execute("INSERT INTO factor_value_daily VALUES (?,?,?,?)", (b["as_of"], secid, fid, v))
+        out.append({"secid": secid, "dt": b["as_of"], **{k: round(v, 4) if isinstance(v, float) else v
+                                                          for k, v in vals.items()}, "state": b["state"]})
+        signals.extend(dict(s, secid=secid) for s in b["signals"])
+    con.close()
+    # T0.3：不再写入模块级全局态；signals/as_of 直接随返回值传递给调用方（MCP 契约不变）
+    as_of_b = out[0]["dt"] if out else None
+    return {"engine": "B", "as_of": as_of_b, "computed": out, "signals": signals}
+
+
+def factor_compute_alpha(args, ctx):
+    """引擎 A（中长期因子）：PIT 财务阶梯 + 行情 → 估值/质量/成长/动量/红利低波 + 五维评分"""
+    con = duckdb.connect(str(ctx.db_path))
+    con.execute("DELETE FROM factor_value_daily WHERE factor_id IN (%s)" %
+                ",".join(f"'{f}'" for f in F.ENGINE_A_FACTORS))
+    con.execute("DELETE FROM factor_pit_meta")
+    bars, fund = _bars_reports(ctx)
+    out = []
+    as_of = args.get("as_of") or "auto"
+    for secid, arr in bars.items():
+        fd = fund.get(secid, {})
+        a = F.compute_alpha(secid, arr, fd.get("reports", []), fd.get("dividends", []),
+                            None if as_of == "auto" else as_of)
+        for fid in F.ENGINE_A_FACTORS:
+            if a.get(fid) is not None:
+                con.execute("INSERT INTO factor_value_daily VALUES (?,?,?,?)", (a["as_of"], secid, fid, a[fid]))
+        if a["used_period"] is not None:   # 基金/指数类无财报 → 无 PIT 元数据
+            con.execute("INSERT INTO factor_pit_meta VALUES (?,?,?,?,?)",
+                        (a["as_of"], secid, "report_set", a["used_period"], a["used_announce"]))
+        out.append({"secid": secid, "dt": a["as_of"], "close": a["close"],
+                    "pe_ttm": a["val_pe_ttm"], "pb": a["val_pb"], "pe_pct": a["val_pe_pct"],
+                    "div_yield": a["div_yield_ttm"], "roe_ttm": a["qua_roe_ttm"],
+                    "mom_12_1": a["mom_12_1"], "composite": a["composite"],
+                    "grades": a["grades"], "used_period": a["used_period"]})
+    con.close()
+    return {"engine": "A", "as_of": out[0]["dt"] if out else None, "computed": out,
+            "pit_rule": "报告期+披露窗口（Q1+30/H1+62/Q3+31/FY+120 日）= 可用人时点"}
+
+
+# ── portfolio ───────────────────────────────────────────
+def _next_trade_date(ctx, as_of):
+    """下一交易日 + 休市日历天数（自 as_of 至下一交易日之间的自然日）"""
+    cal = _load(ctx.local_repo / "market" / "trade_calendar.json")
+    today = dt.date.today().isoformat()
+    for d in cal:
+        if d >= today:
+            gap_days = (dt.date.fromisoformat(d) - dt.date.fromisoformat(as_of)).days - 1
+            return d, max(gap_days, 0)
+    return None, 0
+
+
+def portfolio_review(args, ctx):
+    pid = str(args.get("portfolio", "cn4"))
+    pf_path = ctx.local_repo / "portfolio" / f"{pid}.json"
+    if not pf_path.exists():
+        return {"error": f"组合不存在：{pid}（{pf_path}）"}
+    pf = _load(pf_path)
+    dims = {d["secid"]: d for d in _load(ctx.local_repo / "dim" / "security.json")}
+    bars, fund = _bars_reports(ctx)
+    positions, signals = [], []
+    day_rets, members = {}, {}
+    for p in pf["positions"]:
+        secid = p["secid"]
+        arr = bars[secid]
+        fd = fund.get(secid, {})
+        a = F.compute_alpha(secid, arr, fd.get("reports", []), fd.get("dividends", []))
+        b = F.compute_beta(secid, arr)
+        day_pct = arr[-1]["pct"]
+        # 基金/指数类无财报（used_announce=None）→ 无陈旧度概念
+        staleness = ((dt.date.fromisoformat(a["as_of"]) - dt.date.fromisoformat(a["used_announce"])).days
+                     if a["used_announce"] else None)
+        flags = ([f"财报期 {a['used_period']}（可用人 {a['used_announce']}）"] if a["used_period"]
+                 else [f"{p.get('asset_type', '基金')}（无财报期，估值/质量/成长不适用）"])
+        if staleness is not None and staleness > 150:
+            flags.append("数据陈旧")
+        positions.append({
+            "secid": secid, "name": p["name"], "industry": dims[secid]["industry"], "weight": p["weight"],
+            "asset_type": p.get("asset_type", "STOCK"),
+            "settle": p.get("settle", "A股 T+1"), "cost": p.get("cost", "印花税卖出0.05%+佣金"),
+            "close": b["close"], "day_pct": day_pct,
+            "alpha": {k: a[k] for k in ("val_pe_ttm", "val_pb", "val_pe_pct", "val_pb_pct", "div_yield_ttm",
+                                        "qua_roe_ttm", "qua_margin", "grow_rev_yoy", "grow_np_yoy",
+                                        "mom_12_1", "vol_250", "used_period", "pe_hist_n")},
+            "beta": {k: b[k] for k in ("mom_20d", "vol_20d", "ma20", "ma20_break", "state",
+                                       "high20_touch", "dist_high20", "high20_intra", "low20",
+                                       "sigma_daily", "band_low", "band_high")},
+            "dims": a["dims"], "grades": a["grades"],
+            "composite": a["composite"], "composite_grade": a["composite_grade"],
+            "flags": flags})
+        signals.extend(dict(s, secid=secid, name=p["name"]) for s in b["signals"])
+        members[secid] = arr
+        day_rets[secid] = day_pct
+
+    # 等权名义组合（日再平衡）真实收益序列
+    # P0-2/P0-3：日期轴取各标的并集（原取首标的全集，遇停牌/晚上市会 StopIteration）；
+    # 缺 K 线/首日 pct=None 按收益 0 计（等权日再平衡下的权重冻结近似），分母固定为持仓数
+    n_pos = len(members)
+    dates = sorted(set().union(*[{r["dt"] for r in arr} for arr in members.values()]))
+    port = []
+    for d in dates:
+        rs = [next((r["pct"] for r in members[s] if r["dt"] == d), None) for s in members]
+        rs = [r for r in rs if r is not None]
+        if rs:
+            port.append((d, sum(rs) / n_pos))
+    cum, series = 1.0, []
+    for d, r in port:
+        cum *= (1 + r)
+        series.append((d, cum))
+    # 一年最大回撤：仅最近 252 个交易日窗口（原实现误为全历史口径）
+    win = series[-252:]
+    peak_w, mdd = win[0][1], 0.0
+    for _, v in win:
+        peak_w = max(peak_w, v)
+        mdd = min(mdd, v / peak_w - 1)
+    # 区间收益 = 累计净值之比（series 为日再平衡净值曲线）
+    def ret(n):
+        return series[-1][1] / series[-1 - n][1] - 1 if len(series) > n else None
+    ytd_base = next((i for i, (d, _) in enumerate(port) if d >= f"{port[-1][0][:4]}-01-01"), 0)
+    next_td, holiday_days = _next_trade_date(ctx, port[-1][0])
+
+    reg = _load(ctx.local_repo / "factors" / "registry.json")
+    return {
+        "id": pf["id"], "name": pf["name"], "as_of": port[-1][0], "base_ccy": pf["base_ccy"],
+        "note": pf["note"], "next_trade_date": next_td, "holiday_days": holiday_days,
+        "portfolio_metrics": {"day_ret": port[-1][1], "ret_20d": ret(20),
+                              "ret_ytd": series[-1][1] / series[ytd_base][1] - 1,
+                              "ret_1y": ret(252), "max_dd_1y": mdd, "nav": series[-1][1],
+                              "method": "等权·日再平衡·名义组合（真实行情合成；停牌/缺K线按0收益·权重冻结近似；最大回撤=近252交易日窗口）"},
+        "positions": positions, "signals": signals,
+        "factor_health": {"active": [f["id"] for f in reg["factors"] if f["status"] == "active"],
+                          "weakening": [f for f in reg["factors"] if f["status"] == "weakening"]},
+        "data_quality": {"last_bar": port[-1][0], "calendar_next": next_td, "sources": "AKShare 新浪+腾讯",
+                         "provenance": str(ctx.local_repo / "market" / "provenance.json")},
+    }
+
+
+def portfolio_rebalance_plan(args, ctx):
+    """拟调仓/执行单（变更建议）：引擎A五维 + 引擎B信号规则生成，附理由链，需人工确认
+
+    成本口径（C2 修复）：名义资金 ¥1,000,000（与执行单 ``exec_orders.build_exec_orders``
+    默认一致），单笔费用按执行单同费率（佣金万2.5/单边、最低 ¥5/笔；A 股股票卖出另计
+    印花税 0.05%）逐笔求和。
+    """
+    from . import exec_orders as EO
+    NOMINAL_CAPITAL_CNY = 1_000_000   # 与 build_exec_orders 默认资金一致（单笔费用求和口径）
+    pid = str(args.get("portfolio", "cn4"))
+    rv = portfolio_review({"portfolio": pid}, ctx)
+    asset_by_secid = {p.get("secid"): p.get("asset_type", "ETF") for p in rv["positions"]}
+    trades = []
+    for p in rv["positions"]:
+        b, a = p["beta"], p["alpha"]
+        if b["state"] == "below":
+            trades.append({"side": "evaluate_sell", "secid": p["secid"], "name": p["name"],
+                           "from": p["weight"], "to": round(p["weight"] * 0.6, 1),
+                           "reason": f"引擎B sig_ma20_break 卖出预警：收盘低于MA20 {b['ma20_break']:+.1%}（±2%带外）"
+                                     f" · 20日动量 {b['mom_20d']:+.1%} · 250日波动 {a['vol_250']:.0%}",
+                           "evidence": "E2", "settle": p.get("settle", "A股 T+1"),
+                           "cost": p.get("cost", "印花税卖出0.05%+佣金")})
+        elif b["state"] == "above" and b["mom_20d"] > 0 and (a.get("mom_12_1") or 0) > 0:
+            trades.append({"side": "hold_confirm", "secid": p["secid"], "name": p["name"],
+                           "from": p["weight"], "to": p["weight"],
+                           "reason": f"双引擎同向：引擎A动量 {a['mom_12_1']:+.1%}（12-1月） + 引擎B站上MA20 {b['ma20_break']:+.1%}"
+                                     f" · 20日新高 {'是' if b['high20_touch'] else '否'}",
+                           "evidence": "E2", "settle": "—", "cost": "—"})
+    turnover = sum(abs(t["to"] - t["from"]) for t in trades if t["side"] == "evaluate_sell") / 2
+    has_stock = any(p.get("asset_type") == "STOCK" for p in rv["positions"])
+    cost_est = sum(
+        EO._fee(abs(t["to"] - t["from"]) / 100 * NOMINAL_CAPITAL_CNY,
+                asset_by_secid.get(t["secid"], "ETF"), "卖出")
+        for t in trades if t["side"] == "evaluate_sell"
+    )
+    return {"plan_id": f"RP-{rv['as_of'].replace('-', '')}-{pid.upper()}", "portfolio": pid,
+            "generated_by": "engine_a+engine_b（规则版）", "as_of": rv["as_of"],
+            "diff_trades": trades, "turnover_est": f"{turnover:.1f}%（单边）",
+            "cost_est_cny": round(cost_est),
+            "cost_note": ("股票：双边佣金万2.5×2+印花税卖出0.05%" if has_stock
+                          else "ETF/LOF：双边佣金万2.5×2（免印花税）"),
+            "status": "draft → 待用户确认（引擎永不直接动仓位）"}
+
+
+def portfolio_exec_orders(args, ctx):
+    """调仓执行单：rebalance_plan → 委托指令（目标权重→金额→整手股数），待人工确认、不自动下单"""
+    from . import exec_orders as EO
+    pid = str(args.get("portfolio", "multi5"))
+    capital = float(args.get("capital", 1_000_000))
+    run_id = args.get("run_id")
+    art, review, plan = None, None, None
+    if run_id:
+        art = ctx.artifacts_dir / run_id
+    else:   # 取该组合最近一次含 rebalance_plan 的 run
+        for p in reversed(sorted(ctx.artifacts_dir.glob("*/rebalance_plan.json"))):
+            if _load(p).get("portfolio") == pid:
+                art = p.parent
+                break
+    if art is not None and (art / "rebalance_plan.json").exists() and (art / "review.json").exists():
+        plan, review, run_id = _load(art / "rebalance_plan.json"), _load(art / "review.json"), art.name
+    else:   # 无历史 run → 按当前数据现算
+        review = portfolio_review({"portfolio": pid}, ctx)
+        if "error" in review:
+            return review
+        plan = portfolio_rebalance_plan({"portfolio": pid}, ctx)
+        run_id = new_run_id("exec")
+        art = ctx.artifacts_dir / run_id
+    sheet = EO.build_exec_orders(review, plan, capital)
+    paths = EO.write_all(sheet, art)
+    return {"exec_id": sheet["exec_id"], "run_id": run_id, "portfolio": pid,
+            "capital_cny": capital, "status": sheet["status"],
+            "summary": sheet["summary"], "cash": sheet["cash"], "fees": sheet["fees"],
+            "orders": [o for o in sheet["orders"] if o["order_shares"] != 0],
+            "artifacts": paths}
+
+
+# ── backtest ────────────────────────────────────────────
+def backtest_run(args, ctx):
+    """组合回测：等权·月度再平衡（含换手成本）vs 沪深300ETF 买入持有 → HTML+MD+JSON"""
+    from . import backtest as BT
+    from . import report as RP
+    pid = str(args.get("portfolio", "multi5"))
+    pf_path = ctx.local_repo / "portfolio" / f"{pid}.json"
+    if not pf_path.exists():
+        return {"error": f"组合不存在：{pid}（{pf_path}）"}
+    pf = _load(pf_path)
+    bars = _load(ctx.local_repo / "market" / "daily_bars.json")
+    bt = BT.run_backtest(bars, pf, start=args.get("start"), end=args.get("end"),
+                         rf=float(args.get("rf", 0.0)))
+    run_id = new_run_id("bt")
+    paths = BT.write_all(bt, ctx.artifacts_dir / run_id, RP.CSS)
+    return {"run_id": run_id, "portfolio": pid, "start": bt["start"], "end": bt["end"],
+            "n_days": bt["n_days"], "n_rebalances": bt["n_rebalances"],
+            "strategy_metrics": bt["strategy_metrics"],
+            "benchmark": ({"secid": bt["benchmark"]["secid"], "name": bt["benchmark"]["name"],
+                           "metrics": bt["benchmark"]["metrics"]} if bt["benchmark"] else None),
+            "excess": bt["excess"], "cost": bt["cost"], "artifacts": paths}
+
+
+# ── report ──────────────────────────────────────────────
+def report_generate(args, ctx, run: dict | None = None):
+    from . import report as RP
+    pid = str(args.get("portfolio", "cn4"))
+    review = portfolio_review({"portfolio": pid}, ctx)
+    plan = portfolio_rebalance_plan({"portfolio": pid}, ctx)
+    run_id = (run or {}).get("run_id") or new_run_id()
+    verify = (run or {}).get("verify") or {}
+    art = ctx.artifacts_dir / run_id
+    art.mkdir(parents=True, exist_ok=True)
+    paths = RP.render_all(review, plan, ctx, run_id, art, verify=verify)
+    return {"run_id": run_id, "artifacts": paths, "verify_embedded": bool(verify)}
+
+
+def report_read(args, ctx):
+    run_id = args.get("run_id")
+    if run_id:
+        p = ctx.artifacts_dir / run_id / "report.md"
+    else:
+        runs = sorted(ctx.artifacts_dir.glob("*/report.md"))
+        if not runs:
+            return {"error": "无报告"}
+        p = runs[-1]
+    return {"path": str(p), "content": p.read_text(encoding="utf-8")[:4000]}
+
+
+# ── checkpoint ──────────────────────────────────────────
+def checkpoint_save(ctx: Ctx, run_id: str, manifest: dict):
+    cps = json.loads(ctx.checkpoints_file.read_text()) if ctx.checkpoints_file.exists() else {"next": 1, "items": []}
+    cps["items"].append({"cp_id": f"CP-{cps['next']:04d}", "run_id": run_id, **manifest})
+    cps["next"] += 1
+    ctx.checkpoints_file.write_text(json.dumps(cps, ensure_ascii=False, indent=2), encoding="utf-8")
+    return cps["items"][-1]["cp_id"]
+
+
+def checkpoint_list(args, ctx):
+    if not ctx.checkpoints_file.exists():
+        return {"items": []}
+    return {"items": json.loads(ctx.checkpoints_file.read_text())["items"]}
+
+
+def checkpoint_restore(args, ctx):
+    """α：恢复=输出重放清单（生产：按四元组重建环境重跑）"""
+    cid = args.get("cp")
+    for it in checkpoint_list({}, ctx)["items"]:
+        if it["cp_id"] == cid:
+            task = it.get("task", "review_cn4_once")
+            return {"restored": True, "manifest": it,
+                    "replay": f"ap fetch && ap clone && ap run tasks/{task}.yaml --as-of {it.get('as_of')}"}
+    return {"restored": False, "reason": "checkpoint 不存在"}
+
+
+# ── 工具注册表（MCP 暴露面）─────────────────────────────
+def _tool(fn, desc):
+    return {"fn": fn, "desc": desc}
+
+
+TOOLS = {
+    "data.sync":       _tool(D.data_sync, "同步远端数据集（AKShare 真实数据）到本地 DuckDB"),
+    "data.query":      _tool(D.data_query, "只读 SQL 点查（强制 LIMIT）"),
+    "factor.list":     _tool(factor_list, "列出因子注册中心（id/类型/状态/版本）"),
+    "factor.compute":  _tool(factor_compute, "引擎B：20日信号因子（mom/vol/MA20突破/新高/距高点）"),
+    "factor.compute_alpha": _tool(factor_compute_alpha, "引擎A：中长期因子（估值/质量/成长/动量/红利低波+五维）"),
+    "portfolio.review": _tool(portfolio_review, "cn4 组合复盘：中长期因子+短期20日+下一交易日指引"),
+    "portfolio.rebalance_plan": _tool(portfolio_rebalance_plan, "生成拟调仓/评估单（变更建议，需人工确认）"),
+    "portfolio.exec_orders": _tool(portfolio_exec_orders, "调仓执行单：目标权重→金额→整手股数委托清单（待人工确认，不自动下单）"),
+    "report.generate": _tool(report_generate, "生成完整报告（HTML+MD，含三建议）"),
+    "backtest.run":    _tool(backtest_run, "组合回测（等权月度再平衡 vs 沪深300ETF）→ HTML+MD+JSON"),
+    "report.read":     _tool(report_read, "读取最近/指定报告 Markdown（供 agent 解读）"),
+    "repo.clone":      _tool(R.repo_clone, "远端 main → 本地 sandbox（AKShare 真实数据）"),
+    "repo.status":     _tool(R.repo_status, "本地工作区状态（dirty/changed）"),
+    "repo.push":       _tool(R.repo_push, "提交变更 → 远端 CR（§15.2 门禁：须全绿 checkpoint，否则拒绝）"),
+    "checkpoint.list": _tool(checkpoint_list, "检查点列表"),
+    "checkpoint.restore": _tool(checkpoint_restore, "恢复检查点（α: 重放清单）"),
+}
+
+
+def call_tool(name: str, args: dict, ctx: Ctx, run: dict | None = None):
+    if name not in TOOLS:
+        return {"error": f"未知工具 {name}"}
+    t = TOOLS[name]
+    if name == "repo.push":
+        return t["fn"](args, ctx, run_manifest=run)
+    if name == "report.generate":
+        return t["fn"](args, ctx, run=run)
+    return t["fn"](args, ctx)
