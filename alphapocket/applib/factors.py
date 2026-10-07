@@ -53,9 +53,18 @@ def _by_period(reports: list[dict], period: str, t: str) -> dict | None:
 
 
 def ttm_eps(reports: list[dict], t: str) -> float | None:
-    """TTM 摊薄 EPS = 上年FY + 本年YTD − 上年同期YTD（FY 报告期直接取全年）"""
+    """TTM 摊薄 EPS；港股/美股取上游直出 ``eps_ttm``，A 股按 YTD 递推。
+
+    - 港股/美股：报告自带 ``eps_ttm``（港股 EPS_TTM 列 / 美股近 4 季合计）——
+      美股单季报口径下 YTD 递推不成立，凡带该键即以其为准（缺失则降级 None）。
+    - A 股（无 ``eps_ttm`` 键）：上年FY + 本年YTD − 上年同期YTD（FY 报告期直接取全年）。
+    """
     R = latest_report(reports, t)
-    if R is None or R.get("eps_ytd") is None:
+    if R is None:
+        return None
+    if "eps_ttm" in R:
+        return R["eps_ttm"]
+    if R.get("eps_ytd") is None:
         return None
     y, md = R["period"][:4], R["period"][5:]
     if md == "12-31":

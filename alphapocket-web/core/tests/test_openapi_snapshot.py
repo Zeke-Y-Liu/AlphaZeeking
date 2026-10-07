@@ -46,6 +46,9 @@ IMPLEMENTED_PATHS = {
     "/api/v1/runs",
     "/api/v1/runs/{run_uid}/artifacts/{file}",
     "/api/v1/jobs/{job_id}",
+    # V4-β 多市场：实时行情 + 港股通名单
+    "/api/v1/market/quotes",
+    "/api/v1/market/ggt",
 }
 
 

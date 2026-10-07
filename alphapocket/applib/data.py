@@ -24,6 +24,7 @@ def data_sync(args: dict, ctx) -> dict:
 
     con = duckdb.connect(str(ctx.db_path))
     for t in ("dwd_daily_bar", "dwd_daily_bar_raw", "cross_check_tx", "dwd_trade_calendar",
+              "dwd_trade_calendar_hk", "dwd_trade_calendar_us",
               "dwd_financial_report", "dwd_dividend", "dim_security", "factor_value_daily",
               "factor_pit_meta"):
         con.execute(f"DROP TABLE IF EXISTS {t}")
@@ -48,6 +49,21 @@ def data_sync(args: dict, ctx) -> dict:
     con.executemany("INSERT INTO cross_check_tx VALUES (?,?,?)",
                     [(s, r["dt"], r["close"]) for s, arr in txs.items() for r in arr])
     con.executemany("INSERT INTO dwd_trade_calendar VALUES (?)", [(d,) for d in cal])
+    # V4-β 多市场：港股/美股日历（由 K 线日期并集推导；文件缺失时跳过，保持向后兼容）
+    synced_extra = {}
+    for mkt in ("hk", "us"):
+        p = ctx.local_repo / "market" / f"trade_calendar_{mkt}.json"
+        if not p.exists():
+            continue
+        try:
+            mcal = _load_json(p)
+        except (OSError, ValueError):
+            continue
+        t = f"dwd_trade_calendar_{mkt}"
+        con.execute(f"DROP TABLE IF EXISTS {t}")
+        con.execute(f"CREATE TABLE {t} (dt DATE)")
+        con.executemany(f"INSERT INTO {t} VALUES (?)", [(d,) for d in mcal])
+        synced_extra[t] = len(mcal)
     con.executemany("INSERT INTO dim_security VALUES (?,?,?,?,?)",
                     [(d["secid"], d["name"], d["market"], d["asset_type"], d["industry"]) for d in dims])
     frep, fdiv = [], []
@@ -64,7 +80,7 @@ def data_sync(args: dict, ctx) -> dict:
     return {"synced": {"dwd_daily_bar": sum(len(a) for a in bars.values()),
                        "dwd_daily_bar_raw": sum(len(a) for a in raws.values()),
                        "dwd_financial_report": len(frep), "dwd_dividend": len(fdiv),
-                       "dwd_trade_calendar": len(cal), "dim_security": len(dims)},
+                       "dwd_trade_calendar": len(cal), "dim_security": len(dims), **synced_extra},
             "as_of": as_of, "source": "AKShare(新浪/腾讯) → remote/repo → duckdb",
             "provenance": str(ctx.local_repo / "market" / "provenance.json")}
 

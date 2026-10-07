@@ -12,7 +12,7 @@
  */
 import type { Page, Route } from '@playwright/test';
 
-export type Scenario = 'multi5' | 'cn4';
+export type Scenario = 'multi5' | 'cn4' | 'globalmix';
 
 const AS_OF = '2026-09-30';
 const SYNCED_AS_OF = '2026-10-05';
@@ -36,37 +36,50 @@ interface SecFixture {
   ftype: string | null;
   settle: string;
   cost: string;
+  /** V4-β 多市场：市场 / 币种 / 港股通标记。 */
+  market: 'A' | 'HK' | 'US';
+  currency?: 'CNY' | 'HKD' | 'USD';
+  hk_connect?: boolean | null;
 }
 
 const CN4: SecFixture[] = [
-  { secid: '601058.SH', code: '601058', name: '赛轮集团', asset_type: 'STOCK', industry: '汽车零部件·轮胎', sina_symbol: 'sh601058', ftype: null, settle: STOCK_SETTLE, cost: STOCK_COST },
-  { secid: '002014.SZ', code: '002014', name: '永新股份', asset_type: 'STOCK', industry: '塑料软包装', sina_symbol: 'sz002014', ftype: null, settle: STOCK_SETTLE, cost: STOCK_COST },
-  { secid: '600660.SH', code: '600660', name: '福耀玻璃', asset_type: 'STOCK', industry: '汽车零部件·汽车玻璃', sina_symbol: 'sh600660', ftype: null, settle: STOCK_SETTLE, cost: STOCK_COST },
-  { secid: '002027.SZ', code: '002027', name: '分众传媒', asset_type: 'STOCK', industry: '广告传媒', sina_symbol: 'sz002027', ftype: null, settle: STOCK_SETTLE, cost: STOCK_COST },
+  { secid: '601058.SH', code: '601058', name: '赛轮集团', asset_type: 'STOCK', industry: '汽车零部件·轮胎', sina_symbol: 'sh601058', ftype: null, settle: STOCK_SETTLE, cost: STOCK_COST, market: 'A', currency: 'CNY', hk_connect: null },
+  { secid: '002014.SZ', code: '002014', name: '永新股份', asset_type: 'STOCK', industry: '塑料软包装', sina_symbol: 'sz002014', ftype: null, settle: STOCK_SETTLE, cost: STOCK_COST, market: 'A', currency: 'CNY', hk_connect: null },
+  { secid: '600660.SH', code: '600660', name: '福耀玻璃', asset_type: 'STOCK', industry: '汽车零部件·汽车玻璃', sina_symbol: 'sh600660', ftype: null, settle: STOCK_SETTLE, cost: STOCK_COST, market: 'A', currency: 'CNY', hk_connect: null },
+  { secid: '002027.SZ', code: '002027', name: '分众传媒', asset_type: 'STOCK', industry: '广告传媒', sina_symbol: 'sz002027', ftype: null, settle: STOCK_SETTLE, cost: STOCK_COST, market: 'A', currency: 'CNY', hk_connect: null },
 ];
 
 const MULTI5: SecFixture[] = [
-  { secid: '510300.SH', code: '510300', name: '沪深300ETF', asset_type: 'ETF', industry: 'A股宽基指数', sina_symbol: 'sh510300', ftype: 'etf', settle: 'T+1', cost: ETF_COST },
-  { secid: '501018.SH', code: '501018', name: '南方原油LOF', asset_type: 'LOF', industry: '原油(QDII)', sina_symbol: 'sh501018', ftype: 'lof', settle: 'T+0(跨境LOF)', cost: LOF_COST },
-  { secid: '518880.SH', code: '518880', name: '黄金ETF', asset_type: 'ETF', industry: '黄金', sina_symbol: 'sh518880', ftype: 'etf', settle: 'T+0', cost: ETF_COST },
-  { secid: '513100.SH', code: '513100', name: '纳指ETF', asset_type: 'ETF', industry: '美股指数(QDII-纳指100)', sina_symbol: 'sh513100', ftype: 'etf', settle: 'T+0(跨境)', cost: ETF_COST },
-  { secid: '511260.SH', code: '511260', name: '十年国债ETF', asset_type: 'ETF', industry: '国债', sina_symbol: 'sh511260', ftype: 'etf', settle: 'T+0', cost: ETF_COST },
+  { secid: '510300.SH', code: '510300', name: '沪深300ETF', asset_type: 'ETF', industry: 'A股宽基指数', sina_symbol: 'sh510300', ftype: 'etf', settle: 'T+1', cost: ETF_COST, market: 'A', currency: 'CNY', hk_connect: null },
+  { secid: '501018.SH', code: '501018', name: '南方原油LOF', asset_type: 'LOF', industry: '原油(QDII)', sina_symbol: 'sh501018', ftype: 'lof', settle: 'T+0(跨境LOF)', cost: LOF_COST, market: 'A', currency: 'CNY', hk_connect: null },
+  { secid: '518880.SH', code: '518880', name: '黄金ETF', asset_type: 'ETF', industry: '黄金', sina_symbol: 'sh518880', ftype: 'etf', settle: 'T+0', cost: ETF_COST, market: 'A', currency: 'CNY', hk_connect: null },
+  { secid: '513100.SH', code: '513100', name: '纳指ETF', asset_type: 'ETF', industry: '美股指数(QDII-纳指100)', sina_symbol: 'sh513100', ftype: 'etf', settle: 'T+0(跨境)', cost: ETF_COST, market: 'A', currency: 'CNY', hk_connect: null },
+  { secid: '511260.SH', code: '511260', name: '十年国债ETF', asset_type: 'ETF', industry: '国债', sina_symbol: 'sh511260', ftype: 'etf', settle: 'T+0', cost: ETF_COST, market: 'A', currency: 'CNY', hk_connect: null },
 ];
 
-const ALL_SECURITIES: SecFixture[] = [...CN4, ...MULTI5];
+/* V4-β 多市场标的（港股通/非港股通/美股） */
+const HKUS: SecFixture[] = [
+  { secid: '00700.HK', code: '00700', name: '腾讯控股', asset_type: 'STOCK', industry: '互联网·社交游戏', sina_symbol: 'hk00700', ftype: null, settle: '港股 T+0（港股通人民币结算）', cost: '印花税0.1%+交易征费；港股通以港币报价人民币结算（汇兑价差）；股息税20%', market: 'HK', currency: 'HKD', hk_connect: true },
+  { secid: '09988.HK', code: '09988', name: '阿里巴巴-W', asset_type: 'STOCK', industry: '互联网·电商云计算', sina_symbol: 'hk09988', ftype: null, settle: '港股 T+0（港股通人民币结算）', cost: '印花税0.1%+交易征费；港股通以港币报价人民币结算（汇兑价差）；股息税20%', market: 'HK', currency: 'HKD', hk_connect: true },
+  { secid: 'AAPL.US', code: 'AAPL', name: '苹果', asset_type: 'STOCK', industry: '消费电子·服务', sina_symbol: 'gb_aapl', ftype: null, settle: '美股 T+0', cost: '券商佣金（免印花税）+ 换汇点差；股息预扣税10%（W-8BEN）', market: 'US', currency: 'USD', hk_connect: null },
+];
+
+const ALL_SECURITIES: SecFixture[] = [...CN4, ...MULTI5, ...HKUS];
 
 function securityOut(s: SecFixture) {
   return {
     secid: s.secid,
     code: s.code,
     name: s.name,
-    market: 'A',
+    market: s.market,
     asset_type: s.asset_type,
     industry: s.industry,
     sina_symbol: s.sina_symbol,
     ftype: s.ftype,
     settle: s.settle,
     cost: s.cost,
+    currency: s.currency ?? (s.market === 'A' ? 'CNY' : null),
+    hk_connect: s.hk_connect ?? null,
     source: 'seed',
     created_at: CREATED_AT,
   };
@@ -78,7 +91,10 @@ interface PositionFixture {
   secid: string;
   weight: number;
   name: string;
+  market?: string;
   asset_type: string;
+  currency?: string | null;
+  hk_connect?: boolean | null;
   settle?: string;
   cost?: string;
 }
@@ -98,7 +114,17 @@ interface PortfolioFixture {
 
 function makePositions(secs: SecFixture[]): PositionFixture[] {
   const w = Number((100 / secs.length).toFixed(1));
-  return secs.map((s) => ({ secid: s.secid, weight: w, name: s.name, asset_type: s.asset_type, settle: s.settle, cost: s.cost }));
+  return secs.map((s) => ({
+    secid: s.secid,
+    weight: w,
+    name: s.name,
+    market: s.market,
+    asset_type: s.asset_type,
+    currency: s.currency ?? (s.market === 'A' ? 'CNY' : null),
+    hk_connect: s.hk_connect ?? null,
+    settle: s.settle,
+    cost: s.cost,
+  }));
 }
 
 const CN4_PORTFOLIO: PortfolioFixture = {
@@ -125,6 +151,20 @@ const MULTI5_PORTFOLIO: PortfolioFixture = {
   created_at: CREATED_AT,
   updated_at: CREATED_AT,
   positions: makePositions(MULTI5),
+};
+
+/* V4-β：混合市场组合（A股 + 港股通 + 美股） */
+const GLOBALMIX_PORTFOLIO: PortfolioFixture = {
+  id: 3,
+  pid: 'globalmix',
+  name: 'globalmix · A股+港股通+美股 混合',
+  note: 'V4-β 多市场演示组合（等权；base CNY，港美按汇率折算）',
+  base_ccy: 'CNY',
+  strategy: {},
+  status: 'active',
+  created_at: CREATED_AT,
+  updated_at: CREATED_AT,
+  positions: makePositions([CN4[0], MULTI5[0], HKUS[0], HKUS[1], HKUS[2]]),
 };
 
 /* ── 产物构建（α 锚点） ─────────────────────────────────────── */
@@ -401,7 +441,12 @@ export function createStore(scenario: Scenario): MockStore {
   return {
     scenario,
     // 剧本 A 从仅含 cn4 的 seed 出发，随后新建 multi5；剧本 B 直接用 seed 的 cn4。
-    portfolios: scenario === 'multi5' ? [CN4_PORTFOLIO] : [CN4_PORTFOLIO, MULTI5_PORTFOLIO],
+    portfolios:
+      scenario === 'multi5'
+        ? [CN4_PORTFOLIO]
+        : scenario === 'globalmix'
+          ? [GLOBALMIX_PORTFOLIO]
+          : [CN4_PORTFOLIO, MULTI5_PORTFOLIO, GLOBALMIX_PORTFOLIO],
     runs: [],
     artifacts: {},
     plans: [],
@@ -466,14 +511,23 @@ function latestRunSummary(store: MockStore, pf: PortfolioFixture): Record<string
 
 function buildStatus(store: MockStore) {
   const checks = verificationChecks();
+  const byMarket = (m: string) => ALL_SECURITIES.filter((s) => s.market === m).length;
   return {
     as_of: store.asOf,
-    universe: { count: ALL_SECURITIES.length, types: { STOCK: CN4.length, ETF: 4, LOF: 1 } },
+    as_of_by_market: { A: store.asOf, HK: store.asOf, US: store.asOf },
+    universe: {
+      count: ALL_SECURITIES.length,
+      types: { STOCK: CN4.length + HKUS.length, ETF: 4, LOF: 1 },
+      markets: { A: byMarket('A'), HK: byMarket('HK'), US: byMarket('US') },
+    },
     securities: ALL_SECURITIES.map((s) => ({
       secid: s.secid,
       code: s.code,
       name: s.name,
+      market: s.market,
       asset_type: s.asset_type,
+      currency: s.currency ?? (s.market === 'A' ? 'CNY' : null),
+      hk_connect: s.hk_connect ?? null,
       last_bar: store.asOf,
       lag_days: 0,
       missing: 0,
@@ -561,21 +615,112 @@ async function handle(route: Route, store: MockStore): Promise<void> {
       ALL_SECURITIES.find((s) => s.code === code) ??
       ALL_SECURITIES.find((s) => s.secid.startsWith(code));
     if (exist) return ok(route, securityOut(exist));
-    const market = code.startsWith('6') ? 'SH' : 'SZ';
+    // V4-β：按代码形态判市场（6 位→A；1-5 位数字→HK 补零；字母→US）
+    if (/^\d{6}$/.test(code)) {
+      const market = code.startsWith('6') ? 'SH' : 'SZ';
+      return ok(
+        route,
+        securityOut({
+          secid: `${code}.${market}`,
+          code,
+          name: `新标的${code}`,
+          asset_type: (body?.asset_type as 'STOCK') ?? 'STOCK',
+          industry: '未知',
+          sina_symbol: `${market.toLowerCase()}${code}`,
+          ftype: null,
+          settle: STOCK_SETTLE,
+          cost: STOCK_COST,
+          market: 'A',
+          currency: 'CNY',
+          hk_connect: null,
+        }),
+      );
+    }
+    if (/^\d{1,5}$/.test(code)) {
+      const hk = code.padStart(5, '0');
+      return ok(
+        route,
+        securityOut({
+          secid: `${hk}.HK`,
+          code: hk,
+          name: `新港股${hk}`,
+          asset_type: 'STOCK',
+          industry: '未知',
+          sina_symbol: `hk${hk}`,
+          ftype: null,
+          settle: '港股 T+0（港股通人民币结算）',
+          cost: '印花税0.1%+交易征费',
+          market: 'HK',
+          currency: 'HKD',
+          hk_connect: true,
+        }),
+      );
+    }
+    const up = code.toUpperCase();
     return ok(
       route,
       securityOut({
-        secid: `${code}.${market}`,
-        code,
-        name: `新标的${code}`,
-        asset_type: (body?.asset_type as 'STOCK') ?? 'STOCK',
+        secid: `${up}.US`,
+        code: up,
+        name: `新美股${up}`,
+        asset_type: 'STOCK',
         industry: '未知',
-        sina_symbol: `${market.toLowerCase()}${code}`,
+        sina_symbol: `gb_${up.toLowerCase()}`,
         ftype: null,
-        settle: STOCK_SETTLE,
-        cost: STOCK_COST,
+        settle: '美股 T+0',
+        cost: '券商佣金（免印花税）',
+        market: 'US',
+        currency: 'USD',
+        hk_connect: null,
       }),
     );
+  }
+
+  /* ── 实时行情（V4-β） ── */
+  if (method === 'GET' && path === '/v1/market/quotes') {
+    const secids = (url.searchParams.get('secids') ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const quotes = secids.map((secid) => {
+      const s = ALL_SECURITIES.find((x) => x.secid === secid);
+      const base = s ? Number(s.code.slice(-2)) / 10 + 10 : 100;
+      const pct = s ? (s.code.charCodeAt(0) % 7) - 3 : 0;
+      return {
+        secid,
+        name: s?.name ?? secid,
+        market: s?.market ?? 'A',
+        market_label: { A: 'A股', HK: '港股', US: '美股' }[s?.market ?? 'A'],
+        currency: s?.currency ?? 'CNY',
+        price: Math.round(base * 100) / 100,
+        price_cny:
+          s?.currency === 'HKD'
+            ? Math.round(base * 0.8543 * 100) / 100
+            : s?.currency === 'USD'
+              ? Math.round(base * 6.705 * 100) / 100
+              : Math.round(base * 100) / 100,
+        prev_close: Math.round(base * 100) / 100,
+        open: Math.round(base * 100) / 100,
+        high: Math.round(base * 1.02 * 100) / 100,
+        low: Math.round(base * 0.98 * 100) / 100,
+        chg: 0.5,
+        pct,
+        volume: 1000000,
+        amount: 15000000,
+        time: '2026-10-06 16:00:00',
+        source: 'sina',
+        hk_connect: s?.hk_connect ?? null,
+        asset_type: s?.asset_type ?? 'STOCK',
+      };
+    });
+    return ok(route, {
+      quotes,
+      fx: { HKD_CNY: 0.8543, USD_CNY: 6.705, as_of: '2026-10-06', time: '16:00:00', source: 'sina' },
+      cached: false,
+    });
+  }
+  if (method === 'GET' && path === '/v1/market/ggt') {
+    return ok(route, { codes: ['00005', '00700', '00388', '09988'], count: 4, source: 'xueqiu' });
   }
 
   /* ── 数据 ── */
@@ -620,7 +765,10 @@ async function handle(route: Route, store: MockStore): Promise<void> {
           secid: p.secid,
           weight: Number(p.weight),
           name: s?.name ?? p.secid,
+          market: s?.market ?? 'A',
           asset_type: s?.asset_type ?? 'STOCK',
+          currency: s?.currency ?? 'CNY',
+          hk_connect: s?.hk_connect ?? null,
           settle: s?.settle,
           cost: s?.cost,
         };

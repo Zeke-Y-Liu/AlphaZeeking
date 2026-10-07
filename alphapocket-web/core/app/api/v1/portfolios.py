@@ -67,7 +67,10 @@ class PositionOut(BaseModel):
     secid: str
     weight: float
     name: str
+    market: str | None = None
     asset_type: str
+    currency: str | None = None
+    hk_connect: bool | None = None
     settle: str | None = None
     cost: str | None = None
 

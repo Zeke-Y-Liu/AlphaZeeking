@@ -143,6 +143,7 @@ function makeStatus(): DataStatus {
         secid: '600519.SH',
         code: '600519',
         name: '贵州茅台',
+        market: 'A',
         asset_type: 'STOCK',
         last_bar: '2024-06-28',
         lag_days: 0,

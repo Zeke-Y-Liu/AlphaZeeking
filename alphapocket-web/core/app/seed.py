@@ -26,12 +26,18 @@ DEMO_ROLE = "owner"
 
 _pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
-# ── 九标的（字段逐字段对齐 α 元数据）──────────────────────────
+# ── 十六标的（V4-β：A股9 + 港股4 + 美股3；字段逐字段对齐 α 元数据）──
 # CN4 股票：α datasource 未显式给出 settle/cost/ftype，按 §5.2 股票缺省填充
 _STOCK_SETTLE = "A股 T+1"
 _STOCK_COST = "印花税卖出0.05%+佣金"
 _ETF_COST = "ETF 免印花税·佣金约万2.5"
 _LOF_COST = "LOF 免印花税·佣金约万2.5"
+# V4-β 多市场缺省（与注册链路 _defaults 保持一致）
+_HK_SETTLE = "港股 T+0（港股通人民币结算）"
+_HK_COST = "印花税0.1%+交易征费+汇兑价差；港股通股息税20%（红筹28%）"
+_HK_GGT_COST = "印花税0.1%+交易征费；港股通以港币报价人民币结算（汇兑价差）；股息税20%"
+_US_SETTLE = "美股 T+0"
+_US_COST = "券商佣金（免印花税）+ 换汇点差；股息预扣税10%（W-8BEN）"
 
 SECURITIES: list[dict] = [
     # CN4
@@ -63,9 +69,35 @@ SECURITIES: list[dict] = [
     {"secid": "511260.SH", "code": "511260", "name": "十年国债ETF", "market": "A",
      "asset_type": "ETF", "industry": "国债", "sina_symbol": "sh511260",
      "ftype": "etf", "settle": "T+0", "cost": _ETF_COST},
+    # V4-β 港股（港股通标记与雪球港股通名单核对：00700/09988/00388 均在列）
+    {"secid": "00700.HK", "code": "00700", "name": "腾讯控股", "market": "HK",
+     "asset_type": "STOCK", "industry": "互联网·社交游戏", "sina_symbol": "hk00700",
+     "ftype": None, "settle": _HK_SETTLE, "cost": _HK_GGT_COST, "currency": "HKD",
+     "hk_connect": True},
+    {"secid": "09988.HK", "code": "09988", "name": "阿里巴巴-W", "market": "HK",
+     "asset_type": "STOCK", "industry": "互联网·电商云计算", "sina_symbol": "hk09988",
+     "ftype": None, "settle": _HK_SETTLE, "cost": _HK_GGT_COST, "currency": "HKD",
+     "hk_connect": True},
+    {"secid": "00388.HK", "code": "00388", "name": "香港交易所", "market": "HK",
+     "asset_type": "STOCK", "industry": "金融·交易所", "sina_symbol": "hk00388",
+     "ftype": None, "settle": _HK_SETTLE, "cost": _HK_GGT_COST, "currency": "HKD",
+     "hk_connect": True},
+    # V4-β 美股
+    {"secid": "AAPL.US", "code": "AAPL", "name": "苹果", "market": "US",
+     "asset_type": "STOCK", "industry": "消费电子·服务", "sina_symbol": "gb_aapl",
+     "ftype": None, "settle": _US_SETTLE, "cost": _US_COST, "currency": "USD",
+     "hk_connect": None},
+    {"secid": "MSFT.US", "code": "MSFT", "name": "微软", "market": "US",
+     "asset_type": "STOCK", "industry": "软件·云计算", "sina_symbol": "gb_msft",
+     "ftype": None, "settle": _US_SETTLE, "cost": _US_COST, "currency": "USD",
+     "hk_connect": None},
+    {"secid": "NVDA.US", "code": "NVDA", "name": "英伟达", "market": "US",
+     "asset_type": "STOCK", "industry": "半导体·AI算力", "sina_symbol": "gb_nvda",
+     "ftype": None, "settle": _US_SETTLE, "cost": _US_COST, "currency": "USD",
+     "hk_connect": None},
 ]
 
-# ── 两组合（name/note 逐字对齐 α portfolio/*.json）────────────
+# ── 三组合（cn4/multi5 对齐 α；globalmix 为 V4-β 混合市场组合）──
 PORTFOLIOS: list[dict] = [
     {
         "pid": "cn4",
@@ -92,6 +124,22 @@ PORTFOLIOS: list[dict] = [
             ("518880.SH", Decimal("20.000")),
             ("513100.SH", Decimal("20.000")),
             ("511260.SH", Decimal("20.000")),
+        ],
+    },
+    {
+        "pid": "globalmix",
+        "name": "globalmix · A股+港股通+美股 混合",
+        "note": "V4-β 多市场演示组合：A股赛轮+沪深300ETF / 港股通腾讯+阿里（港币报价、"
+                "人民币结算）/ 美股苹果+微软（美元计价）；等权 16.67%×6，base CNY，"
+                "港美持仓按 HKD_CNY/USD_CNY 汇率折算",
+        "base_ccy": "CNY",
+        "positions": [
+            ("601058.SH", Decimal("16.670")),
+            ("510300.SH", Decimal("16.670")),
+            ("00700.HK", Decimal("16.670")),
+            ("09988.HK", Decimal("16.670")),
+            ("AAPL.US", Decimal("16.660")),
+            ("MSFT.US", Decimal("16.660")),
         ],
     },
 ]
@@ -138,12 +186,18 @@ def run_seed() -> dict[str, tuple[int, int]]:
             ["username"],
             [],
         )
-        # securities
-        sec_rows = [{**row, "source": "seed"} for row in SECURITIES]
+        # securities（A 股历史行补 currency=CNY；HK/US 行自带 currency/hk_connect）
+        sec_rows = [
+            {**row, "source": "seed",
+             "currency": row.get("currency") or ("CNY" if row["market"] == "A" else None),
+             "hk_connect": row.get("hk_connect")}
+            for row in SECURITIES
+        ]
         stats["securities"] = _upsert(
             session, Security, sec_rows, ["secid"],
             ["code", "name", "market", "asset_type", "industry",
-             "sina_symbol", "ftype", "settle", "cost", "source"],
+             "sina_symbol", "ftype", "settle", "cost", "source",
+             "currency", "hk_connect"],
         )
         # portfolios
         pf_rows = [{k: pf[k] for k in ("pid", "name", "note", "base_ccy")} for pf in PORTFOLIOS]

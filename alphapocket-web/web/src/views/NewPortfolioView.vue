@@ -7,7 +7,7 @@ import { useRouter } from 'vue-router';
 import { createPortfolio, registerSecurity, searchSecurities } from '../api';
 import { ApiError } from '../api/types';
 import type { AssetType, Security } from '../api/types';
-import { ApBadge, ApButton, ApCard, ApStepper, useToast } from '../components/ui';
+import { ApBadge, ApButton, ApCard, ApMarketBadge, ApStepper, useToast } from '../components/ui';
 import type { ApStepItem, BadgeTone } from '../components/ui';
 
 const router = useRouter();
@@ -24,6 +24,10 @@ interface EditPosition {
   name: string;
   asset_type: AssetType;
   weight: number | null;
+  /** V4-β 多市场：市场 / 币种 / 港股通标记（展示用，提交体不变）。 */
+  market?: string | null;
+  currency?: string | null;
+  hk_connect?: boolean | null;
 }
 
 const TYPE_TONE: Record<AssetType, BadgeTone> = { STOCK: 'info', ETF: 'success', LOF: 'warn' };
@@ -84,6 +88,9 @@ function addPosition(sec: Security): void {
     name: sec.name || sec.code,
     asset_type: sec.asset_type,
     weight: null,
+    market: sec.market,
+    currency: sec.currency,
+    hk_connect: sec.hk_connect,
   });
 }
 
@@ -101,7 +108,9 @@ async function registerNew(): Promise<void> {
   registering.value = true;
   errors.positions = '';
   try {
-    const sec = await registerSecurity(code, registerType.value);
+    // V4-β：港股/美股仅支持 STOCK → 非 6 位 A 股代码不传 asset_type（服务端按市场默认 STOCK）
+    const aCode = code.toLowerCase().replace(/^(sh|sz)/, '').replace(/\.(sh|sz)$/, '');
+    const sec = await registerSecurity(code, /^\d{6}$/.test(aCode) ? registerType.value : undefined);
     addPosition(sec);
     registerCode.value = '';
     toast.success(`已注册 ${sec.secid}`);
@@ -335,6 +344,7 @@ onBeforeUnmount(() => {
           <p v-if="searching" class="ap-muted" data-test="searching">搜索中…</p>
           <ul v-if="searchResults.length" class="np-results" data-test="search-results">
             <li v-for="sec in searchResults" :key="sec.secid" class="np-result">
+              <ApMarketBadge :market="sec.market" :hk-connect="sec.hk_connect" />
               <span class="ap-mono">{{ sec.secid }}</span>
               <span class="np-result__name">{{ sec.name }}</span>
               <ApBadge :tone="typeTone(sec.asset_type)">{{ sec.asset_type }}</ApBadge>
@@ -358,13 +368,13 @@ onBeforeUnmount(() => {
               v-model="registerCode"
               class="np-input ap-mono"
               type="text"
-              placeholder="6 位代码，如 510300"
+              placeholder="A股 6 位（510300）· 港股 1-5 位（700）· 美股字母（AAPL）"
               data-test="register-code"
             />
             <select v-model="registerType" class="np-input np-select" data-test="register-type">
               <option value="STOCK">STOCK</option>
-              <option value="ETF">ETF</option>
-              <option value="LOF">LOF</option>
+              <option value="ETF">ETF（仅A股）</option>
+              <option value="LOF">LOF（仅A股）</option>
             </select>
             <ApButton
               variant="ghost"
@@ -376,6 +386,10 @@ onBeforeUnmount(() => {
               注册并添加
             </ApButton>
           </div>
+          <p class="np-hint ap-muted">
+            港股自动补零至 5 位并标记港股通（雪球名单）；美股仅支持无点号代码。
+            A股+港股通+美股可加入同一组合。
+          </p>
           <span v-if="errors.positions" class="np-error" role="alert" data-test="positions-error">
             {{ errors.positions }}
           </span>
@@ -395,6 +409,7 @@ onBeforeUnmount(() => {
 
           <ul v-else class="np-poslist" data-test="position-list">
             <li v-for="(pos, index) in positions" :key="pos.secid" class="np-pos">
+              <ApMarketBadge :market="pos.market" :hk-connect="pos.hk_connect" />
               <span class="ap-mono np-pos__secid">{{ pos.secid }}</span>
               <span class="np-pos__name">{{ pos.name }}</span>
               <ApBadge :tone="typeTone(pos.asset_type)">{{ pos.asset_type }}</ApBadge>
@@ -456,6 +471,7 @@ onBeforeUnmount(() => {
           </div>
           <ul class="np-summary__list">
             <li v-for="pos in positions" :key="pos.secid" class="np-summary__pos">
+              <ApMarketBadge :market="pos.market" :hk-connect="pos.hk_connect" />
               <span class="ap-mono">{{ pos.secid }}</span>
               <span>{{ pos.name }}</span>
               <ApBadge :tone="typeTone(pos.asset_type)">{{ pos.asset_type }}</ApBadge>

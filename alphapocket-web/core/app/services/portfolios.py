@@ -178,7 +178,11 @@ def build_materialized(
     positions: Sequence[tuple[str, Decimal]],
     secmap: dict[str, Security],
 ) -> dict[str, Any]:
-    """按 §5.2 / α 契约构造物化字典。"""
+    """按 §5.2 / α 契约构造物化字典（V4-β：trade_ccy 按标的币种，补 currency/hk_connect）。
+
+    ``trade_ccy``：A股 → CNY；港股 → HKD（港股通以港币报价、人民币结算）；
+    美股 → USD；标的缺币种时回退组合 ``base_ccy``（旧行为）。
+    """
     return {
         "id": portfolio.pid,
         "name": portfolio.name,
@@ -192,7 +196,9 @@ def build_materialized(
                 "market": secmap[secid].market,
                 "asset_type": secmap[secid].asset_type,
                 "weight": float(_q(weight)),
-                "trade_ccy": portfolio.base_ccy,
+                "trade_ccy": secmap[secid].currency or portfolio.base_ccy,
+                "currency": secmap[secid].currency,
+                "hk_connect": secmap[secid].hk_connect,
                 "settle": secmap[secid].settle,
                 "cost": secmap[secid].cost,
             }
@@ -278,7 +284,7 @@ def latest_run(db: Session, portfolio_id: int) -> dict[str, Any] | None:
 def position_details(
     db: Session, portfolio_id: int
 ) -> list[dict[str, Any]]:
-    """详情用持仓（含 securities 补全字段），按插入顺序。"""
+    """详情用持仓（含 securities 补全字段；V4-β 补 market/currency/hk_connect），按插入顺序。"""
     rows = db.execute(
         select(Position, Security)
         .join(Security, Position.secid == Security.secid)
@@ -290,7 +296,10 @@ def position_details(
             "secid": pos.secid,
             "weight": float(pos.weight),
             "name": sec.name,
+            "market": sec.market,
             "asset_type": sec.asset_type,
+            "currency": sec.currency,
+            "hk_connect": sec.hk_connect,
             "settle": sec.settle,
             "cost": sec.cost,
         }

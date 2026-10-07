@@ -300,28 +300,34 @@ def test_build_verifications_order_and_limit(tmp_path, pg_ready, cleanup) -> Non
 
 
 def test_endpoint_status_ok(api_client, tmp_path, pg_ready, cleanup) -> None:
-    """GET /api/v1/data/status → 200 且字段齐全。"""
+    """GET /api/v1/data/status → 200 且字段齐全（V4-β 多市场字段）。"""
     _write_bars(tmp_path, {"test_ds_a.SH": ["2026-01-06"]})
     _upsert_security("test_ds_a.SH", "900004", "STOCK", cleanup)
 
     resp = api_client.get("/api/v1/data/status")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert set(body) == {"as_of", "universe", "securities", "verification", "latest_sync"}
+    assert set(body) == {"as_of", "as_of_by_market", "universe", "securities",
+                         "verification", "latest_sync"}
     assert body["as_of"] == "2026-01-06"
-    assert set(body["universe"]) == {"count", "types"}
+    assert set(body["universe"]) == {"count", "types", "markets"}
     assert set(body["universe"]["types"]) == {"STOCK", "ETF", "LOF"}
+    assert set(body["universe"]["markets"]) == {"A", "HK", "US"}
     a = _item(body, "test_ds_a.SH")
     assert set(a) == {
         "secid",
         "code",
         "name",
+        "market",
         "asset_type",
+        "currency",
+        "hk_connect",
         "last_bar",
         "lag_days",
         "missing",
         "has_bars",
     }
+    assert a["market"] == "A"
 
 
 def test_endpoint_verifications_limit(api_client, pg_ready, cleanup) -> None:

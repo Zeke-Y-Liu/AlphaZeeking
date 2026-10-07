@@ -10,11 +10,39 @@ V4-α 真实化：以 AKShare 免费公开接口为唯一数据源，替换 seed
   序列即不复权 raw）；交叉源为腾讯 stock_zh_a_hist_tx（独立源，对 ETF/LOF 同样适用；
   东财 push2his 接口在当前网络出口不可达，弃用）
 
+V4-β 多市场扩展（2026-10-06）：universe 支持 A股 / 港股 / 美股三类 secid（按后缀分类）。
+- 港股（``00700.HK``）：日K 新浪 stock_hk_daily（qfq + raw）；交叉源 腾讯 web.ifzq.gtimg.cn
+  （hk{code}，不复权 HKD）；港股通名单 雪球港股通筛选（market=HK&type=ggt），失败降级
+  ggt_static 静态快照
+- 美股（``AAPL.US``）：日K 新浪 stock_us_daily（qfq + raw，无 amount 列）；交叉源 腾讯
+  us{TICKER}.OQ/.N/.A（依次尝试纳斯达克/纽交所/美交所）
+
+V4-β 财务因子补充（2026-10-07）：港股/美股接入东财财务与分红接口，补齐引擎 A 的
+估值（PE/PB）/质量（ROE·利润率）/成长（营收·净利同比）/红利（股息率）因子。
+- 港股财务：东财 stock_financial_hk_analysis_indicator_em（年度 + 报告期两次合并，
+  含 BPS / BASIC_EPS / EPS_TTM / ROE_YEARLY / 同比 / 毛利率）；分红
+  stock_hk_dividend_payout_em（除净日 + 分红方案文本；取括注前主方案的现金「每股派」
+  并按币种折 HKD，送股/分派他股等非现金分派不计入）
+- 美股财务：东财 stock_financial_us_analysis_indicator_em（单季报→近4季 TTM EPS；年报
+  ROE）+ stock_financial_us_report_em（资产负债表归母股东权益→BPS，股数=归母净利/基本EPS）；
+  美股无公开分红接口（AKShare 未封装）→ 红利因子不适用；东财未收录部分银行/保险类美股
+  主要指标（上游返回空）→ 该类标的财务因子不适用（价格类照常，透明登记于拉取告警）
+- 币种归一：港股按报价币种 HKD 折算（财务/分红原币可能为人民币/美元）；美股按 USD 折算。
+  折算经新浪 fx_shkdcny/fx_susdcny 人民币中轴，用同步日即期汇率（历史区间用同一汇率，
+  属透明简化）。
+- PIT：港股/美股报告期统一取「报告期 + 90 天」为可用人时点（港股主板年报/中期披露窗口
+  3/2 个月；美股 10-K/10-Q 披露窗口 60-90/40 天，取 90 天更保守）；precomputed
+  ``eps_ttm``（港股 EPS_TTM 列 / 美股近 4 季合计）优先于引擎 A 的 YTD 递推。
+- 实时行情：新浪 hq.sinajs.cn 批量（sh/sz{code}、hk{code}、gb_{ticker}），腾讯 qt.gtimg.cn 兜底
+- 汇率：新浪 hq.sinajs.cn fx_shkdcny / fx_susdcny（港元/美元兑人民币）
+- 交易日历：A股 新浪日历不变；港股/美股 由本市场 K 线日期并集推导
+  （trade_calendar_hk.json / trade_calendar_us.json，供日历校验按市场分组）
+
 纪律：仅调用公开函数（无下划线内部函数）；全部数据附溯源 provenance（接口/参数/
 行数/sha256）；财务报告期按监管披露截止日保守推算可用人时点（PIT）。
 """
 from __future__ import annotations
-import json, time, hashlib, datetime as dt
+import json, re, time, hashlib, datetime as dt
 from pathlib import Path
 
 # ── 组合定义（用户指定四标的；未提供权重 → 等权 25%）──────────────
@@ -52,6 +80,588 @@ FIN_COLS = {
     "np_g":     "净利润增长率(%)",
     "margin":   "主营业务利润率(%)",
 }
+
+# ── 多市场（A股/港股/美股）公共定义与工具 ─────────────────────────
+
+MARKET_CCY = {"A": "CNY", "HK": "HKD", "US": "USD"}
+
+# 港股/美股财务报告期 → 可用人时点（PIT）保守披露窗口（统一 90 天，见模块 docstring）
+FOREIGN_PIT_LAG_DAYS = {"HK": 90, "US": 90}
+
+# 分红方案文本中的币种别名 → 规范币种
+_DIV_CCY_ALIAS = {"港币": "HKD", "港元": "HKD", "人民币": "CNY", "美元": "USD"}
+
+# 港股通标的静态快照（兜底；在线源为雪球港股通筛选）
+from applib.ggt_static import GGT_SNAPSHOT_DATE, GGT_STATIC  # noqa: E402
+
+_SINA_HQ_URL = "https://hq.sinajs.cn/list="
+_TX_QT_URL = "https://qt.gtimg.cn/q="
+_TX_KLINE_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+_HQ_HEADERS = {"Referer": "https://finance.sina.com.cn", "User-Agent": "Mozilla/5.0"}
+
+
+def classify_secid(secid: str) -> str | None:
+    """secid 后缀 → 市场：``.SH``/``.SZ``→A，``.HK``→HK，``.US``→US；无法识别 None。"""
+    s = str(secid or "").strip().upper()
+    if s.endswith((".SH", ".SZ")):
+        return "A"
+    if s.endswith(".HK"):
+        return "HK"
+    if s.endswith(".US"):
+        return "US"
+    return None
+
+
+def _a_meta_from_secid(secid: str) -> dict | None:
+    """未知 A 股/基金 secid → 抓取元数据（sina 符号/是否基金）；格式非法返回 None。
+
+    基金判定沿用注册口径：``5`` 开头→sh 基金、``1`` 开头→sz 基金（ETF/LOF）。
+    """
+    code, _, suf = secid.partition(".")
+    if not re.fullmatch(r"\d{6}", code) or suf not in ("SH", "SZ"):
+        return None
+    prefix = "sh" if suf == "SH" else "sz"
+    is_fund = (suf == "SH" and code[0] == "5") or (suf == "SZ" and code[0] == "1")
+    return {"code": code, "secid": secid, "sina": f"{prefix}{code}", "name": code,
+            "industry": None, "is_fund": is_fund}
+
+
+def _sina_hq_symbol(secid: str) -> str | None:
+    """secid → 新浪实时行情符号（sh/sz{code}、hk{code}、gb_{ticker}）。"""
+    mkt = classify_secid(secid)
+    if mkt == "A":
+        code, _, suf = secid.partition(".")
+        return f"{'sh' if suf == 'SH' else 'sz'}{code}"
+    if mkt == "HK":
+        return f"hk{secid[:-3]}"
+    if mkt == "US":
+        return f"gb_{secid[:-3].lower()}"
+    return None
+
+
+def _parse_sina_hq(symbol: str, fields: list[str]) -> dict | None:
+    """解析新浪 hq 单标的返回（GBK 逗号分隔）；按符号前缀分市场归一化。
+
+    返回 ``{name, price, open, prev_close, high, low, chg, pct, volume, amount,
+    time, currency}``；字段不足/价格为空返回 None。
+    """
+
+    def _f(i):
+        return fields[i].strip() if len(fields) > i else ""
+
+    if symbol.startswith(("sh", "sz")):          # A股
+        price = _num(_f(3))
+        if not price:
+            return None
+        prev = _num(_f(2))
+        return {"name": _f(0), "price": price, "open": _num(_f(1)), "prev_close": prev,
+                "high": _num(_f(4)), "low": _num(_f(5)), "volume": _num(_f(8)),
+                "amount": _num(_f(9)), "time": f"{_f(30)} {_f(31)}".strip(),
+                "pct": round((price / prev - 1) * 100, 4) if prev else None,
+                "chg": (price - prev) if prev else None,
+                "currency": "CNY"}
+    if symbol.startswith("hk"):                  # 港股
+        price = _num(_f(6))
+        if not price:
+            return None
+        return {"name": _f(1) or _f(0), "price": price, "open": _num(_f(2)),
+                "prev_close": _num(_f(3)), "high": _num(_f(4)), "low": _num(_f(5)),
+                "chg": _num(_f(7)), "pct": _num(_f(8)), "volume": _num(_f(12)),
+                "amount": _num(_f(11)), "time": f"{_f(17)} {_f(18)}".strip(),
+                "currency": "HKD"}
+    if symbol.startswith("gb_"):                 # 美股
+        price = _num(_f(1))
+        if not price:
+            return None
+        return {"name": _f(0), "price": price, "open": _num(_f(5)),
+                "prev_close": _num(_f(26)) or None, "high": _num(_f(6)), "low": _num(_f(7)),
+                "chg": _num(_f(4)), "pct": _num(_f(2)), "volume": _num(_f(10)),
+                "amount": _num(_f(11)), "time": _f(3), "currency": "USD"}
+    return None
+
+
+def _parse_tx_quote(symbol: str, text: str) -> dict | None:
+    """解析腾讯实时行情兜底（A股 q=sh601058 / 港股 q=hk00700 / 美股 q=s_usAAPL）。
+
+    A股/港股共用布局：``[3]价 [4]昨收 [5]开 [6]量 [30]时间 [31]涨跌 [32]涨跌%``；
+    美股简版：``[3]价 [4]涨跌 [5]涨跌% [6]量 [7]额``（无昨收，由 价−涨跌 推导）。
+    """
+    m = re.search(r'="([^"]*)"', text)
+    if not m:
+        return None
+    f = m.group(1).split("~")
+    try:
+        if symbol.startswith("s_us"):
+            price = _num(f[3])
+            if not price:
+                return None
+            chg = _num(f[4])
+            return {"name": f[1], "price": price,
+                    "prev_close": (price - chg) if chg is not None else None,
+                    "chg": chg, "pct": _num(f[5]), "volume": _num(f[6]), "amount": _num(f[7]),
+                    "currency": "USD"}
+        price = _num(f[3])
+        if not price:
+            return None
+        is_hk = symbol.startswith("hk")
+        return {"name": f[1], "price": price, "open": _num(f[5]), "prev_close": _num(f[4]),
+                "chg": _num(f[31]), "pct": _num(f[32]), "volume": _num(f[6]),
+                "time": f[30] if len(f) > 30 else None,
+                "currency": "HKD" if is_hk else "CNY"}
+    except (IndexError, ValueError):
+        return None
+
+
+def fetch_realtime_quotes(secids) -> dict:
+    """批量实时行情：新浪 hq 主源（单请求批量）→ 腾讯逐标的兜底。
+
+    入参 secid 列表（A股/港股/美股混合）；返回 ``{secid: {...归一化行情}}``，
+    无法识别/双源均失败的 secid 不出现在返回中。永不抛异常（数据尽力而为）。
+    """
+    import requests
+
+    out: dict[str, dict] = {}
+    secids = [str(s).strip().upper() for s in secids if s]
+    sym2secid = {}
+    for s in secids:
+        sym = _sina_hq_symbol(s)
+        if sym and s not in out:
+            sym2secid[sym] = s
+    if not sym2secid:
+        return out
+
+    # ① 新浪批量（一次 HTTP；GBK 编码）
+    missing = set(sym2secid.values())
+    try:
+        r = requests.get(_SINA_HQ_URL + ",".join(sym2secid), headers=_HQ_HEADERS, timeout=6)
+        r.encoding = "gbk"
+        for m in re.finditer(r'var hq_str_(\w+)="([^"]*)"', r.text):
+            sym, payload = m.group(1), m.group(2)
+            if sym in sym2secid and payload:
+                q = _parse_sina_hq(sym, payload.split(","))
+                if q:
+                    secid = sym2secid.pop(sym)
+                    q["source"] = "sina"
+                    out[secid] = q
+                    missing.discard(secid)
+    except Exception:                           # noqa: BLE001 - 主源失败走兜底
+        pass
+
+    # ② 腾讯兜底（逐标的；仅补新浪缺失的）
+    for secid in sorted(missing):
+        mkt = classify_secid(secid)
+        if mkt == "A":
+            tx_sym = _sina_hq_symbol(secid)
+        elif mkt == "HK":
+            tx_sym = f"hk{secid[:-3]}"
+        elif mkt == "US":
+            tx_sym = f"s_us{secid[:-3]}"
+        else:
+            continue
+        try:
+            r = requests.get(_TX_QT_URL + tx_sym, headers=_HQ_HEADERS, timeout=6)
+            r.encoding = "gbk"
+            q = _parse_tx_quote(tx_sym, r.text)
+            if q:
+                q["source"] = "tencent"
+                out[secid] = q
+        except Exception:                       # noqa: BLE001 - 兜底也失败则跳过
+            continue
+    return out
+
+
+def fetch_fx() -> dict:
+    """港元/美元兑人民币汇率（新浪 hq fx_shkdcny / fx_susdcny）。
+
+    返回 ``{"HKD_CNY": float, "USD_CNY": float, "as_of": "YYYY-MM-DD", "time": str,
+    "source": "sina"}``；失败时返回占位（None 值 + error 字段），绝不抛异常。
+    """
+    import requests
+
+    out = {"HKD_CNY": None, "USD_CNY": None, "as_of": dt.date.today().isoformat(),
+           "time": None, "source": "sina"}
+    try:
+        r = requests.get(_SINA_HQ_URL + "fx_shkdcny,fx_susdcny", headers=_HQ_HEADERS, timeout=6)
+        r.encoding = "gbk"
+        for m in re.finditer(r'var hq_str_fx_s(\w+)="([^"]*)"', r.text):
+            key, fields = m.group(1), m.group(2).split(",")
+            if len(fields) > 8 and fields[8]:
+                out["HKD_CNY" if key == "hkdcny" else "USD_CNY"] = _num(fields[8])
+                if not out["time"]:
+                    out["time"] = fields[0]
+    except Exception as exc:                    # noqa: BLE001 - 汇率失败不阻断同步
+        out["error"] = f"{type(exc).__name__}: {exc}"
+    return out
+
+
+def fetch_ggt_components() -> tuple[list[str], str]:
+    """港股通标的代码清单（5 位字符串，升序去重）。
+
+    主源：雪球港股通筛选（market=HK&type=ggt，逐页 90 只）；失败降级
+    ``ggt_static`` 静态快照。返回 ``(codes, source)``，绝不抛异常。
+    """
+    import requests
+
+    codes: list[str] = []
+    try:
+        s = requests.Session()
+        s.headers.update({"User-Agent": "Mozilla/5.0"})
+        s.get("https://xueqiu.com/hq", timeout=8)          # 种 cookie
+        for page in range(1, 21):                           # 上限 ~1800 只，防御性封顶
+            r = s.get("https://stock.xueqiu.com/v5/stock/screener/quote/list.json"
+                      f"?page={page}&size=90&order=desc&order_by=market_capital&market=HK&type=ggt",
+                      timeout=8)
+            lst = (r.json().get("data") or {}).get("list") or []
+            if not lst:
+                break
+            codes += [str(x.get("symbol", "")).zfill(5) for x in lst if x.get("symbol")]
+        codes = sorted({c for c in codes if re.fullmatch(r"\d{5}", c)})
+        if codes:
+            return codes, "xueqiu"
+    except Exception:                                       # noqa: BLE001 - 降级静态快照
+        pass
+    return list(GGT_STATIC), f"static_snapshot@{GGT_SNAPSHOT_DATE}"
+
+
+def _tx_http(param: str, tries: int = 3, retry_empty: bool = False) -> list:
+    """腾讯K线接口底层请求（含内部重试与退避；突发限流时响应会随机失败）。
+
+    返回 K 线行列表（可能为空）；``tries`` 次仍失败返回空列表。
+    限流的失败形态有两种：抛异常 / 返回空 ``day`` 列表（合法场景如上市前窗口也会为空），
+    ``retry_empty=True`` 时对空列表同样重试（除息日分页提取用，窗口按理非空）。
+    """
+    import requests
+
+    for i in range(tries):
+        try:
+            time.sleep(0.3)                                 # 温和限速，规避突发限流
+            r = requests.get(_TX_KLINE_URL, params={"param": param},
+                             headers={"User-Agent": "Mozilla/5.0", "Referer": "https://gu.qq.com/"},
+                             timeout=10)
+            d = (r.json().get("data") or {})
+            for v in d.values():
+                if isinstance(v, dict):
+                    rows = v.get("day") or v.get("qfqday") or []
+                    if rows or not retry_empty or i == tries - 1:
+                        return rows
+                    break                                   # 空列表且需重试 → 走退避
+            else:
+                if retry_empty and i < tries - 1:
+                    time.sleep(1.0 * (i + 1))
+                    continue
+                return []
+        except Exception:                                   # noqa: BLE001 - 限流/网络抖动 → 退避重试
+            pass
+        if i < tries - 1:
+            time.sleep(1.0 * (i + 1))
+    return []
+
+
+def _tx_rows_to_bars(rows: list) -> list[dict]:
+    """腾讯 K 线行 → ``[{dt, close}]``。"""
+    return [{"dt": _iso(row[0]), "close": _num(row[2])} for row in rows if _iso(row[0])]
+
+
+def _tx_rows_to_ex_dates(rows: list) -> list[str]:
+    """腾讯 K 线行 → 除权除息日（事件元数据 ``FHcontent`` 分红 / ``ggContent`` 股本变动）。
+
+    仅回购（``HGcontent``）不影响复权，不计入。
+    """
+    out = []
+    for row in rows:
+        dt_ = _iso(row[0])
+        ev = row[6] if len(row) > 6 and isinstance(row[6], dict) else None
+        if dt_ and ev and (ev.get("FHcontent") or ev.get("ggContent")):
+            out.append(str(ev.get("cqr") or dt_))
+    return out
+
+
+def _tx_kline(symbol: str, count: int = 130, fq: str = "", retry_empty: bool = False) -> dict:
+    """腾讯日K（交叉源）：``{"bars": [{dt, close}], "ex_dates": [除权除息日]}``。
+
+    A股 ``sh601058`` / 港股 ``hk00700`` / 美股 ``usAAPL.OQ``（美股需交易所后缀）。
+    注意 param 必须以逗号结尾（无 fq）或 ``qfq`` 结尾。
+    """
+    tail = ",qfq" if fq == "qfq" else ","
+    rows = _tx_http(f"{symbol},day,,,{count}{tail}", retry_empty=retry_empty)
+    return {"bars": _tx_rows_to_bars(rows), "ex_dates": _tx_rows_to_ex_dates(rows)}
+
+
+def _tx_us_kline(ticker: str, count: int = 130, fq: str = "") -> dict:
+    """腾讯美股日K：依次尝试 .OQ(纳斯达克)/.N(纽交所)/.A(美交所)。
+
+    错误交易所后缀会返回 1-2 根幽灵K线 → 以 ≥30 根为有效门槛。
+    """
+    for suffix in (".OQ", ".N", ".A"):
+        res = _tx_kline(f"us{ticker}{suffix}", count, fq)
+        if len(res["bars"]) >= 30:
+            return res
+    return {"bars": [], "ex_dates": []}
+
+
+def _tx_ex_dates(symbol: str, start_date: str, *, us_ticker: bool = False) -> tuple[list[str], str]:
+    """腾讯 qfq 事件元数据 → 除权除息日全集（start_date 至今，2 年窗口分页）。
+
+    单次接口上限 800 根 → 按 2 年日期窗口分页拉取并合并去重；
+    美股（``us_ticker=True``）先探测有效交易所后缀再分页。
+    返回 ``(ex_dates, tencent_symbol)``；失败返回空列表（符号原样返回）。
+    """
+    sym = symbol
+    if us_ticker:
+        for suf in (".OQ", ".N", ".A"):
+            rows = _tx_http(f"us{symbol}{suf},day,,,{130},qfq")
+            if len(rows) >= 30:
+                sym = f"us{symbol}{suf}"
+                break
+        else:
+            return [], sym
+    try:
+        d0 = dt.date.fromisoformat(str(start_date)[:10])
+    except ValueError:
+        d0 = dt.date.today() - dt.timedelta(days=365 * 6)
+    today = dt.date.today()
+    ex: set[str] = set()
+    w_start = d0
+    while w_start <= today:
+        w_end = min(w_start + dt.timedelta(days=730), today)
+        rows = _tx_http(f"{sym},day,{w_start.isoformat()},{w_end.isoformat()},800,qfq",
+                        retry_empty=True)
+        ex.update(_tx_rows_to_ex_dates(rows))
+        w_start = w_end + dt.timedelta(days=1)
+    return sorted(ex), sym
+
+
+def _tx_us_series(ticker: str, start_date: str) -> tuple[str, list, list[str]]:
+    """腾讯美股主序列：探测交易所后缀 → 2 年窗口分页拉全历史（含事件元数据）。
+
+    返回 ``(tencent_symbol, rows, ex_dates)``；全部失败返回 ``("", [], [])``。
+    外层两轮重试（探测调用带 ``retry_empty``，规避限流随机失败）。
+    """
+    for _attempt in range(2):
+        sym = ""
+        for suf in (".OQ", ".N", ".A"):
+            rows = _tx_http(f"us{ticker}{suf},day,,,{130},qfq", retry_empty=True)
+            if len(rows) >= 30:
+                sym = f"us{ticker}{suf}"
+                break
+        if not sym:
+            time.sleep(2)
+            continue
+        try:
+            d0 = dt.date.fromisoformat(str(start_date)[:10])
+        except ValueError:
+            d0 = dt.date.today() - dt.timedelta(days=365 * 6)
+        all_rows: list = []
+        ex_set: set[str] = set()
+        w = d0
+        while w <= dt.date.today():
+            wend = min(w + dt.timedelta(days=730), dt.date.today())
+            rows = _tx_http(f"{sym},day,{w.isoformat()},{wend.isoformat()},800,qfq",
+                            retry_empty=True)
+            all_rows.extend(rows)
+            ex_set.update(_tx_rows_to_ex_dates(rows))
+            w = wend + dt.timedelta(days=1)
+        if len(all_rows) >= 30:
+            return sym, all_rows, sorted(ex_set)
+        time.sleep(2)                       # 分页整体失败 → 外层重试一轮
+    return "", [], []
+
+
+def _patch_ex_dates_from_divergence(
+    qfq_recs: list[dict], raw_rows: list[dict], ex_dates: list[str], tx_symbol: str
+) -> list[str]:
+    """除息日定向补漏（抗腾讯限流导致的整窗丢失）。
+
+    思路：新浪 qfq 与 raw 日涨跌幅的**背离日**即疑似除权除息日（复权在该日生效）。
+    对不在 ``ex_dates`` 的背离日，仅拉取该日 ±7 天的腾讯 qfq 小窗口确认事件元数据
+    （``FHcontent``/``ggContent``）——确认才豁免；未确认的日期留给 adjust_check 如实
+    报错（非循环论证：豁免依据始终是腾讯独立元数据，而非背离本身）。
+    """
+    ex = set(ex_dates)
+    raw = {r["dt"]: r["close"] for r in raw_rows if r.get("dt")}
+    raw_dts = sorted(raw)
+    prev = None
+    missing: list[str] = []
+    for r in qfq_recs:
+        d, pct = r.get("dt"), r.get("pct")
+        if prev and d and pct is not None and prev in raw and d in raw and raw[prev]:
+            rp = raw[d] / raw[prev] - 1
+            if abs(pct - rp) > 0.005 and d not in ex:
+                missing.append(d)
+        if d:
+            prev = d
+    for d in missing:
+        c = dt.date.fromisoformat(d)
+        rows = _tx_http(f"{tx_symbol},day,{(c - dt.timedelta(days=7)).isoformat()},"
+                        f"{(c + dt.timedelta(days=7)).isoformat()},30,qfq", retry_empty=True)
+        ex.update(x for x in _tx_rows_to_ex_dates(rows) if x == d)
+    return sorted(ex)
+
+
+# ── 港股/美股财务与分红（V4-β 补充引擎 A 因子）────────────────────
+
+def _ccy_rate_to_cny(ccy, fx: dict) -> float | None:
+    """币种 → 兑人民币汇率（元/单位）；未知币种或汇率缺失返回 None。"""
+    c = str(ccy or "").strip()
+    if c in ("CNY", "RMB", "人民币", "元"):
+        return 1.0
+    if c in ("HKD", "港元", "港币"):
+        return fx.get("HKD_CNY")
+    if c in ("USD", "美元"):
+        return fx.get("USD_CNY")
+    return None
+
+
+def _ccy_to(amount, ccy, target: str, fx: dict) -> float | None:
+    """金额由 ``ccy`` 折算为 ``target``（经人民币中轴）；无法折算时原值返回。"""
+    if amount is None:
+        return None
+    r_src, r_tgt = _ccy_rate_to_cny(ccy, fx), _ccy_rate_to_cny(target, fx)
+    if not r_src or not r_tgt:
+        return amount
+    return amount * r_src / r_tgt
+
+
+def _pit_announce(period: str, lag_days: int) -> str:
+    """报告期 + 保守披露窗口 = 可用人时点（PIT）"""
+    return (dt.date.fromisoformat(period) + dt.timedelta(days=lag_days)).isoformat()
+
+
+def _parse_hk_div_text(text: str, fx: dict) -> float | None:
+    """港股「分红方案」文本 → 每股派息（折算为 HKD）；解析失败/非现金分派返回 None。
+
+    以括注前的主方案为准：主方案须为「每股派（现金）」方计入现金股息率——送股、
+    分派他股（如「每10股分派1股美团B类普通股股份(相当于每股派18.13港元)」）等
+    非现金分派一律返回 None，避免以「相当于」估值虚增股息率。金额按币种折 HKD
+    （港股以 HKD 报价）。
+    """
+    if not text:
+        return None
+    main = re.split(r"[（(]", text, maxsplit=1)[0]      # 主方案（截去括注/特殊说明）
+    m = re.search(r"每股派\s*(?:(?:股息|分红|红利|现金|派|息|特别|中期|末期|的|每股))*\s*"
+                  r"(港币|港元|人民币|美元)?\s*([0-9]+(?:\.[0-9]+)?)", main)
+    if not m:
+        return None
+    return _ccy_to(_num(m.group(2)), _DIV_CCY_ALIAS.get(m.group(1) or "港币", "HKD"), "HKD", fx)
+
+
+def _fetch_hk_financials(ak, code: str, fx: dict, fin_start_year: str) -> tuple[list, list]:
+    """港股 → ``(reports, dividends)``（引擎 A 财务/分红输入；价格币种 HKD）。"""
+    rep_map: dict[str, dict] = {}
+    for ind in ("报告期", "年度"):        # 报告期给近 9 期（含季报），年度补全更长历史
+        try:
+            df = _retry(lambda ind=ind: ak.stock_financial_hk_analysis_indicator_em(symbol=code, indicator=ind))
+        except Exception as exc:          # noqa: BLE001 - 单接口失败不阻断（另一模式仍可补）
+            print(f"  ⚠ {code} 港股财务({ind})拉取失败：{type(exc).__name__}: {exc}")
+            continue
+        for _, r in df.iterrows():
+            period = _iso(r.get("REPORT_DATE"))
+            if not period:
+                continue
+            ccy = r.get("CURRENCY") or "港元"
+            rep_map[period] = {
+                "period": period,
+                "announce_date": _pit_announce(period, FOREIGN_PIT_LAG_DAYS["HK"]),
+                "eps_ytd": _ccy_to(_num(r.get("BASIC_EPS")), ccy, "HKD", fx),   # 累计 YTD
+                "eps_ttm": _ccy_to(_num(r.get("EPS_TTM")), ccy, "HKD", fx),     # 上游直出 TTM
+                "bps": _ccy_to(_num(r.get("BPS")), ccy, "HKD", fx),
+                "roe": _num(r.get("ROE_YEARLY")), "roe_w": _num(r.get("ROE_AVG")),
+                "rev_g": _num(r.get("OPERATE_INCOME_YOY")),
+                "np_g": _num(r.get("HOLDER_PROFIT_YOY")),
+                "margin": _num(r.get("GROSS_PROFIT_RATIO")),
+                "ccy": str(ccy),
+            }
+    lo = f"{fin_start_year}-01-01"
+    reports = sorted((v for v in rep_map.values() if v["period"] >= lo), key=lambda x: x["period"])
+
+    dividends = []
+    try:
+        dv = _retry(lambda: ak.stock_hk_dividend_payout_em(symbol=code))
+        for _, r in dv.iterrows():
+            ex = _iso(r.get("除净日"))
+            dps = _parse_hk_div_text(str(r.get("分红方案") or ""), fx) if ex else None
+            if ex and dps is not None:
+                dividends.append({"ex_date": ex, "announce": _iso(r.get("最新公告日期")), "dps": dps})
+    except Exception as exc:              # noqa: BLE001 - 分红失败不阻断（红利因子降级为 None）
+        print(f"  ⚠ {code} 港股分红拉取失败：{type(exc).__name__}: {exc}")
+    return reports, sorted(dividends, key=lambda x: x["ex_date"])
+
+
+def _fetch_us_financials(ak, ticker: str, fx: dict, fin_start_year: str) -> tuple[list, list]:
+    """美股 → ``(reports, dividends=[])``（价格币种 USD）。
+
+    - TTM EPS：东财「单季报」近 4 个连续单季摊薄 EPS 之和（跨财年，规避非日历财年）；
+    - BPS：年报资产负债表「归属于母公司股东权益」/ 股数，股数 = 归母净利润 / 基本 EPS；
+    - 美股无 AKShare 公开分红接口 → 红利因子不适用（dividends 为空列表）。
+    """
+    def _ind(mode: str):
+        try:
+            return _retry(lambda: ak.stock_financial_us_analysis_indicator_em(symbol=ticker, indicator=mode))
+        except Exception as exc:          # noqa: BLE001
+            print(f"  ⚠ {ticker} 美股财务({mode})拉取失败：{type(exc).__name__}: {exc}")
+            return None
+
+    q = _ind("单季报")
+    if q is None or len(q) == 0:
+        return [], []
+    rows = []
+    for _, r in q.iterrows():
+        period = _iso(r.get("REPORT_DATE"))
+        if period:
+            rows.append({"period": period, "eps_q": _num(r.get("BASIC_EPS")),
+                         "rev_g": _num(r.get("OPERATE_INCOME_YOY")),
+                         "np_g": _num(r.get("PARENT_HOLDER_NETPROFIT_YOY")),
+                         "margin": _num(r.get("GROSS_PROFIT_RATIO")),
+                         "ccy": str(r.get("CURRENCY_ABBR") or "USD")})
+    rows.sort(key=lambda x: x["period"])
+    for i, row in enumerate(rows):        # 近 4 个连续单季之和（不足/含空值 → None）
+        win = [w["eps_q"] for w in rows[max(0, i - 3):i + 1]]
+        row["eps_ttm"] = sum(win) if len(win) == 4 and all(v is not None for v in win) else None
+
+    bps_by_ann, roe_by_ann = {}, {}
+    ann = _ind("年报")
+    if ann is not None and len(ann):
+        eq: dict[str, float] = {}
+        try:
+            bs = _retry(lambda: ak.stock_financial_us_report_em(
+                stock=ticker, symbol="资产负债表", indicator="年报"))
+            for _, r in bs.iterrows():
+                if str(r.get("STD_ITEM_CODE")) == "004013999":   # 归属于母公司股东权益
+                    p = _iso(r.get("REPORT_DATE"))
+                    if p:
+                        eq[p] = _num(r.get("AMOUNT"))
+        except Exception as exc:          # noqa: BLE001 - 缺 BS → BPS 不适用（PB 因子降级）
+            print(f"  ⚠ {ticker} 美股资产负债表拉取失败：{type(exc).__name__}: {exc}")
+        for _, r in ann.iterrows():
+            p = _iso(r.get("REPORT_DATE"))
+            if not p:
+                continue
+            roe_by_ann[p] = _num(r.get("ROE_AVG"))
+            eps, npf, e = _num(r.get("BASIC_EPS")), _num(r.get("PARENT_HOLDER_NETPROFIT")), eq.get(p)
+            if e and eps and npf and eps > 0 and npf > 0:
+                bps_by_ann[p] = _ccy_to(e * eps / npf, r.get("CURRENCY_ABBR") or "USD", "USD", fx)
+
+    def _latest(m: dict, p: str):
+        c = [x for x in m if x <= p]      # 上游按报告期倒序返回：须取最大期而非末位
+        return m[max(c)] if c else None
+
+    lo = f"{fin_start_year}-01-01"
+    reports = []
+    for row in rows:
+        p, ccy = row["period"], row["ccy"]
+        if p < lo:
+            continue
+        reports.append({
+            "period": p,
+            "announce_date": _pit_announce(p, FOREIGN_PIT_LAG_DAYS["US"]),
+            "eps_ytd": _ccy_to(row["eps_q"], ccy, "USD", fx),        # 单季摊薄 EPS（PE 用 eps_ttm）
+            "eps_ttm": _ccy_to(row["eps_ttm"], ccy, "USD", fx),
+            "bps": _latest(bps_by_ann, p),                            # 最近年报 BPS（跨季沿用）
+            "roe": _latest(roe_by_ann, p), "roe_w": None,
+            "rev_g": row["rev_g"], "np_g": row["np_g"], "margin": row["margin"],
+            "ccy": ccy,
+        })
+    return reports, []
 
 
 def _iso(x) -> str | None:
@@ -109,22 +719,51 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
     for sub in ("market", "factors", "portfolio", "dim"):
         (repo / sub).mkdir(parents=True, exist_ok=True)
 
-    # ── universe 选择（universe=None → 全量，保持现行为）──
+    # ── universe 选择与市场分类（universe=None → 默认 CN4+MULTI5，保持现行为）──
     all_defs = CN4 + MULTI5
     if universe is None:
-        selected = [u["secid"] for u in all_defs]
-        universe_missing = []
+        requested = [u["secid"] for u in all_defs]
     else:
         try:
             requested = [str(s) for s in universe]
         except TypeError:
             return {"fetched": False, "error": f"universe 必须是 secid 列表：{universe!r}"}
-        known = {u["secid"] for u in all_defs}
-        universe_missing = [s for s in requested if s not in known]   # 未匹配：跳过并登记
-        selected = [s for s in requested if s in known]
-    sel_cn4 = [u for u in CN4 if u["secid"] in selected]
-    sel_multi5 = [u for u in MULTI5 if u["secid"] in selected]
-    universe_fetched = [u["secid"] for u in sel_cn4] + [u["secid"] for u in sel_multi5]
+    known = {u["secid"]: u for u in all_defs}
+    universe_missing = []
+    a_stocks, a_funds, hk_stocks, us_stocks = [], [], [], []
+    for secid in requested:
+        if secid in known:
+            u = known[secid]
+            (a_funds if "ftype" in u else a_stocks).append(u)
+            continue
+        mkt = classify_secid(secid)
+        if mkt == "A":
+            meta = _a_meta_from_secid(secid)
+            if meta is None:
+                universe_missing.append(secid)
+                continue
+            (a_funds if meta["is_fund"] else a_stocks).append(meta)
+        elif mkt == "HK":
+            hk_stocks.append({"code": secid[:-3], "secid": secid})
+        elif mkt == "US":
+            us_stocks.append({"code": secid[:-3], "secid": secid})
+        else:
+            universe_missing.append(secid)
+    universe_fetched = ([u["secid"] for u in a_stocks] + [u["secid"] for u in a_funds]
+                        + [u["secid"] for u in hk_stocks] + [u["secid"] for u in us_stocks])
+
+    # 未知标的（无内置名称）批量取实时行情补名称（尽力而为，失败回退 code）
+    unnamed = [u for u in (*a_stocks, *a_funds, *hk_stocks, *us_stocks)
+               if not u.get("name") or u["name"] == u["code"]]
+    if unnamed:
+        try:
+            names = {s: q.get("name") for s, q in
+                     fetch_realtime_quotes([u["secid"] for u in unnamed]).items()}
+            for u in unnamed:
+                if names.get(u["secid"]):
+                    u["name"] = names[u["secid"]]
+        except Exception:                       # noqa: BLE001 - 名称缺失不阻断同步
+            pass
 
     def _start_for(secid: str) -> str:
         # 增量：自上次最后交易日的「次日」起拉取；未列出 → 全量 start
@@ -135,13 +774,18 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
 
     prov = {"fetched_at": dt.datetime.now().isoformat(timespec="seconds"),
             "akshare_version": ak.__version__, "today": today,
-            "universe": [u["secid"] for u in CN4 + MULTI5] if universe is None else list(selected),
+            "universe": list(requested),
             "sources": [], "pit_rules": {
                 "financial_report_lag_days": PIT_LAG_DAYS,
-                "note": "报告期+保守披露窗口=可用人时点（Q1→+30d，H1→+62d，Q3→+31d，FY→+120d）；α 未逐笔核对公告日，取监管截止日兜底"},
+                "foreign_report_lag_days": FOREIGN_PIT_LAG_DAYS,
+                "note": "报告期+保守披露窗口=可用人时点（A股 Q1→+30d，H1→+62d，Q3→+31d，FY→+120d；"
+                        "港股/美股统一 +90d，覆盖港交所年报3个月/中期2个月与美股 10-K/10-Q 披露窗口）；"
+                        "α 未逐笔核对公告日，取监管截止日兜底"},
             "methods": {
-                "pe_ttm": "close/TTM摊薄EPS；TTT EPS=上年FY+本年YTD−上年同期YTD（PIT 阶梯函数，报告期按 announce_date 对齐）",
-                "pb": "close/最新可用人报告期每股净资产(调整前；新浪'调整后'列对部分标的异常，弃用)",
+                "pe_ttm": "close/TTM摊薄EPS（PIT 阶梯函数，报告期按 announce_date 对齐）；A股 TTM EPS=上年FY+本年YTD−上年同期YTD，"
+                          "港股/美股直接取上游客报 eps_ttm（港股 EPS_TTM 列；美股近 4 个连续单季合计）",
+                "pb": "close/最新可用人报告期每股净资产；A股取新浪'调整前'列（'调整后'对部分标的异常，弃用），"
+                      "港股取东财 BPS、美股取年报归母股东权益/股数（股数=归母净利/基本EPS）",
                 "div_yield_ttm": "近365日除权除息（闭区间[as_of-365d, as_of]）每股派息合计/close",
                 "vol": "日收益率样本标准差(ddof=1)年化×√252",
                 "mom_12_1": "close[t-21]/close[t-252]−1（剔除最近一月）",
@@ -149,9 +793,21 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                 "ma20_break": "close/MA20−1，±2% 确认带",
                 "fund_bars": "ETF/LOF（multi5）：新浪 fund_etf_hist_sina（对 ETF/LOF 均适用）无复权接口，"
                              "序列即不复权 raw；无财报/分红数据 → 估值/质量/成长因子与股息率不适用，动量/波动照常；"
-                             "交叉源为腾讯 stock_zh_a_hist_tx（东财接口当前网络出口不可达，弃用）"},
+                             "交叉源为腾讯 stock_zh_a_hist_tx（东财接口当前网络出口不可达，弃用）",
+                "hk_bars": "港股：新浪 stock_hk_daily（qfq+raw，HKD 计价）；腾讯 web.ifzq.gtimg.cn 交叉源（不复权 HKD）；"
+                           "港股通名单：雪球港股通筛选（降级 ggt_static 快照）",
+                "us_bars": "美股：新浪 stock_us_daily（qfq+raw，USD 计价，无 amount 列）；腾讯 us{TICKER}.OQ/.N/.A 交叉源",
+                "hk_fin": "港股财务/分红：东财 stock_financial_hk_analysis_indicator_em（年度+报告期合并；"
+                          "BASIC_EPS/EPS_TTM/BPS/ROE_YEARLY/营收·净利同比/毛利率）+ "
+                          "stock_hk_dividend_payout_em（除净日+每股派息，取括注前主方案的现金「每股派」并折 HKD，"
+                          "送股/分派他股等非现金分派不计入）；财务原币（常为人民币）经即期汇率折 HKD 对齐报价币种",
+                "us_fin": "美股财务：东财 stock_financial_us_analysis_indicator_em（单季报近 4 季合计得 TTM EPS；"
+                          "年报 ROE）+ stock_financial_us_report_em（资产负债表归母股东权益→BPS，股数=归母净利/基本EPS）；"
+                          "美股无公开分红接口（AKShare 未封装）→ 股息率不适用；"
+                          "东财对部分银行/保险类美股未收录主要指标（上游返回空）→ 该类标的财务因子不适用（价格类照常）"},
             "note": "永新=永新股份(002014.SZ)；cn4 未提供成本与权重 → 等权名义组合(每标的25%)；"
-                    "multi5 五资产等权 20%×5，纳指以纳指100ETF(513100)近似（A股无综指ETF）"}
+                    "multi5 五资产等权 20%×5，纳指以纳指100ETF(513100)近似（A股无综指ETF）；"
+                    "V4-β 支持 A股/港股/美股 混合 universe（按 secid 后缀 .SH/.SZ/.HK/.US 分类）"}
 
     def _reg(dataset, interface, upstream, params, rows, relpath):
         p = repo / relpath
@@ -166,9 +822,13 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
     dates = [_iso(d) for d in cal["trade_date"].tolist()]
     _reg("dwd_trade_calendar", "ak.tool_trade_date_hist_sina()", "新浪财经", {}, dates, "market/trade_calendar.json")
 
-    # ── ② 四标的：行情(qfq/raw) + 交叉源(腾讯) + 财务 + 分红 ──
+    # 汇率（港元/美元兑人民币）：港股/美股财务与分红币种归一需要，提前取一次复用（③ 落盘）
+    fx = fetch_fx()
+
+    # ── ② A股股票：行情(qfq/raw) + 交叉源(腾讯) + 财务 + 分红（CN4 已知 + 用户注册标的）──
     bars_qfq, bars_raw, cross_tx, fundamentals = {}, {}, {}, {}
-    for u in sel_cn4:
+    universe_failed: list[str] = []          # 上游整体失败（0 根 K 线）的标的：不入库、透明登记
+    for u in a_stocks:
         s0 = _start_for(u["secid"])       # T0.3：增量时自次日；否则 = start（默认不变）
         qfq = _retry(lambda: ak.stock_zh_a_daily(symbol=u["sina"], start_date=s0.replace("-", ""),
                                                  end_date=today.replace("-", ""), adjust="qfq"))
@@ -207,10 +867,10 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
         print(f"  ✓ {u['name']} {u['secid']}：bars={len(recs)} raw={len(bars_raw[u['secid']])} "
               f"tx={len(cross_tx[u['secid']])} 报告期={len(reports)} 分红={len(dividends)}")
 
-    # ── ②' multi5 基金标的：新浪 fund_etf_hist_sina（ETF/LOF 通用，不复权）+ 腾讯交叉源 ──
+    # ── ②' 基金标的（MULTI5 已知 + 用户注册 ETF/LOF）：新浪 fund_etf_hist_sina + 腾讯交叉源 ──
     tq8 = (dt.date.today() - dt.timedelta(days=120)).isoformat().replace("-", "")
     corp_actions = []   # 份额折算/拆分登记（价格断层保护）
-    for u in sel_multi5:
+    for u in a_funds:
         s0 = _start_for(u["secid"])       # T0.3：增量时自次日；否则 = start（默认不变）
         hist = _retry(lambda: ak.fund_etf_hist_sina(symbol=u["sina"]))
         has_amt = "amount" in getattr(hist, "columns", [])
@@ -238,23 +898,166 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                                 for _, r in tx.iterrows() if _iso(r["date"])]
         print(f"  ✓ {u['name']} {u['secid']}：bars={len(recs)}（sina 不复权） tx_cross={len(cross_tx[u['secid']])}")
 
-    _reg("dwd_daily_bar", "ak.stock_zh_a_daily(adjust='qfq') + ak.fund_etf_hist_sina", "新浪财经",
-         {"start": start, "end": today, "note": "股票 qfq 前复权；ETF/LOF 无复权接口（raw）"}, bars_qfq, "market/daily_bars.json")
-    _reg("dwd_daily_bar_raw", "ak.stock_zh_a_daily(adjust='')", "新浪财经",
-         {"start": start, "end": today, "note": "仅股票（基金无复权对，由 cross_source 双源覆盖）"}, bars_raw, "market/daily_bars_raw.json")
-    _reg("cross_check_tx", "ak.stock_zh_a_hist_tx()", "腾讯证券",
-         {"window_days": 120, "note": "股票与基金（ETF/LOF）均对腾讯（独立源交叉）"}, cross_tx, "market/cross_check_tx.json")
-    _reg("dwd_financial_report", "ak.stock_financial_analysis_indicator()", "新浪财经",
-         {"start_year": fin_start_year}, fundamentals, "factors/fundamental_values.json")
+    # ── ②'' 港股标的：新浪 stock_hk_daily（qfq+raw，HKD）+ 腾讯交叉源（raw + 除息事件）──
+    adjust_ex_dates: dict[str, list] = {}
+    for u in hk_stocks:
+        s0 = _start_for(u["secid"])
+        qfq = _retry(lambda u=u: ak.stock_hk_daily(symbol=u["code"], adjust="qfq"))
+        raw = _retry(lambda u=u: ak.stock_hk_daily(symbol=u["code"], adjust=""))
+        if qfq is None or len(qfq) == 0:
+            universe_failed.append(u["secid"])
+            print(f"  ⚠ {u['name']} {u['secid']}：新浪港股K线为空，跳过（universe_failed）")
+            continue
+        recs, prev = [], None
+        for _, r in qfq.iterrows():
+            c = _num(r["close"])
+            pct = (c / prev - 1) if (prev and c and prev) else None
+            v = _num(r["volume"])
+            recs.append({"dt": _iso(r["date"]), "open": _num(r["open"]), "high": _num(r["high"]),
+                         "low": _num(r["low"]), "close": c,
+                         "volume": int(v) if v is not None else None,
+                         "amount": _num(r["amount"]), "pct": pct})
+            prev = c
+        recs = [r for r in recs if r["dt"] and r["dt"] >= s0]   # 全量历史 → 起始日切片（pct 链完整保留）
+        bars_qfq[u["secid"]] = recs
+        bars_raw[u["secid"]] = [{"dt": _iso(r["date"]), "close": _num(r["close"])}
+                                for _, r in raw.iterrows() if _iso(r["date"]) and _iso(r["date"]) >= s0]
+        tx_raw = _tx_kline(f"hk{u['code']}", 130, retry_empty=True)
+        cross_tx[u["secid"]] = tx_raw["bars"]
+        # 除息日：腾讯 qfq 事件元数据（FHcontent 分红 / ggContent 股本变动 的 cqr），
+        # 2 年窗口分页拉取覆盖全同步窗口；窗口被限流丢失时按背离日定向补漏
+        ex, tx_sym = _tx_ex_dates(f"hk{u['code']}", s0)
+        if tx_sym:
+            ex = _patch_ex_dates_from_divergence(recs, bars_raw[u["secid"]], ex, tx_sym)
+        if ex:
+            adjust_ex_dates[u["secid"]] = ex
+        # 财务/分红（东财）：补齐引擎 A 估值/质量/成长/红利因子（币种归一 → HKD）
+        reports, dividends = _fetch_hk_financials(ak, u["code"], fx, fin_start_year)
+        fundamentals[u["secid"]] = {"reports": reports, "dividends": dividends}
+        print(f"  ✓ {u['name']} {u['secid']}：hk bars={len(recs)} raw={len(bars_raw[u['secid']])} "
+              f"tx_cross={len(cross_tx[u['secid']])} 除息日={len(adjust_ex_dates.get(u['secid'], []))} "
+              f"报告期={len(reports)} 分红={len(dividends)}")
 
-    # ── ③ 维度表 / 组合 / 因子注册中心 / 汇率占位 ──
-    (repo / "dim" / "security.json").write_text(json.dumps(
-        [{"secid": u["secid"], "name": u["name"], "market": "A", "asset_type": "STOCK",
-          "industry": u["industry"], "source": "组合定义（行业为申万口径常识标注）"} for u in CN4] +
-        [{"secid": u["secid"], "name": u["name"], "market": "A",
-          "asset_type": "ETF" if u["ftype"] == "etf" else "LOF",
-          "industry": u["industry"], "source": "组合定义二 multi5（多资产）"} for u in MULTI5],
-        ensure_ascii=False, indent=2), encoding="utf-8")
+    # ── ②''' 美股标的：主序列 腾讯K线（raw 口径，分页拉全历史）+ 新浪 raw 对账 ──
+    # 数据源选择说明（V4-β）：新浪美股 qfq 对部分 ticker 存在非除息日的系统性噪声
+    # （如 JPM，qfq/raw 因子逐日漂移 ±0.1~1.2%）；腾讯美股序列与新浪 raw 日涨跌幅
+    # 全窗口零背离（实测 1444 点）。故美股主序列取腾讯（同 ETF/LOF「无复权接口即
+    # raw」先例，动量/波动因子不受影响，估值因子本就不适用），新浪 raw 作独立对账源；
+    # 腾讯整体失败时降级新浪 raw 为主序列（此时复权对账退化为同源，透明登记）。
+    for u in us_stocks:
+        s0 = _start_for(u["secid"])
+        # 财务（东财）：补齐引擎 A 估值/质量/成长因子（美股无公开分红接口 → 红利因子不适用）
+        us_reports, us_dividends = _fetch_us_financials(ak, u["code"], fx, fin_start_year)
+        raw = _retry(lambda u=u: ak.stock_us_daily(symbol=u["code"], adjust=""))
+        sina_raw = [{"dt": _iso(r["date"]), "close": _num(r["close"])}
+                    for _, r in raw.iterrows() if _iso(r["date"]) and _iso(r["date"]) >= s0]
+        tx_sym, tx_rows, ex_dates_us = _tx_us_series(u["code"], s0)
+        if tx_rows:
+            bars_raw[u["secid"]] = sina_raw
+            cross_tx[u["secid"]] = _tx_rows_to_bars(tx_rows[-130:])
+            if ex_dates_us:
+                adjust_ex_dates[u["secid"]] = ex_dates_us
+        else:
+            # 降级：新浪 raw 兼作主序列与 raw 对（adjust 对账退化为同源；cross_source 仍双源）
+            print(f"  ⚠ {u['secid']} 腾讯主序列拉取失败，降级新浪 raw 为主序列")
+            bars_raw[u["secid"]] = sina_raw
+            cross_tx[u["secid"]] = _tx_rows_to_bars([])
+            if sina_raw:
+                recs_fallback, prev_f = [], None
+                rawmap = {r["dt"]: r["close"] for r in sina_raw}
+                for d in sorted(rawmap):
+                    c = rawmap[d]
+                    recs_fallback.append({"dt": d, "open": None, "high": None, "low": None,
+                                          "close": c, "volume": None, "amount": None,
+                                          "pct": (c / prev_f - 1) if prev_f else None})
+                    prev_f = c
+                bars_qfq[u["secid"]] = recs_fallback
+                fundamentals[u["secid"]] = {"reports": us_reports, "dividends": us_dividends}
+                print(f"  ✓ {u['name']} {u['secid']}：us bars={len(recs_fallback)}(sina raw 降级) "
+                      f"raw={len(sina_raw)} tx_cross=0 报告期={len(us_reports)}")
+                continue
+            else:
+                universe_failed.append(u["secid"])
+                continue
+        recs, prev = [], None
+        for row in tx_rows:
+            dt_, c = _iso(row[0]), _num(row[2])
+            if not dt_ or c is None:
+                continue
+            pct = (c / prev - 1) if (prev and c and prev) else None
+            v = _num(row[5]) if len(row) > 5 else None
+            recs.append({"dt": dt_, "open": _num(row[1]), "high": _num(row[3]),
+                         "low": _num(row[4]), "close": c,
+                         "volume": int(v) if v is not None else None,
+                         "amount": None, "pct": pct})           # 腾讯美股K线无成交额列
+            prev = c
+        bars_qfq[u["secid"]] = recs
+        fundamentals[u["secid"]] = {"reports": us_reports, "dividends": us_dividends}
+        print(f"  ✓ {u['name']} {u['secid']}：us bars={len(recs)}(tx:{tx_sym}) raw={len(sina_raw)}(sina) "
+              f"tx_cross={len(cross_tx[u['secid']])} 除息日={len(ex_dates_us)} 报告期={len(us_reports)}")
+
+    _reg("dwd_daily_bar", "ak.stock_zh_a_daily/stock_hk_daily(qfq) + 腾讯usK线(raw口径) + ak.fund_etf_hist_sina", "新浪财经/腾讯证券",
+         {"start": start, "end": today, "note": "A股/港股 qfq 前复权；美股 腾讯序列（raw 口径，新浪美股qfq部分标的存在噪声，弃用）；ETF/LOF 无复权接口（raw）"}, bars_qfq, "market/daily_bars.json")
+    _reg("dwd_daily_bar_raw", "ak.stock_zh_a_daily/stock_hk_daily/stock_us_daily(adjust='')", "新浪财经",
+         {"start": start, "end": today, "note": "A股/港股/美股股票 raw（基金无复权对，由 cross_source 双源覆盖）；美股 raw 兼作腾讯主序列的独立对账源"}, bars_raw, "market/daily_bars_raw.json")
+    _reg("cross_check_tx", "ak.stock_zh_a_hist_tx() + web.ifzq.gtimg.cn(hk/us)", "腾讯证券",
+         {"window_days": 120, "note": "A股（股票与基金）走 stock_zh_a_hist_tx；港股 hk{code}、美股 us{TICKER}.OQ/.N/.A 走腾讯K线接口"}, cross_tx, "market/cross_check_tx.json")
+    if adjust_ex_dates:
+        # 港股/美股除权除息日（腾讯 qfq 事件元数据 FHcontent/ggContent 的 cqr）：
+        # adjust_check 经典 qfq-vs-raw 对账的豁免名单（回购 HGcontent 不影响复权，不计入）
+        _reg("adjust_ex_dates", "web.ifzq.gtimg.cn(hk/us, qfq 事件元数据)", "腾讯证券",
+             {"note": "港股/美股除权除息日（分红/送转/拆股），供 adjust_check 豁免"},
+             adjust_ex_dates, "market/adjust_ex_dates.json")
+    _reg("dwd_financial_report", "ak.stock_financial_analysis_indicator(A股) + "
+         "stock_financial_hk_analysis_indicator_em(港股) + stock_financial_us_analysis_indicator_em(美股)",
+         "新浪财经/东方财富",
+         {"start_year": fin_start_year,
+          "note": "A股 eps_ytd 累计口径（引擎按 YTD 递推 TTM）；港股/美股附带 eps_ttm 上游直出 TTM，"
+                  "港股财务原币经即期汇率折 HKD、美股折 USD 对齐各自报价币种；"
+                  "港股分红 stock_hk_dividend_payout_em，美股无公开分红接口（dividends 为空）"},
+         fundamentals, "factors/fundamental_values.json")
+
+    # ── ③ 维度表 / 组合 / 因子注册中心 / 港股通名单 / 汇率 / 港美日历 ──
+
+    # 港股通名单（雪球在线 → 静态快照降级；标记写入 dim 与 ggt_components.json）
+    ggt_codes, ggt_source = fetch_ggt_components()
+    ggt_set = set(ggt_codes)
+
+    def _dim_rows():
+        rows = []
+        for u in a_stocks:
+            rows.append({"secid": u["secid"], "name": u["name"], "market": "A", "asset_type": "STOCK",
+                         "industry": u.get("industry"), "currency": "CNY", "hk_connect": None,
+                         "source": u.get("source") or "组合定义（行业为申万口径常识标注）"})
+        for u in a_funds:
+            rows.append({"secid": u["secid"], "name": u["name"], "market": "A",
+                         "asset_type": "ETF" if u.get("ftype") == "etf" else "LOF",
+                         "industry": u.get("industry"), "currency": "CNY", "hk_connect": None,
+                         "source": u.get("source") or "组合定义二 multi5（多资产）"})
+        for u in hk_stocks:
+            rows.append({"secid": u["secid"], "name": u["name"], "market": "HK", "asset_type": "STOCK",
+                         "industry": u.get("industry"), "currency": "HKD",
+                         "hk_connect": u["code"] in ggt_set,
+                         "source": "V4-β 港股 universe"})
+        for u in us_stocks:
+            rows.append({"secid": u["secid"], "name": u["name"], "market": "US", "asset_type": "STOCK",
+                         "industry": u.get("industry"), "currency": "USD", "hk_connect": None,
+                         "source": "V4-β 美股 universe"})
+        return rows
+
+    (repo / "dim" / "security.json").write_text(json.dumps(_dim_rows(), ensure_ascii=False, indent=2),
+                                                encoding="utf-8")
+    _reg("dim_ggt_components", "雪球港股通筛选 market=HK&type=ggt（降级 ggt_static 快照）", "雪球/静态快照",
+         {"source": ggt_source}, {"codes": ggt_codes, "source": ggt_source,
+                                  "count": len(ggt_codes)}, "market/ggt_components.json")
+
+    # 港股/美股交易日历：本市场 K 线日期并集推导（A股日历来自新浪，见 ①）
+    for mkt, group in (("hk", hk_stocks), ("us", us_stocks)):
+        days = sorted({r["dt"] for u in group for r in bars_qfq.get(u["secid"], []) if r["dt"]})
+        if days:
+            _reg(f"dwd_trade_calendar_{mkt}", f"K线日期并集推导（{mkt} 市场）", "新浪财经",
+                 {"note": "由本市场全部标的 K 线日期并集推导，供日历校验按市场分组"},
+                 days, f"market/trade_calendar_{mkt}.json")
     (repo / "portfolio" / "cn4.json").write_text(json.dumps({
         "id": "cn4", "name": "cn4 · 赛轮/永新/福耀/分众", "base_ccy": "CNY",
         "strategy_binding": "cn4_quality_v1",
@@ -280,16 +1083,19 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                      ("mom_12_1", "12-1月动量"), ("vol_250", "250日年化波动")]
     signal_factors = [("mom_20d", "20日动量"), ("vol_20d", "20日年化波动"), ("ma20_break", "MA20突破"),
                       ("high20_touch", "20日新高"), ("dist_high20", "距20日高点")]
+    # V4-β：A股/港股/美股 均计算引擎 A/B 因子（港股/美股财务因子见 methods.hk_fin/us_fin）
     registry = {"factors":
-                [{"id": f, "name": n, "type": "alpha", "status": "active", "version": "v1.0", "universe": ["CN"]}
+                [{"id": f, "name": n, "type": "alpha", "status": "active", "version": "v1.0",
+                  "universe": ["CN", "HK", "US"]}
                  for f, n in alpha_factors] +
                 [{"id": f, "name": n, "type": "signal", "status": "active", "version": "v1.0",
-                  "universe": ["CN"], "horizon_days": 20} for f, n in signal_factors]}
+                  "universe": ["CN", "HK", "US"], "horizon_days": 20} for f, n in signal_factors]}
     (repo / "factors" / "registry.json").write_text(json.dumps(registry, ensure_ascii=False, indent=2),
                                                     encoding="utf-8")
     (repo / "market" / "fx.json").write_text(json.dumps({
-        "as_of": None, "HKD_CNY": None, "USD_CNY": None,
-        "note": "cn4/multi5 均为 A 股上市人民币组合，无直接汇率敞口（QDII 品种风险体现在场内溢价/折价而非汇率）；α 不注入模拟汇率"}, ensure_ascii=False, indent=2),
+        **fetch_fx(),
+        "note": "V4-β 多市场组合需要：港元/美元持仓按 HKD_CNY/USD_CNY 折算人民币口径；"
+                "港股通标的实际以港币报价、人民币结算（存在汇率与结算价差）"}, ensure_ascii=False, indent=2),
         encoding="utf-8")
 
     # ── ④ 溯源登记（自哈希最后登记）──
@@ -309,5 +1115,6 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
             "provenance": str(repo / "market" / "provenance.json"),
             "as_of_bars": max((r["dt"] for arr in bars_qfq.values() for r in arr), default=None),
             "universe_fetched": universe_fetched, "universe_missing": universe_missing,
+            "universe_failed": universe_failed,
             "incremental_from": dict(incremental_from) if incremental_from else {},
             "per_secid": per_secid}

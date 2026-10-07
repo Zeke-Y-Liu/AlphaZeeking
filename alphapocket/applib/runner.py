@@ -74,11 +74,13 @@ def _golden_test(ctx: Ctx) -> dict:
         reps = sorted(fd.get("reports", []), key=lambda r: r["period"])
         by_p = {r["period"]: r for r in reps}
 
-        def ttm_at(t):
+        def ttm_at(t, reps=reps, by_p=by_p):
             av = [r for r in reps if r["announce_date"] <= t]
             if not av:
                 return None
             R = max(av, key=lambda r: r["period"])
+            if "eps_ttm" in R:      # 港股/美股：上游直出 TTM（与 factors.ttm_eps 同口径）
+                return R["eps_ttm"]
             if R.get("eps_ytd") is None:
                 return None
             y, md = R["period"][:4], R["period"][5:]
@@ -165,20 +167,34 @@ def _calendar_check(ctx: Ctx) -> dict:
     bars = json.loads((ctx.local_repo / "market" / "daily_bars.json").read_text(encoding="utf-8"))
     cal = json.loads((ctx.local_repo / "market" / "trade_calendar.json").read_text(encoding="utf-8"))
     txs = json.loads((ctx.local_repo / "market" / "cross_check_tx.json").read_text(encoding="utf-8"))
-    calset = set(cal)
     today = time.strftime("%Y-%m-%d")
-    last_td = max(d for d in cal if d <= today)
+
+    # V4-β 多市场：按 secid 后缀分组，各市场用自己的日历校验（.HK/.US 日历由 K 线日期并集
+    # 推导，见 datasource.fetch_all ②''；无对应日历文件的市场回退 A 股日历，保持旧行为）
+    from applib.datasource import classify_secid
+    cal_by_mkt = {"A": cal}
+    for mkt in ("HK", "US"):
+        p = ctx.local_repo / "market" / f"trade_calendar_{mkt.lower()}.json"
+        if p.exists():
+            try:
+                cal_by_mkt[mkt] = json.loads(p.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
+
     bad = []
-    lasts = {}
+    lasts_by_mkt: dict[str, set] = {}
     susp_n = 0
     for secid, arr in bars.items():
+        mkt = classify_secid(secid) or "A"
+        mcal = cal_by_mkt.get(mkt) or cal
+        calset = set(mcal)
         dts = [r["dt"] for r in arr]
         if len(dts) != len(set(dts)):
             bad.append(f"{secid} 日期重复")
         off = [d for d in dts if d not in calset]
         if off:
             bad.append(f"{secid} 非交易日K线{off[:3]}")
-        missing = [d for d in cal if dts[0] < d < dts[-1] and d not in set(dts)]
+        missing = [d for d in mcal if dts[0] < d < dts[-1] and d not in set(dts)]
         if missing:
             # 缺失分类：腾讯（独立源）同日有行情 → 新浪真缺失（FAIL）；
             # 腾讯亦无/窗口外 → 该品种当日无行情（停牌/份额折算），豁免并透明计数
@@ -187,24 +203,49 @@ def _calendar_check(ctx: Ctx) -> dict:
             if real_missing:
                 bad.append(f"{secid} 缺交易日{len(real_missing)}根（腾讯有而新浪缺）{real_missing[:3]}")
             susp_n += len(missing) - len(real_missing)
-        lasts[secid] = dts[-1]
-    if set(lasts.values()) != {last_td}:
-        bad.append(f"末根K线{lasts} ≠ 最近交易日{last_td}")
+        lasts_by_mkt.setdefault(mkt, set()).add(dts[-1] if dts else None)
+    # 末根校验：各市场内所有标的末根一致，且 = 本市场最近交易日
+    for mkt, lasts in lasts_by_mkt.items():
+        mcal = cal_by_mkt.get(mkt) or cal
+        last_td = max((d for d in mcal if d <= today), default=None)
+        if lasts != {last_td}:
+            bad.append(f"{mkt} 末根K线{sorted(lasts)} ≠ 最近交易日{last_td}")
     susp_note = f"·无行情豁免{susp_n}日(停牌/份额折算)" if susp_n else ""
-    return {"calendar_check": f"pass(末根={last_td}·日历{len(cal)}日{susp_note})" if not bad else f"FAIL({'; '.join(bad[:4])})"}
+    cal_total = sum(len(cal_by_mkt.get(m) or cal) for m in lasts_by_mkt)
+    mkt_note = "·" + "+".join(f"{m}:{len(c)}日" for m, c in sorted(cal_by_mkt.items()))
+    last_note = "{" + ", ".join(
+        f"{m}:{max(x for x in v if x)}" for m, v in sorted(lasts_by_mkt.items())) + "}"
+    msg = f"pass(末根={last_note}·日历{cal_total}日{mkt_note}{susp_note})" if not bad \
+        else f"FAIL({'; '.join(bad[:4])})"
+    return {"calendar_check": msg}
 
 
 def _adjust_check(ctx: Ctx) -> dict:
     bars = json.loads((ctx.local_repo / "market" / "daily_bars.json").read_text(encoding="utf-8"))
     raws = json.loads((ctx.local_repo / "market" / "daily_bars_raw.json").read_text(encoding="utf-8"))
     fund = json.loads((ctx.local_repo / "factors" / "fundamental_values.json").read_text(encoding="utf-8"))
-    bad, max_diff, n, fund_n = [], 0.0, 0, 0
+    # V4-β：港股/美股除权除息日（腾讯事件元数据，见 datasource ②''/②'''）；
+    # 港股主序列为新浪 qfq，除息日豁免必需；美股主序列为腾讯 raw 口径（与新浪 raw
+    # 日涨跌幅全窗口一致），豁免名单仅作元数据登记、不影响对账结果。
+    ex_path = ctx.local_repo / "market" / "adjust_ex_dates.json"
+    hkus_ex = json.loads(ex_path.read_text(encoding="utf-8")) if ex_path.exists() else {}
+    from applib.datasource import classify_secid
+    bad, max_diff, n, fund_n, hkus_n = [], 0.0, 0, 0, 0
     for secid, arr in bars.items():
         if secid not in raws:
             fund_n += 1     # ETF/LOF：sina 无复权接口，无 qfq/raw 对（价格真实性由 cross_source 双源覆盖）
             continue
+        mkt = classify_secid(secid)
+        if mkt == "HK" and not hkus_ex.get(secid):
+            # 港股除息日元数据缺失（腾讯上游故障）→ 豁免并透明计数，价格真实性由 cross_source 兜底
+            fund_n += 1
+            continue
+        if mkt in ("HK", "US"):
+            hkus_n += 1
         raw = {r["dt"]: r["close"] for r in raws[secid]}
-        ex = {d["ex_date"] for d in fund.get(secid, {}).get("dividends", []) if d["ex_date"] >= arr[0]["dt"]}
+        ex = ({d["ex_date"] for d in fund.get(secid, {}).get("dividends", [])
+               if d["ex_date"] >= arr[0]["dt"]}
+              | {d for d in hkus_ex.get(secid, []) if d >= arr[0]["dt"]})
         prev_dt = None
         for r in arr:
             if prev_dt and r["dt"] not in ex and r.get("pct") is not None and prev_dt in raw and r["dt"] in raw:
@@ -215,10 +256,17 @@ def _adjust_check(ctx: Ctx) -> dict:
                 if d > 0.005:
                     bad.append(f"{secid}@{r['dt']} qfq{r['pct']:.4f} vs raw{rp:.4f}")
             prev_dt = r["dt"]
-        if abs(arr[-1]["close"] - raw[arr[-1]["dt"]]) > 0.011:
-            bad.append(f"{secid} 末日 qfq {arr[-1]['close']} ≠ raw {raw[arr[-1]['dt']]}（复权因子≠1）")
-    fund_note = f"·基金{fund_n}只无复权对" if fund_n else ""
-    return {"adjust_check": f"pass({n} 点·最大偏差{max_diff:.4%}{fund_note})" if not bad else f"FAIL({'; '.join(bad[:4])})"}
+        # 末日锚定：主序列末根在 raw 有同日数据时须相等（qfq 前复权锚定当下；美股腾讯
+        # 序列含当日盘中K线而新浪 raw 收盘后更新 → 取最后共同交易日比较）
+        common = [r["dt"] for r in arr if r["dt"] in raw]
+        if common:
+            last_dt = common[-1]
+            last_close = next(r["close"] for r in arr if r["dt"] == last_dt)
+            if abs(last_close - raw[last_dt]) > 0.011:
+                bad.append(f"{secid} 末日({last_dt}) qfq {last_close} ≠ raw {raw[last_dt]}（复权因子≠1）")
+    fund_note = f"·无复权对豁免{fund_n}只" if fund_n else ""
+    hkus_note = f"·港美对账{hkus_n}只" if hkus_n else ""
+    return {"adjust_check": f"pass({n} 点·最大偏差{max_diff:.4%}{hkus_note}{fund_note})" if not bad else f"FAIL({'; '.join(bad[:4])})"}
 
 
 def _provenance_check(ctx: Ctx) -> dict:

@@ -129,7 +129,11 @@ def _alpha_multi5() -> dict:
 
 
 def test_create_multi5_replica_materializes_like_alpha(api_client, ws_root, tracked) -> None:
-    """用例 1：multi5 复刻（5×20）物化 JSON 与 α 参考字段级一致（仅 id 为随机 pid）。"""
+    """用例 1：multi5 复刻（5×20）物化 JSON 与 α 参考字段级一致（仅 id 为随机 pid）。
+
+    V4-β：物化新增 ``currency``/``hk_connect`` 字段（多市场扩展），α 参考的既有字段
+    必须逐一相等，新字段允许额外出现。
+    """
     alpha = _alpha_multi5()
     pid = _rand_pid("pf")
 
@@ -145,11 +149,25 @@ def test_create_multi5_replica_materializes_like_alpha(api_client, ws_root, trac
     assert resp.json()["pid"] == pid
 
     materialized = json.loads(_materialized_path(ws_root, pid).read_text(encoding="utf-8"))
-    expected = dict(alpha)
-    expected["id"] = pid
-    assert materialized == expected, (
-        f"物化 JSON 与 α 参考不一致：\n{materialized}\n!=\n{expected}"
-    )
+    assert materialized["id"] == pid
+    for key, value in alpha.items():
+        if key == "id":
+            continue
+        if key == "positions":
+            assert len(materialized["positions"]) == len(value)
+            for got_pos, exp_pos in zip(materialized["positions"], value):
+                for k, v in exp_pos.items():
+                    assert got_pos.get(k) == v, (
+                        f"position 字段 {k} 与 α 参考不一致：{got_pos.get(k)} != {v}"
+                    )
+        else:
+            assert materialized[key] == value, (
+                f"字段 {key} 与 α 参考不一致：{materialized[key]} != {value}"
+            )
+    # V4-β 新增字段存在性（A股 currency=CNY / hk_connect=None）
+    for got_pos in materialized["positions"]:
+        assert got_pos["currency"] == "CNY"
+        assert got_pos["hk_connect"] is None
 
 
 def test_weight_window_boundaries_rejected_with_suggestion(api_client) -> None:

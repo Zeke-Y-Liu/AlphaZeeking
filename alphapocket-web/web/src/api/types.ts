@@ -8,6 +8,8 @@
 
 /* ── 枚举（§5.1 / §6.3） ─────────────────────────── */
 export type AssetType = 'STOCK' | 'ETF' | 'LOF';
+/** V4-β 市场：A=A股（股票/ETF/LOF） HK=港股 US=美股。 */
+export type Market = 'A' | 'HK' | 'US';
 export type PortfolioStatus = 'active' | 'archived';
 export type JobType = 'data_sync' | 'review' | 'backtest' | 'rebalance_plan' | 'exec_orders';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
@@ -22,13 +24,17 @@ export interface Security {
   secid: string;
   code: string;
   name: string;
-  market: string;
+  market: Market | string;
   asset_type: AssetType;
   industry?: string | null;
   sina_symbol: string;
   ftype?: string | null;
   settle?: string | null;
   cost?: string | null;
+  /** V4-β：交易计价币种 CNY/HKD/USD（A股缺省 CNY）。 */
+  currency?: string | null;
+  /** V4-β：港股通标记（仅港股有值：true=港股通标的 / false=非港股通 / null=A股或美股）。 */
+  hk_connect?: boolean | null;
   source: string;
   created_at: string;
 }
@@ -37,9 +43,55 @@ export interface Position {
   secid: string;
   weight: number; // 百分数，如 20.0
   name?: string;
+  market?: Market | string | null;
   asset_type?: AssetType;
+  currency?: string | null;
+  hk_connect?: boolean | null;
   settle?: string;
   cost?: string;
+}
+
+/* ── V4-β 实时行情 ─────────────────────────────── */
+/** 单标的实时行情（GET /v1/market/quotes）。 */
+export interface Quote {
+  secid: string;
+  name: string;
+  market: Market | string | null;
+  market_label?: string;
+  currency?: string | null;
+  price?: number | null;
+  /** 人民币折算价（A股=原值；港/美按汇率折算）。 */
+  price_cny?: number | null;
+  prev_close?: number | null;
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  chg?: number | null;
+  pct?: number | null;
+  volume?: number | null;
+  amount?: number | null;
+  time?: string | null;
+  source?: string;
+  hk_connect?: boolean | null;
+  asset_type?: AssetType | null;
+  /** 双源均失败时带 error，不影响其余标的。 */
+  error?: string;
+}
+
+/** 汇率快照（随行情响应返回）。 */
+export interface FxSnapshot {
+  HKD_CNY?: number | null;
+  USD_CNY?: number | null;
+  as_of?: string | null;
+  time?: string | null;
+  source?: string;
+  error?: string;
+}
+
+export interface QuotesResponse {
+  quotes: Quote[];
+  fx: FxSnapshot;
+  cached?: boolean;
 }
 
 /** 组合最近一次 run 摘要（core ``portfolios.latest_run`` 原样返回：
@@ -305,7 +357,10 @@ export interface DataStatusSecurity {
   secid: string;
   code: string;
   name: string;
+  market: Market | string;
   asset_type: AssetType;
+  currency?: string | null;
+  hk_connect?: boolean | null;
   last_bar: string | null;
   lag_days: number | null;
   missing: number | null;
@@ -314,7 +369,13 @@ export interface DataStatusSecurity {
 
 export interface DataStatus {
   as_of: string | null;
-  universe: { count: number; types: Record<AssetType, number> };
+  /** V4-β：分市场最新 bar 日期（三市场交易日历独立）。 */
+  as_of_by_market?: Record<string, string | null>;
+  universe: {
+    count: number;
+    types: Record<AssetType, number>;
+    markets?: Record<string, number>;
+  };
   securities: DataStatusSecurity[];
   verification: VerifySummary;
   latest_sync: {

@@ -37,6 +37,8 @@ def factor_compute(args, ctx):
     out, signals = [], []
     as_of = args.get("as_of") or "auto"
     for secid, arr in bars.items():
+        if not arr:                          # 上游失败标的（0 根 K 线）：跳过，防 IndexError
+            continue
         b = F.compute_beta(secid, arr, None if as_of == "auto" else as_of)
         vals = {"mom_20d": b["mom_20d"], "vol_20d": b["vol_20d"], "ma20_break": b["ma20_break"],
                 "high20_touch": b["high20_touch"], "dist_high20": b["dist_high20"]}
@@ -62,6 +64,8 @@ def factor_compute_alpha(args, ctx):
     out = []
     as_of = args.get("as_of") or "auto"
     for secid, arr in bars.items():
+        if not arr:                          # 上游失败标的（0 根 K 线）：跳过，防 IndexError
+            continue
         fd = fund.get(secid, {})
         a = F.compute_alpha(secid, arr, fd.get("reports", []), fd.get("dividends", []),
                             None if as_of == "auto" else as_of)

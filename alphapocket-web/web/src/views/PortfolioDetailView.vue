@@ -5,12 +5,13 @@ import { computed, onMounted, ref } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
 import { fetchRunArtifact, getJob, getPortfolio, listRuns, reviewPortfolio } from '../api';
+import { ApMarketBadge } from '../components/ui';
 import { ApiError } from '../api/types';
 import type { Portfolio, ReviewPayload, ReviewPosition, Run } from '../api/types';
 import { ApBadge, ApButton, ApCard, ApTable, ApTabs, useToast } from '../components/ui';
 import type { ApTableColumn, ApTabItem, BadgeTone } from '../components/ui';
 import { useBreakpoint } from '../composables/useBreakpoint';
-import { DASH, fmtDate, fmtNum, fmtPct } from '../utils/format';
+import { DASH, fmtDate, fmtNum, fmtPct, fmtPctVal } from '../utils/format';
 
 const route = useRoute();
 const toast = useToast();
@@ -36,6 +37,11 @@ const gateFailed = ref<string[] | null>(null);
 const queued = ref(false);
 
 const positions = computed<ReviewPosition[]>(() => review.value?.positions ?? []);
+
+/** secid → 市场元数据（V4-β：review 产物不含 market，从 core 组合详情的持仓补全）。 */
+const secMeta = computed(
+  () => new Map((pf.value?.positions ?? []).map((p) => [p.secid, p])),
+);
 
 /* ── 体检卡（五指标） ───────────────────────────── */
 function retTone(v?: number | null): string {
@@ -83,10 +89,12 @@ const aRows = computed<Record<string, unknown>[]>(() =>
       weight: fmtWeight(p.weight),
       pe_ttm: fmtNum(a?.val_pe_ttm),
       pb: fmtNum(a?.val_pb),
-      roe_ttm: fmtPct(a?.qua_roe_ttm),
-      margin: fmtPct(a?.qua_margin),
-      rev_yoy: fmtPct(a?.grow_rev_yoy),
-      np_yoy: fmtPct(a?.grow_np_yoy),
+      // ROE/毛利率/成长同比：applib 口径本身即百分数（如 16.1 → 16.1%，见 report.py），
+      // 故用 fmtPctVal 而非 fmtPct（后者面向小数比率，会再 ×100）。
+      roe_ttm: fmtPctVal(a?.qua_roe_ttm),
+      margin: fmtPctVal(a?.qua_margin),
+      rev_yoy: fmtPctVal(a?.grow_rev_yoy),
+      np_yoy: fmtPctVal(a?.grow_np_yoy),
       mom_12_1: fmtPct(a?.mom_12_1),
       vol_250: fmtPct(a?.vol_250),
       div_yield: fmtPct(a?.div_yield_ttm),
@@ -340,6 +348,10 @@ onMounted(load);
                 data-test="fa-table"
               >
                 <template #cell:name="{ row }">
+                  <ApMarketBadge
+                    :market="secMeta.get(String(row.secid))?.market"
+                    :hk-connect="secMeta.get(String(row.secid))?.hk_connect"
+                  />
                   <span :data-test="`fa-name-${String(row.secid)}`">{{ row.name }}</span>
                 </template>
                 <template #cell:pe_ttm="{ row }">
@@ -352,7 +364,13 @@ onMounted(load);
               <div v-if="positions.length" class="bd-grid">
                 <div v-for="p in positions" :key="p.secid" class="bd-card" data-test="beta-card">
                   <div class="bd-head">
-                    <span class="ap-mono">{{ p.name || p.secid }}</span>
+                    <span class="ap-row" style="gap: 4px">
+                      <ApMarketBadge
+                        :market="secMeta.get(p.secid)?.market"
+                        :hk-connect="secMeta.get(p.secid)?.hk_connect"
+                      />
+                      <span class="ap-mono">{{ p.name || p.secid }}</span>
+                    </span>
                     <ApBadge :tone="stateTone(p.beta?.state)" data-test="beta-state">
                       {{ p.beta?.state ?? DASH }}
                     </ApBadge>

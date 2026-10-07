@@ -18,6 +18,7 @@ import type {
   Job,
   JobAccepted,
   Portfolio,
+  QuotesResponse,
   RebalancePlan,
   RebalancePlanSummary,
   Run,
@@ -37,6 +38,8 @@ export const API_PATHS = {
   authMe: '/auth/me',
   securitiesSearch: '/v1/securities/search',
   securitiesRegister: '/v1/securities/register',
+  marketQuotes: '/v1/market/quotes',
+  marketGgt: '/v1/market/ggt',
   dataSync: '/v1/data/sync',
   dataStatus: '/v1/data/status',
   dataVerifications: '/v1/data/verifications',
@@ -98,6 +101,32 @@ export async function registerSecurity(code: string, assetType?: AssetType): Pro
     code,
     asset_type: assetType,
   });
+  return data;
+}
+
+/* ── 实时行情（V4-β 多市场） ──────────────────── */
+/**
+ * GET /v1/market/quotes?secids=：A股/港股/美股混合批量实时行情 + 汇率快照。
+ * 服务端 Redis 5s 缓存；双源失败条目带 error 字段。
+ */
+export async function getQuotes(secids: string[]): Promise<QuotesResponse> {
+  const { data } = await apiClient.get<QuotesResponse>(API_PATHS.marketQuotes, {
+    params: { secids: secids.join(',') },
+  });
+  return data;
+}
+
+/** GET /v1/market/ggt：港股通标的名单（雪球在线 → 静态快照降级）。 */
+export async function getGgtComponents(): Promise<{
+  codes: string[];
+  count: number;
+  source: string;
+}> {
+  const { data } = await apiClient.get<{
+    codes: string[];
+    count: number;
+    source: string;
+  }>(API_PATHS.marketGgt);
   return data;
 }
 

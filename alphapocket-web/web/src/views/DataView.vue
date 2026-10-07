@@ -1,15 +1,15 @@
 <script setup lang="ts">
-// 数据页（T6.7）：universe 状态表（最后日期/缺口/豁免与缺失分行/类型徽章）
-// + 六项验证徽章墙（点击 → 抽屉看 detail）+ 手动 sync（bootstrap 二次确认）
-// + job 进度条（轮询）+ /runs 运行历史（筛选 + 产物直达下载）。
-import { computed, onMounted, ref } from 'vue';
+// 数据页（T6.7；V4-β 多市场）：universe 状态表（市场徽标+港股通标记+最后日期/缺口）
+// + 实时行情卡（A股/港股/美股混合批量，自动刷新）+ 六项验证徽章墙（点击 → 抽屉看 detail）
+// + 手动 sync（bootstrap 二次确认）+ job 进度条（轮询）+ /runs 运行历史。
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import { fetchRunArtifact, getDataStatus, getJob, listRuns, listVerifications, syncData } from '../api';
+import { fetchRunArtifact, getDataStatus, getJob, getQuotes, listRuns, listVerifications, syncData } from '../api';
 import { ApiError } from '../api/types';
-import type { DataStatus, Run, SyncMode, VerifyDetail, VerifyResult, VerifyStatus } from '../api/types';
-import { ApBadge, ApButton, ApCard, ApModal, ApTable, useToast } from '../components/ui';
+import type { DataStatus, Quote, Run, SyncMode, VerifyDetail, VerifyResult, VerifyStatus } from '../api/types';
+import { ApBadge, ApButton, ApCard, ApMarketBadge, ApModal, ApTable, useToast } from '../components/ui';
 import type { ApTableColumn, BadgeTone } from '../components/ui';
-import { DASH, fmtDate } from '../utils/format';
+import { DASH, fmtDate, fmtMoney, fmtPct } from '../utils/format';
 
 const toast = useToast();
 
@@ -41,6 +41,44 @@ const drawerOpen = ref(false);
 const runs = ref<Run[]>([]);
 const runType = ref('');
 const runsLoading = ref(false);
+
+/* ── 实时行情（V4-β：universe 全标的，10s 自动刷新） ── */
+const QUOTE_REFRESH_MS = 10_000;
+const QUOTE_BATCH = 50;                       // 与服务端单次批量上限一致
+const quotes = ref<Quote[]>([]);
+const fxRate = ref<{ hkd?: number | null; usd?: number | null } | null>(null);
+const quotesAt = ref('');
+const quotesLoading = ref(false);
+let quoteTimer: ReturnType<typeof setInterval> | null = null;
+
+async function loadQuotes(): Promise<void> {
+  const secids = (status.value?.securities ?? []).map((s) => s.secid);
+  if (!secids.length || quotesLoading.value) return;
+  quotesLoading.value = true;
+  try {
+    const out: Quote[] = [];
+    for (let i = 0; i < secids.length; i += QUOTE_BATCH) {
+      const res = await getQuotes(secids.slice(i, i + QUOTE_BATCH));
+      out.push(...res.quotes);
+      fxRate.value = { hkd: res.fx?.HKD_CNY, usd: res.fx?.USD_CNY };
+    }
+    quotes.value = out;
+    quotesAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  } catch {
+    // 行情为增强信息：失败不打断页面（下一次轮询自动重试）
+  } finally {
+    quotesLoading.value = false;
+  }
+}
+
+function quoteOf(secid: string): Quote | undefined {
+  return quotes.value.find((q) => q.secid === secid);
+}
+
+function pctTone(pct: number | null | undefined): BadgeTone {
+  if (pct == null) return 'default';
+  return pct > 0 ? 'danger' : pct < 0 ? 'success' : 'default';   // A股口径红涨绿跌
+}
 
 /* ── 验证徽章派生 ───────────────────────────────── */
 const summaryChecks = computed(() => {
@@ -80,9 +118,11 @@ const missingCount = computed(
   () => (status.value?.securities ?? []).filter((s) => (s.missing ?? 0) > 0).length,
 );
 
-/* ── universe 表 ────────────────────────────────── */
+/* ── universe 表（V4-β：市场列 + 实时价列） ────── */
 const universeColumns: ApTableColumn[] = [
   { key: 'name', label: '标的' },
+  { key: 'market', label: '市场' },
+  { key: 'quote', label: '实时价', align: 'right' },
   { key: 'last_bar', label: '最后日期' },
   { key: 'lag_days', label: '滞后(天)', align: 'right' },
   { key: 'missing', label: '缺口', align: 'right' },
@@ -95,6 +135,8 @@ const universeRows = computed<Record<string, unknown>[]>(() =>
   (status.value?.securities ?? []).map((s) => ({
     secid: s.secid,
     name: s.name || s.secid,
+    market: s.market,
+    hk_connect: s.hk_connect,
     last_bar: fmtDate(s.last_bar),
     lag_days: s.lag_days ?? DASH,
     missing: s.missing ?? DASH,
@@ -205,6 +247,10 @@ async function load(): Promise<void> {
   try {
     await loadStatus();
     await loadRuns();
+    await loadQuotes();
+    if (!quoteTimer) {
+      quoteTimer = setInterval(() => void loadQuotes(), QUOTE_REFRESH_MS);
+    }
   } catch (err) {
     error.value = messageOf(err);
   } finally {
@@ -213,6 +259,12 @@ async function load(): Promise<void> {
 }
 
 onMounted(load);
+onBeforeUnmount(() => {
+  if (quoteTimer) {
+    clearInterval(quoteTimer);
+    quoteTimer = null;
+  }
+});
 </script>
 
 <template>
@@ -264,6 +316,16 @@ onMounted(load);
         <p class="dv-summary ap-muted">
           <span data-test="exempt-row">日历豁免：<b class="ap-mono">{{ exemptCount ?? DASH }}</b> 天</span>
           <span data-test="missing-row">存在缺口标的：<b class="ap-mono">{{ missingCount }}</b> 个</span>
+          <span data-test="markets-row" v-if="status?.universe?.markets">
+            A股 <b class="ap-mono">{{ status.universe.markets.A ?? 0 }}</b>
+            · 港股 <b class="ap-mono">{{ status.universe.markets.HK ?? 0 }}</b>
+            · 美股 <b class="ap-mono">{{ status.universe.markets.US ?? 0 }}</b>
+          </span>
+          <span data-test="fx-row" v-if="fxRate?.hkd || fxRate?.usd">
+            汇率
+            <template v-if="fxRate?.hkd">HKD/CNY <b class="ap-mono">{{ fxRate.hkd.toFixed(4) }}</b></template>
+            <template v-if="fxRate?.usd"> · USD/CNY <b class="ap-mono">{{ fxRate.usd.toFixed(4) }}</b></template>
+          </span>
         </p>
         <ApTable
           :columns="universeColumns"
@@ -276,12 +338,31 @@ onMounted(load);
           <template #cell:name="{ row }">
             <b>{{ row.name }}</b><br /><span class="ap-mono ap-muted">{{ row.secid }}</span>
           </template>
+          <template #cell:market="{ row }">
+            <ApMarketBadge :market="String(row.market)" :hk-connect="row.hk_connect === true" />
+          </template>
+          <template #cell:quote="{ row }">
+            <span v-if="quoteOf(String(row.secid))?.error" class="ap-muted">—</span>
+            <template v-else-if="quoteOf(String(row.secid))">
+              <b class="ap-mono">{{ fmtMoney(quoteOf(String(row.secid))?.price, quoteOf(String(row.secid))?.currency) }}</b>
+              <ApBadge :tone="pctTone(quoteOf(String(row.secid))?.pct)">
+                {{ fmtPct((quoteOf(String(row.secid))?.pct ?? 0) / 100, 2) }}
+              </ApBadge>
+            </template>
+            <span v-else class="ap-muted">…</span>
+          </template>
           <template #cell:asset_type="{ row }">
             <ApBadge :tone="TYPE_TONE[String(row.asset_type)] ?? 'default'">
               {{ row.asset_type }}
             </ApBadge>
           </template>
         </ApTable>
+        <p class="dv-quote-note ap-muted" data-test="quotes-note">
+          实时价
+          <template v-if="quotesAt">更新于 <span class="ap-mono">{{ quotesAt }}</span>（10s 自动刷新）</template>
+          <template v-else>加载中…</template>
+          · 港/美标的按 HKD_CNY/USD_CNY 折算人民币口径：<span class="ap-mono">price_cny</span>
+        </p>
       </ApCard>
 
       <ApCard title="六项验证">
@@ -405,6 +486,10 @@ onMounted(load);
   gap: var(--ap-sp-4);
   flex-wrap: wrap;
   margin-bottom: var(--ap-sp-3);
+  font-size: var(--ap-fs-sm);
+}
+.dv-quote-note {
+  margin-top: var(--ap-sp-3);
   font-size: var(--ap-fs-sm);
 }
 .dv-badges {

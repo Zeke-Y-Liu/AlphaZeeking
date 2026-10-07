@@ -106,32 +106,67 @@ def _count_audit(secid: str) -> int:
 
 
 @pytest.mark.parametrize(
-    ("raw", "secid", "sina", "is_fund"),
+    ("raw", "secid", "sina", "is_fund", "market"),
     [
-        ("600519", "600519.SH", "sh600519", False),
-        ("sh600519", "600519.SH", "sh600519", False),
-        ("600519.SH", "600519.SH", "sh600519", False),
-        ("002014", "002014.SZ", "sz002014", False),
-        ("sz002014", "002014.SZ", "sz002014", False),
-        ("300750", "300750.SZ", "sz300750", False),
-        ("688981", "688981.SH", "sh688981", False),
-        ("510300", "510300.SH", "sh510300", True),
-        ("159915", "159915.SZ", "sz159915", True),
+        # A股（冻结前缀规则，§9.2 T1.3）
+        ("600519", "600519.SH", "sh600519", False, "A"),
+        ("sh600519", "600519.SH", "sh600519", False, "A"),
+        ("600519.SH", "600519.SH", "sh600519", False, "A"),
+        ("002014", "002014.SZ", "sz002014", False, "A"),
+        ("sz002014", "002014.SZ", "sz002014", False, "A"),
+        ("300750", "300750.SZ", "sz300750", False, "A"),
+        ("688981", "688981.SH", "sh688981", False, "A"),
+        ("510300", "510300.SH", "sh510300", True, "A"),
+        ("159915", "159915.SZ", "sz159915", True, "A"),
+        # V4-β 港股（自动判定 + 短代码补零至 5 位）
+        ("00700", "00700.HK", "hk00700", False, "HK"),
+        ("700", "00700.HK", "hk00700", False, "HK"),
+        ("hk00700", "00700.HK", "hk00700", False, "HK"),
+        ("00700.HK", "00700.HK", "hk00700", False, "HK"),
+        # V4-β 美股（自动判定，1-6 位字母）
+        ("AAPL", "AAPL.US", "gb_aapl", False, "US"),
+        ("aapl", "AAPL.US", "gb_aapl", False, "US"),
+        ("AAPL.US", "AAPL.US", "gb_aapl", False, "US"),
     ],
 )
-def test_resolve_secid_rules(raw, secid, sina, is_fund) -> None:
-    """规范化 + 冻结前缀规则（§9.2 T1.3）。"""
+def test_resolve_secid_rules(raw, secid, sina, is_fund, market) -> None:
+    """自动判定 + 规范化 + 冻结前缀规则（§9.2 T1.3 / V4-β 多市场）。"""
     assert sec_mod._resolve_secid(raw) == (
-        secid.split(".")[0], secid, sina, is_fund
+        secid.split(".")[0], secid, sina, is_fund, market
     )
+
+
+@pytest.mark.parametrize(
+    ("raw", "market", "secid", "sina"),
+    [
+        ("12345", "HK", "12345.HK", "hk12345"),
+        ("700", "HK", "00700.HK", "hk00700"),
+        ("AAPL", "US", "AAPL.US", "gb_aapl"),
+        ("600519", "A", "600519.SH", "sh600519"),
+    ],
+)
+def test_resolve_secid_explicit_market(raw, market, secid, sina) -> None:
+    """显式 market 入参按对应市场规范化。"""
+    code, got_secid, got_sina, _fund, got_mkt = sec_mod._resolve_secid(raw, market)
+    assert (code, got_secid, got_sina, got_mkt) == (secid.split(".")[0], secid, sina, market)
 
 
 @pytest.mark.parametrize("bad", ["abc", "12345", "1234567", "60051x"])
 def test_normalize_code_rejects_malformed(bad: str) -> None:
+    """A 股代码规范化拒绝非法形态（V4-β：abc/12345 转由 US/HK 市场解释）。"""
     from app.core.errors import AppError, ErrorCode
 
     with pytest.raises(AppError) as excinfo:
-        sec_mod._normalize_code(bad)
+        sec_mod._normalize_a_code(bad)
+    assert excinfo.value.code == ErrorCode.VALIDATION_ERROR.value
+
+
+def test_normalize_us_rejects_dotted() -> None:
+    """美股暂不支持带点多类别代码（BRK.B）→ 422。"""
+    from app.core.errors import AppError, ErrorCode
+
+    with pytest.raises(AppError) as excinfo:
+        sec_mod._normalize_us_code("BRK.B")
     assert excinfo.value.code == ErrorCode.VALIDATION_ERROR.value
 
 
@@ -139,16 +174,27 @@ def test_market_prefix_rejects_unknown() -> None:
     from app.core.errors import AppError, ErrorCode
 
     with pytest.raises(AppError) as excinfo:
-        sec_mod._resolve_secid("999999")
+        sec_mod._resolve_secid("999999", "A")
     assert excinfo.value.code == ErrorCode.VALIDATION_ERROR.value
 
 
 # ── 端点用例 ────────────────────────────────────────────────────
 
 
+def _patch_offline(monkeypatch, ggt_codes: set[str] | None = None) -> None:
+    """打桩去网络：探测返回伪 K 线；实时名称/港股通名单确定性返回。"""
+    monkeypatch.setattr(
+        sec_mod, "_probe_reachable",
+        lambda sina, market, is_fund: _fake_bars(),
+    )
+    monkeypatch.setattr(sec_mod, "_realtime_names", lambda secids: {})
+    if ggt_codes is not None:
+        monkeypatch.setattr(sec_mod, "_fetch_ggt_codes", lambda: ggt_codes)
+
+
 def test_register_new_stock(api_client, pg_ready, cleanup, monkeypatch) -> None:
     """注册 600519（股票）→ STOCK / 600519.SH / 缺省 settle&cost / 写审计。"""
-    monkeypatch.setattr(sec_mod, "_probe_reachable", lambda sina, is_fund: _fake_bars())
+    _patch_offline(monkeypatch)
     _force_clean("600519.SH", cleanup)
 
     resp = api_client.post("/api/v1/securities/register", json={"code": "600519"})
@@ -161,6 +207,8 @@ def test_register_new_stock(api_client, pg_ready, cleanup, monkeypatch) -> None:
     assert body["settle"] == "A股 T+1"
     assert body["cost"] == "印花税卖出0.05%+佣金"
     assert body["market"] == "A"
+    assert body["currency"] == "CNY"
+    assert body["hk_connect"] is None
     assert body["source"] == "user"
     # 名称无本地来源 → 按约定回退为 code（不伪造）
     assert body["name"] == "600519"
@@ -190,7 +238,7 @@ def test_register_existing_is_idempotent(api_client, pg_ready, monkeypatch) -> N
 
 def test_register_new_fund_defaults_etf(api_client, pg_ready, cleanup, monkeypatch) -> None:
     """注册 159915（1 开头 → sz 基金）→ 默认 ETF / 159915.SZ。"""
-    monkeypatch.setattr(sec_mod, "_probe_reachable", lambda sina, is_fund: _fake_bars())
+    _patch_offline(monkeypatch)
     _force_clean("159915.SZ", cleanup)
 
     resp = api_client.post("/api/v1/securities/register", json={"code": "159915"})
@@ -205,7 +253,7 @@ def test_register_new_fund_defaults_etf(api_client, pg_ready, cleanup, monkeypat
 
 def test_register_explicit_asset_type_and_ftype(api_client, pg_ready, cleanup, monkeypatch) -> None:
     """显式 asset_type=LOF 与 ftype 落库（入参优先于默认）。"""
-    monkeypatch.setattr(sec_mod, "_probe_reachable", lambda sina, is_fund: _fake_bars())
+    _patch_offline(monkeypatch)
     _force_clean("161725.SZ", cleanup)
 
     resp = api_client.post(
@@ -221,9 +269,70 @@ def test_register_explicit_asset_type_and_ftype(api_client, pg_ready, cleanup, m
     assert body["cost"] == "LOF 免印花税·佣金约万2.5"
 
 
-@pytest.mark.parametrize("bad", ["abc", "12345", "999999", ""])
+def test_register_hk_ggt_stock(api_client, pg_ready, cleanup, monkeypatch) -> None:
+    """注册 03690（美团，港股通名单内）→ HK / HKD / hk_connect=True / 港股缺省费用。"""
+    _patch_offline(monkeypatch, ggt_codes={"00700", "03690"})
+    _force_clean("03690.HK", cleanup)
+
+    resp = api_client.post("/api/v1/securities/register", json={"code": "3690"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["secid"] == "03690.HK"
+    assert body["sina_symbol"] == "hk03690"
+    assert body["market"] == "HK"
+    assert body["asset_type"] == "STOCK"
+    assert body["currency"] == "HKD"
+    assert body["hk_connect"] is True
+    assert body["settle"].startswith("港股")
+    assert _count_audit("03690.HK") >= 1
+
+
+def test_register_hk_non_ggt_stock(api_client, pg_ready, cleanup, monkeypatch) -> None:
+    """注册 09618（不在名单）→ hk_connect=False（明确标记非港股通）。"""
+    _patch_offline(monkeypatch, ggt_codes=set())        # 名单为空（降级路径）
+    _force_clean("09618.HK", cleanup)
+
+    resp = api_client.post("/api/v1/securities/register", json={"code": "9618"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["secid"] == "09618.HK"
+    assert body["market"] == "HK"
+    assert body["hk_connect"] is False
+    assert body["currency"] == "HKD"
+
+
+def test_register_us_stock(api_client, pg_ready, cleanup, monkeypatch) -> None:
+    """注册 NVDA（美股）→ US / USD / hk_connect=None / 美股缺省费用。"""
+    _patch_offline(monkeypatch)
+    _force_clean("NVDA.US", cleanup)
+
+    resp = api_client.post("/api/v1/securities/register", json={"code": "nvda"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["secid"] == "NVDA.US"
+    assert body["sina_symbol"] == "gb_nvda"
+    assert body["market"] == "US"
+    assert body["asset_type"] == "STOCK"
+    assert body["currency"] == "USD"
+    assert body["hk_connect"] is None
+    assert body["settle"] == "美股 T+0"
+    assert _count_audit("NVDA.US") >= 1
+
+
+def test_register_hk_rejects_non_stock(api_client, pg_ready, monkeypatch) -> None:
+    """港股/美股不支持 asset_type=ETF → 422（用非 seed 标的，避开幂等命中）。"""
+    _patch_offline(monkeypatch)
+    resp = api_client.post(
+        "/api/v1/securities/register", json={"code": "0001", "asset_type": "ETF"}
+    )
+    assert resp.status_code == 422, resp.text
+    body = resp.json()
+    assert body["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.parametrize("bad", ["60051x", "", "1234567", "BRK.B"])
 def test_register_invalid_code_422(api_client, pg_ready, bad) -> None:
-    """非法/无法识别代码 → 422 统一错误体。"""
+    """非法/无法识别代码 → 422 统一错误体（abc/12345 现为合法 US/HK 代码）。"""
     resp = api_client.post("/api/v1/securities/register", json={"code": bad})
     assert resp.status_code == 422, resp.text
     body = resp.json()
@@ -232,7 +341,9 @@ def test_register_invalid_code_422(api_client, pg_ready, bad) -> None:
 
 def test_register_probe_failure_422(api_client, pg_ready, cleanup, monkeypatch) -> None:
     """格式合法但探测不可达 → 422 SECURITY_NOT_FOUND 且不落库。"""
-    monkeypatch.setattr(sec_mod, "_probe_reachable", lambda sina, is_fund: [])
+    monkeypatch.setattr(
+        sec_mod, "_probe_reachable", lambda sina, market, is_fund: []
+    )
     _force_clean("600000.SH", cleanup)
 
     resp = api_client.post("/api/v1/securities/register", json={"code": "600000"})
@@ -275,5 +386,31 @@ def test_search_code_prefix_and_empty(api_client, pg_ready) -> None:
 @pytest.mark.skipif(os.environ.get("AP_NET_TESTS") != "1", reason="需 AP_NET_TESTS=1 且外网可达")
 def test_probe_reachable_real_network() -> None:
     pytest.importorskip("akshare")
-    bars = sec_mod._probe_reachable("sh600519", False)
+    bars = sec_mod._probe_reachable("sh600519", "A", False)
     assert isinstance(bars, list) and bars
+
+
+@pytest.mark.skipif(os.environ.get("AP_NET_TESTS") != "1", reason="需 AP_NET_TESTS=1 且外网可达")
+@pytest.mark.parametrize(
+    ("sina", "market", "min_bars"),
+    [("hk00700", "HK", 1), ("AAPL", "US", 1)],
+)
+def test_probe_reachable_hk_us_real_network(sina, market, min_bars) -> None:
+    """港股/美股探测真实网络冒烟（新浪接口可达性 + 数据非空）。"""
+    pytest.importorskip("akshare")
+    bars = sec_mod._probe_reachable(sina, market, False)
+    assert isinstance(bars, list) and len(bars) >= min_bars
+
+
+def test_search_market_filter(api_client, pg_ready) -> None:
+    """search 按市场过滤（V4-β）：market=HK 只回港股。"""
+    if _get("00700.HK") is None:
+        pytest.skip("seed 未灌入 00700.HK，跳过市场过滤用例")
+
+    resp = api_client.get("/api/v1/securities/search", params={"market": "HK"})
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()
+    assert rows, "market=HK 应至少命中 seed 港股"
+    assert all(row["market"] == "HK" for row in rows)
+    assert any(row["secid"] == "00700.HK" for row in rows)
+    assert all(row.get("hk_connect") is not None for row in rows)

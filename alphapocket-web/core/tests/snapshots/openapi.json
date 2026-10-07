@@ -423,6 +423,39 @@
             ],
             "title": "Cost"
           },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "hk_connect": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hk Connect"
+          },
+          "market": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -470,7 +503,7 @@
         "type": "object"
       },
       "RegisterIn": {
-        "description": "注册入参；仅 ``code`` 必填，其余可选以免破坏 ``{code}`` 契约。",
+        "description": "注册入参；仅 ``code`` 必填，其余可选以免破坏 ``{code}`` 契约。\n\n``market``：显式市场（A/HK/US）；缺省按代码形态判定（6 位数字→A，≤5 位数字→HK，\n字母→US）。港股短代码（如 ``700``）自动补零至 5 位。",
         "properties": {
           "asset_type": {
             "anyOf": [
@@ -509,6 +542,17 @@
               }
             ],
             "title": "Industry"
+          },
+          "market": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market"
           },
           "name": {
             "anyOf": [
@@ -550,6 +594,17 @@
             ],
             "title": "Cost"
           },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
           "ftype": {
             "anyOf": [
               {
@@ -560,6 +615,17 @@
               }
             ],
             "title": "Ftype"
+          },
+          "hk_connect": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hk Connect"
           },
           "industry": {
             "anyOf": [
@@ -1335,6 +1401,77 @@
         ]
       }
     },
+    "/api/v1/market/ggt": {
+      "get": {
+        "description": "港股通标的名单（代码 5 位字符串；雪球在线 → 静态快照降级）。",
+        "operationId": "get_ggt_api_v1_market_ggt_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Ggt Api V1 Market Ggt Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Ggt",
+        "tags": [
+          "market"
+        ]
+      }
+    },
+    "/api/v1/market/quotes": {
+      "get": {
+        "description": "批量实时行情 + 汇率（Redis 5s 缓存；上游双源，失败条目带 error 不阻断整体）。",
+        "operationId": "get_quotes_api_v1_market_quotes_get",
+        "parameters": [
+          {
+            "description": "逗号分隔的 secid 列表（A股/港股/美股混合）",
+            "in": "query",
+            "name": "secids",
+            "required": true,
+            "schema": {
+              "description": "逗号分隔的 secid 列表（A股/港股/美股混合）",
+              "title": "Secids",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Quotes Api V1 Market Quotes Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Quotes",
+        "tags": [
+          "market"
+        ]
+      }
+    },
     "/api/v1/plans/{plan_id}": {
       "get": {
         "description": "plan 详情（含完整 ``payload``）；不存在 → 404。",
@@ -2074,7 +2211,7 @@
     },
     "/api/v1/securities/register": {
       "post": {
-        "description": "注册标的：规范化 → 幂等检查 → 探测可达 → 落库 + 审计（§6.2/T1.3）。",
+        "description": "注册标的：规范化 → 幂等检查 → 探测可达 → 港股通标记 → 落库 + 审计。",
         "operationId": "register_security_api_v1_securities_register_post",
         "requestBody": {
           "content": {
@@ -2141,6 +2278,24 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "description": "按市场过滤：A/HK/US",
+            "in": "query",
+            "name": "market",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按市场过滤：A/HK/US",
+              "title": "Market"
             }
           }
         ],

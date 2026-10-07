@@ -13,6 +13,12 @@ export function fmtPct(v: number | null | undefined, digits = 1): string {
   return `${((v as number) * 100).toFixed(digits)}%`;
 }
 
+/** 原始百分数：v 本身即百分数（如 16.1 → "16.1%"），不再 ×100；空值 → "—"。 */
+export function fmtPctVal(v: number | null | undefined, digits = 1): string {
+  if (missing(v)) return DASH;
+  return `${(v as number).toFixed(digits)}%`;
+}
+
 /** 人民币金额：千分位（如 1000000 → "¥1,000,000"）；空值 → "—"。 */
 export function fmtCny(v: number | null | undefined, digits = 0): string {
   if (missing(v)) return DASH;
@@ -21,6 +27,30 @@ export function fmtCny(v: number | null | undefined, digits = 0): string {
     maximumFractionDigits: digits,
   });
   return `¥${s}`;
+}
+
+/** 币种符号（V4-β：CNY/HKD/USD；未知币种原样返回）。 */
+export const CCY_SYMBOL: Record<string, string> = {
+  CNY: '¥',
+  HKD: 'HK$',
+  USD: '$',
+};
+
+/**
+ * 多币种金额（V4-β）：千分位 + 币种符号（如 HKD 428.2 → "HK$428.2"）。
+ * 未知/缺省币种按人民币符号（兼容旧行为）；空值 → "—"。
+ */
+export function fmtMoney(
+  v: number | null | undefined,
+  ccy: string | null | undefined,
+  digits = 2,
+): string {
+  if (missing(v)) return DASH;
+  const s = (v as number).toLocaleString('en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+  return `${CCY_SYMBOL[ccy ?? 'CNY'] ?? '¥'}${s}`;
 }
 
 /** 数字：固定小数位（默认 2）；空值 → "—"。 */

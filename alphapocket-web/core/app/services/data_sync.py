@@ -205,6 +205,8 @@ def materialize_from_pg(ctx: Ctx) -> dict[str, Any]:
                 "market": s.market,
                 "asset_type": s.asset_type,
                 "industry": s.industry,
+                "currency": s.currency,
+                "hk_connect": s.hk_connect,
                 "source": s.source,
             }
             for s in secs
@@ -384,6 +386,7 @@ def sync_workspace(
         "universe": list(universe),
         "universe_fetched": fetched.get("universe_fetched") or [],
         "universe_missing": fetched.get("universe_missing") or [],
+        "universe_failed": fetched.get("universe_failed") or [],
         "incremental_from": incremental_from or {},
         "bars_fetched": bars_fetched,
         "as_of": as_of.isoformat() if as_of else None,
@@ -413,6 +416,7 @@ def sync_workspace(
             "universe_count": len(universe),
             "universe_fetched": result["universe_fetched"],
             "universe_missing": result["universe_missing"],
+            "universe_failed": result["universe_failed"],
             "bars_fetched": bars_fetched,
             "incremental_from": result["incremental_from"],
             "securities": materialized["securities"],

@@ -4,7 +4,7 @@ import { onMounted, ref } from 'vue';
 
 import { listPortfolios } from '../api';
 import type { AssetType, Portfolio } from '../api/types';
-import { ApBadge, ApButton, ApCard } from '../components/ui';
+import { ApBadge, ApButton, ApCard, ApMarketBadge } from '../components/ui';
 import type { BadgeTone } from '../components/ui';
 import { DASH, fmtDate, fmtPct } from '../utils/format';
 
@@ -89,6 +89,7 @@ onMounted(load);
         <div class="pf-seclist" data-test="pf-seclist">
           <template v-if="pf.positions && pf.positions.length">
             <span v-for="pos in pf.positions" :key="pos.secid" class="pf-sec">
+              <ApMarketBadge :market="pos.market" :hk-connect="pos.hk_connect" />
               <span class="ap-mono">{{ pos.name || pos.secid }}</span>
               <ApBadge v-if="pos.asset_type" :tone="typeTone(pos.asset_type)">
                 {{ pos.asset_type }}

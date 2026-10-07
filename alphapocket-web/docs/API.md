@@ -96,19 +96,29 @@
 | GET | `/healthz` | 存活检查；返回 `{status, deps:{pg,redis,minio}}`；依赖不可达 → `status=degraded`（仍 200） |
 | GET | `/api/v1/_ping` | 路由挂载自检 |
 
-### 4.2 标的（T1.3）
+### 4.2 标的（T1.3；V4-β 多市场）
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/v1/securities/search?q=` | 代码/名称/secid 前缀检索；空 `q` 返回最近 20 |
-| POST | `/api/v1/securities/register` | `{code, asset_type?}`；判定 stock/etf/lof 后入表；已存在幂等返回 |
+| GET | `/api/v1/securities/search?q=&market=` | 代码/名称/secid 前缀检索；空 `q` 返回最近 20；`market=A\|HK\|US` 按市场过滤 |
+| POST | `/api/v1/securities/register` | `{code, market?, asset_type?}`；A股 6 位 / 港股 1-5 位数字（自动补零，如 `700`→`00700.HK`）/ 美股 1-6 位字母（`AAPL`→`AAPL.US`）；港股自动标记港股通（雪球名单，降级静态快照）；已存在幂等返回 |
+
+> V4-β 字段：响应含 `market`（A/HK/US）、`currency`（CNY/HKD/USD）、`hk_connect`
+> （仅港股有值：`true` 港股通标的 / `false` 非港股通 / `null` A股或美股）。
+
+### 4.2a 实时行情（V4-β）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/market/quotes?secids=` | A股/港股/美股混合批量实时行情（逗号分隔，单次 ≤50）+ 汇率快照 `{HKD_CNY, USD_CNY}`；新浪 hq 主源（批量单请求）、腾讯兜底；Redis 5s 缓存；港/美标的附 `price_cny` 人民币折算价；双源失败条目带 `error`，不影响其余 |
+| GET | `/api/v1/market/ggt` | 港股通标的名单 `{codes, count, source}`（雪球在线 → 静态快照降级） |
 
 ### 4.3 数据（T1.4 / T1.5 / T1.6）
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/v1/data/sync` | `{mode: bootstrap\|incremental\|refresh, secid?}` → `202` job；`refresh` 必须带 `secid`；结束时自动跑六项验证。熔断中 → `503`，运行中重复提交 → `409 JOB_LOCKED` |
-| GET | `/api/v1/data/status` | 各标的最后 bar 日期/缺口/距今、universe 汇总、最近验证与 sync 状态 |
+| POST | `/api/v1/data/sync` | `{mode: bootstrap\|incremental\|refresh, secid?}` → `202` job；`refresh` 必须带 `secid`；结束时自动跑六项验证。熔断中 → `503`，运行中重复提交 → `409 JOB_LOCKED`。V4-β：universe 支持 A股/港股（新浪 qfq+raw、腾讯交叉、除息日豁免）/美股（腾讯主序列 raw 口径、新浪 raw 对账）混合 |
+| GET | `/api/v1/data/status` | 各标的最后 bar 日期/缺口/距今（**按市场分组**：三市场交易日历独立）、universe 汇总（含 `markets` 计数）、最近验证与 sync 状态 |
 | GET | `/api/v1/data/verifications?limit=` | 六项验证明细列表；`limit` ∈ [1,200]，默认 20；返回 `{items, count, limit}` |
 
 ### 4.4 组合（T2.2）
@@ -116,13 +126,15 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/v1/portfolios` | 组合列表（含持仓数、最近 run 摘要） |
-| POST | `/api/v1/portfolios` | `{name, pid?, note?, positions:[{secid,weight}], equal_weight?}` → `201`；权重和 ∈ [99.5,100.5]，越界 `422 WEIGHT_NOT_NORMALIZED` |
-| GET | `/api/v1/portfolios/{pid}` | 详情（含 positions） |
+| POST | `/api/v1/portfolios` | `{name, pid?, note?, positions:[{secid,weight}], equal_weight?}` → `201`；权重和 ∈ [99.5,100.5]，越界 `422 WEIGHT_NOT_NORMALIZED`。V4-β：持仓支持 A股/港股/美股混合（同一组合可含 A股+港股通+美股） |
+| GET | `/api/v1/portfolios/{pid}` | 详情（含 positions；V4-β 附 `market`/`currency`/`hk_connect`） |
 | PUT | `/api/v1/portfolios/{pid}` | 更新（重跑校验 + 重新物化） |
 | DELETE | `/api/v1/portfolios/{pid}` | 归档软删（`status=archived`） |
 
 > 列表/详情中的 `latest_run` 原样返回 `{run_uid, type, as_of, created_at, summary}`；
 > 列表页四指标（当日·YTD·1年·MDD）取自 `latest_run.summary.portfolio_metrics`（仅 review run 具备）。
+> V4-β：多市场组合 `base_ccy=CNY`，各持仓 `trade_ccy` 按标的币种（A股 CNY / 港股 HKD
+> （港股通以港币报价、人民币结算）/ 美股 USD），折算口径用 workspace `market/fx.json` 汇率。
 
 ### 4.5 评估 / 回测 / 调仓（T2.3 / T3.2 / T4.1）
 

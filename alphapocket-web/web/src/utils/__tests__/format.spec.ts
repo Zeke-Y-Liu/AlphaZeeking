@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DASH, fmtCny, fmtDate, fmtNum, fmtPct } from '../format';
+import { CCY_SYMBOL, DASH, fmtCny, fmtDate, fmtMoney, fmtNum, fmtPct } from '../format';
 
 describe('fmtPct', () => {
   it('小数比率 → 百分数（默认 1 位）', () => {
@@ -26,6 +26,29 @@ describe('fmtCny', () => {
   it('空值 → —', () => {
     expect(fmtCny(null)).toBe(DASH);
     expect(fmtCny(undefined)).toBe(DASH);
+  });
+});
+
+describe('fmtMoney（V4-β 多币种）', () => {
+  it('CNY/HKD/USD 各自符号', () => {
+    expect(fmtMoney(13.24, 'CNY')).toBe('¥13.24');
+    expect(fmtMoney(428.2, 'HKD')).toBe('HK$428.20');
+    expect(fmtMoney(333.41, 'USD')).toBe('$333.41');
+  });
+
+  it('缺省/未知币种回退人民币符号（兼容旧行为）', () => {
+    expect(fmtMoney(1000, undefined)).toBe('¥1,000.00');
+    expect(fmtMoney(1000, 'XXX')).toBe('¥1,000.00');
+  });
+
+  it('空值 → —；千分位', () => {
+    expect(fmtMoney(null, 'HKD')).toBe(DASH);
+    expect(fmtMoney(1234567.8, 'USD', 2)).toBe('$1,234,567.80');
+  });
+
+  it('CCY_SYMBOL 币种符号表', () => {
+    expect(CCY_SYMBOL.HKD).toBe('HK$');
+    expect(CCY_SYMBOL.USD).toBe('$');
   });
 });
 
