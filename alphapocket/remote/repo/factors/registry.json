@@ -7,7 +7,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ]
     },
     {
@@ -17,7 +19,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ]
     },
     {
@@ -27,7 +31,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ]
     },
     {
@@ -37,7 +43,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ]
     },
     {
@@ -47,7 +55,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ]
     },
     {
@@ -57,7 +67,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ]
     },
     {
@@ -67,7 +79,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ]
     },
     {
@@ -77,7 +91,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ]
     },
     {
@@ -87,7 +103,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ]
     },
     {
@@ -97,7 +115,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ]
     },
     {
@@ -107,7 +127,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ]
     },
     {
@@ -117,7 +139,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ],
       "horizon_days": 20
     },
@@ -128,7 +152,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ],
       "horizon_days": 20
     },
@@ -139,7 +165,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ],
       "horizon_days": 20
     },
@@ -150,7 +178,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ],
       "horizon_days": 20
     },
@@ -161,7 +191,9 @@
       "status": "active",
       "version": "v1.0",
       "universe": [
-        "CN"
+        "CN",
+        "HK",
+        "US"
       ],
       "horizon_days": 20
     }

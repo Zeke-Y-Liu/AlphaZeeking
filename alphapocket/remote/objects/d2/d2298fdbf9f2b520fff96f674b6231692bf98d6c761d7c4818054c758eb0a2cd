@@ -1,0 +1,92 @@
+[
+  {
+    "secid": "601058.SH",
+    "name": "赛轮集团",
+    "market": "A",
+    "asset_type": "STOCK",
+    "industry": "汽车零部件·轮胎",
+    "currency": "CNY",
+    "hk_connect": null,
+    "source": "组合定义（行业为申万口径常识标注）"
+  },
+  {
+    "secid": "002014.SZ",
+    "name": "永新股份",
+    "market": "A",
+    "asset_type": "STOCK",
+    "industry": "塑料软包装",
+    "currency": "CNY",
+    "hk_connect": null,
+    "source": "组合定义（行业为申万口径常识标注）"
+  },
+  {
+    "secid": "600660.SH",
+    "name": "福耀玻璃",
+    "market": "A",
+    "asset_type": "STOCK",
+    "industry": "汽车零部件·汽车玻璃",
+    "currency": "CNY",
+    "hk_connect": null,
+    "source": "组合定义（行业为申万口径常识标注）"
+  },
+  {
+    "secid": "002027.SZ",
+    "name": "分众传媒",
+    "market": "A",
+    "asset_type": "STOCK",
+    "industry": "广告传媒",
+    "currency": "CNY",
+    "hk_connect": null,
+    "source": "组合定义（行业为申万口径常识标注）"
+  },
+  {
+    "secid": "510300.SH",
+    "name": "沪深300ETF",
+    "market": "A",
+    "asset_type": "ETF",
+    "industry": "A股宽基指数",
+    "currency": "CNY",
+    "hk_connect": null,
+    "source": "组合定义二 multi5（多资产）"
+  },
+  {
+    "secid": "501018.SH",
+    "name": "南方原油LOF",
+    "market": "A",
+    "asset_type": "LOF",
+    "industry": "原油(QDII)",
+    "currency": "CNY",
+    "hk_connect": null,
+    "source": "组合定义二 multi5（多资产）"
+  },
+  {
+    "secid": "518880.SH",
+    "name": "黄金ETF",
+    "market": "A",
+    "asset_type": "ETF",
+    "industry": "黄金",
+    "currency": "CNY",
+    "hk_connect": null,
+    "source": "组合定义二 multi5（多资产）"
+  },
+  {
+    "secid": "513100.SH",
+    "name": "纳指ETF",
+    "market": "A",
+    "asset_type": "ETF",
+    "industry": "美股指数(QDII-纳指100)",
+    "currency": "CNY",
+    "hk_connect": null,
+    "source": "组合定义二 multi5（多资产）"
+  },
+  {
+    "secid": "511260.SH",
+    "name": "十年国债ETF",
+    "market": "A",
+    "asset_type": "ETF",
+    "industry": "国债",
+    "currency": "CNY",
+    "hk_connect": null,
+    "source": "组合定义二 multi5（多资产）"
+  }
+]

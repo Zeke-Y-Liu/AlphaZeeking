@@ -5,6 +5,8 @@
     "market": "A",
     "asset_type": "STOCK",
     "industry": "汽车零部件·轮胎",
+    "currency": "CNY",
+    "hk_connect": null,
     "source": "组合定义（行业为申万口径常识标注）"
   },
   {
@@ -13,6 +15,8 @@
     "market": "A",
     "asset_type": "STOCK",
     "industry": "塑料软包装",
+    "currency": "CNY",
+    "hk_connect": null,
     "source": "组合定义（行业为申万口径常识标注）"
   },
   {
@@ -21,6 +25,8 @@
     "market": "A",
     "asset_type": "STOCK",
     "industry": "汽车零部件·汽车玻璃",
+    "currency": "CNY",
+    "hk_connect": null,
     "source": "组合定义（行业为申万口径常识标注）"
   },
   {
@@ -29,6 +35,8 @@
     "market": "A",
     "asset_type": "STOCK",
     "industry": "广告传媒",
+    "currency": "CNY",
+    "hk_connect": null,
     "source": "组合定义（行业为申万口径常识标注）"
   },
   {
@@ -37,6 +45,8 @@
     "market": "A",
     "asset_type": "ETF",
     "industry": "A股宽基指数",
+    "currency": "CNY",
+    "hk_connect": null,
     "source": "组合定义二 multi5（多资产）"
   },
   {
@@ -45,6 +55,8 @@
     "market": "A",
     "asset_type": "LOF",
     "industry": "原油(QDII)",
+    "currency": "CNY",
+    "hk_connect": null,
     "source": "组合定义二 multi5（多资产）"
   },
   {
@@ -53,6 +65,8 @@
     "market": "A",
     "asset_type": "ETF",
     "industry": "黄金",
+    "currency": "CNY",
+    "hk_connect": null,
     "source": "组合定义二 multi5（多资产）"
   },
   {
@@ -61,6 +75,8 @@
     "market": "A",
     "asset_type": "ETF",
     "industry": "美股指数(QDII-纳指100)",
+    "currency": "CNY",
+    "hk_connect": null,
     "source": "组合定义二 multi5（多资产）"
   },
   {
@@ -69,6 +85,8 @@
     "market": "A",
     "asset_type": "ETF",
     "industry": "国债",
+    "currency": "CNY",
+    "hk_connect": null,
     "source": "组合定义二 multi5（多资产）"
   }
 ]

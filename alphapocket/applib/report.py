@@ -77,6 +77,31 @@ def _num(v, digits=2):
     return "—" if v is None else f"{v:.{digits}f}"
 
 
+# ── R4：信号延迟衰减 caveat（fast_decay 信号在报告中挂警示）──
+def decay_caveat_md(review) -> str:
+    cs = review.get("decay_caveats") or []
+    if not cs:
+        return ""
+    head = "> ⚠ **信号延迟衰减 caveat（R4）**：以下引擎 B 信号 T+1 开盘执行衰减过快（> 50%），registry 已置 weakening，其提示仅供参考，不构成择时依据："
+    L = ["", head]
+    for c in cs:
+        L.append(f"> - `{c['signal_id']}`（{c.get('name') or ''}）：T+1 开盘衰减 "
+                 f"{_pct(c.get('decay_rate'))}（事件 {c.get('n_events')}）")
+    L.append("")
+    return "\n".join(L)
+
+
+def decay_caveat_html(review) -> str:
+    cs = review.get("decay_caveats") or []
+    if not cs:
+        return ""
+    items = "".join(f'<div><code>{c["signal_id"]}</code>（{c.get("name") or ""}）：T+1 开盘衰减 '
+                    f'{_pct(c.get("decay_rate"))} · 事件 {c.get("n_events")}</div>' for c in cs)
+    return ('<div class="warn"><span>⚠</span><div><b>信号延迟衰减 caveat（R4）</b>：以下引擎 B 信号 '
+            'T+1 开盘执行衰减过快（&gt; 50%），registry 已置 weakening，其提示仅供参考，不构成择时依据：'
+            + items + '</div></div>')
+
+
 def _cls(v):
     return "up" if (v or 0) > 0 else "down" if (v or 0) < 0 else ""
 
@@ -224,7 +249,7 @@ TTM EPS = 上年FY + 本年YTD − 上年同期YTD（摊薄口径，未逐笔校
 <th>收盘/MA20</th><th>20日高点(距离)</th><th>20日低点</th><th>执行参考带</th></tr>{rows}</table>
 <div style="margin-top:6px">{sigs}</div>
 <div class="warn"><span>⚠</span><div><b>增强不决策</b>：引擎 B 只产出评估单/提醒/参考价位，永不改动引擎 A 目标持仓——统一走拟调仓确认闭环。
-执行参考带 = MA20 × (1 ± 1.5σ)，σ 为 20 日日收益标准差（年化波动/√252）。</div></div></div>""")
+执行参考带 = MA20 × (1 ± 1.5σ)，σ 为 20 日日收益标准差（年化波动/√252）。</div></div>{decay_caveat_html(review)}</div>""")
 
     # ⑤ 下一交易日指引
     hd = review.get("holiday_days", 0)
@@ -312,6 +337,9 @@ def render_md(review, plan, run_id, code_ver, ds_commit, verify) -> str:
                  f"| {_num(b['band_low'])}~{_num(b['band_high'])} |")
     for s in review.get("signals", []):
         L.append(f"- [{s['type']}·{s['evidence']}] {s['name']} {s['signal_id']}：{s['detail']} → {s['action']}（冷却 {s['cooldown']}）")
+    cav = decay_caveat_md(review)
+    if cav:
+        L.append(cav)
     L.append("")
     L.append(f"## ⑤ 下一交易日指引（{review['next_trade_date']}）")
     for p in review["positions"]:

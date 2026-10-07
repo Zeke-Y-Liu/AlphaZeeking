@@ -1,0 +1,140 @@
+{
+  "fetched_at": "2026-10-07T14:05:35",
+  "akshare_version": "1.19.1",
+  "today": "2026-10-07",
+  "universe": [
+    "601058.SH",
+    "002014.SZ",
+    "600660.SH",
+    "002027.SZ",
+    "510300.SH",
+    "501018.SH",
+    "518880.SH",
+    "513100.SH",
+    "511260.SH"
+  ],
+  "sources": [
+    {
+      "dataset": "dwd_trade_calendar",
+      "interface": "ak.tool_trade_date_hist_sina()",
+      "upstream": "新浪财经",
+      "params": {},
+      "file": "market/trade_calendar.json",
+      "sha256": "d68143324d596e6ac9f25bd1e7e03d3205e3eb8061767f1463e07ecdaea7158a",
+      "bytes": 123158
+    },
+    {
+      "dataset": "dwd_daily_bar",
+      "interface": "ak.stock_zh_a_daily/stock_hk_daily(qfq) + 腾讯usK线(raw口径) + ak.fund_etf_hist_sina",
+      "upstream": "新浪财经/腾讯证券",
+      "params": {
+        "start": "2021-01-01",
+        "end": "2026-10-07",
+        "note": "A股/港股 qfq 前复权；美股 腾讯序列（raw 口径，新浪美股qfq部分标的存在噪声，弃用）；ETF/LOF 无复权接口（raw）"
+      },
+      "file": "market/daily_bars.json",
+      "sha256": "b98b0eb3fa28f9491097b0a7db96b5b39cfc4fbe87c458d1068fc0a33e5cca3a",
+      "bytes": 1927130
+    },
+    {
+      "dataset": "dwd_daily_bar_raw",
+      "interface": "ak.stock_zh_a_daily/stock_hk_daily/stock_us_daily(adjust='')",
+      "upstream": "新浪财经",
+      "params": {
+        "start": "2021-01-01",
+        "end": "2026-10-07",
+        "note": "A股/港股/美股股票 raw（基金无复权对，由 cross_source 双源覆盖）；美股 raw 兼作腾讯主序列的独立对账源"
+      },
+      "file": "market/daily_bars_raw.json",
+      "sha256": "c518f8662f78e783867fc68ecd9809ad87d459f6184d9262e9f80df007aa6c55",
+      "bytes": 208642
+    },
+    {
+      "dataset": "cross_check_tx",
+      "interface": "ak.stock_zh_a_hist_tx() + web.ifzq.gtimg.cn(hk/us)",
+      "upstream": "腾讯证券",
+      "params": {
+        "window_days": 120,
+        "note": "A股（股票与基金）走 stock_zh_a_hist_tx；港股 hk{code}、美股 us{TICKER}.OQ/.N/.A 走腾讯K线接口"
+      },
+      "file": "market/cross_check_tx.json",
+      "sha256": "5c0523ca5233db0ca2618974f42ce6e09c95c4640caeefda971ba405fd4107e0",
+      "bytes": 27487
+    },
+    {
+      "dataset": "dwd_financial_report",
+      "interface": "ak.stock_financial_analysis_indicator(A股) + stock_financial_hk_analysis_indicator_em(港股) + stock_financial_us_analysis_indicator_em(美股)",
+      "upstream": "新浪财经/东方财富",
+      "params": {
+        "start_year": "2019",
+        "note": "A股 eps_ytd 累计口径（引擎按 YTD 递推 TTM）；港股/美股附带 eps_ttm 上游直出 TTM，港股财务原币经即期汇率折 HKD、美股折 USD 对齐各自报价币种；港股分红 stock_hk_dividend_payout_em，美股无公开分红接口（dividends 为空）"
+      },
+      "file": "factors/fundamental_values.json",
+      "sha256": "5639ce4e58dc41c6941d674c81e1622fd5462bd915c9f8a166cb1429ef59ee92",
+      "bytes": 30071
+    },
+    {
+      "dataset": "dim_ggt_components",
+      "interface": "雪球港股通筛选 market=HK&type=ggt（降级 ggt_static 快照）",
+      "upstream": "雪球/静态快照",
+      "params": {
+        "source": "xueqiu"
+      },
+      "file": "market/ggt_components.json",
+      "sha256": "9a8940bf41098b6111410385c100a7098adf31852ca5fb2a26ca90c38d5a3abd",
+      "bytes": 6021
+    },
+    {
+      "dataset": "dim_market_cap",
+      "interface": "ak.stock_zh_valuation_baidu(indicator='总市值', period='全部')",
+      "upstream": "百度股市通",
+      "params": {
+        "start": "2021-01-01",
+        "unit": "亿元",
+        "note": "总市值历史序列（P0.3 敞口报告规模维度）；仅 A 股股票适用；供月末再平衡时点取用（按最近可用点前向取值）"
+      },
+      "file": "dim/market_cap.json",
+      "sha256": "324f6f01fe1ab0b2cfe2cf53a490703f9bb5c664c82e41bbfe2a2deddfeec71d",
+      "bytes": 16638
+    }
+  ],
+  "pit_rules": {
+    "financial_report_lag_days": {
+      "3": 30,
+      "6": 62,
+      "9": 31,
+      "12": 120
+    },
+    "foreign_report_lag_days": {
+      "HK": 90,
+      "US": 90
+    },
+    "note": "报告期+保守披露窗口=可用人时点（A股 Q1→+30d，H1→+62d，Q3→+31d，FY→+120d；港股/美股统一 +90d，覆盖港交所年报3个月/中期2个月与美股 10-K/10-Q 披露窗口）；α 未逐笔核对公告日，取监管截止日兜底"
+  },
+  "methods": {
+    "pe_ttm": "close/TTM摊薄EPS（PIT 阶梯函数，报告期按 announce_date 对齐）；A股 TTM EPS=上年FY+本年YTD−上年同期YTD，港股/美股直接取上游客报 eps_ttm（港股 EPS_TTM 列；美股近 4 个连续单季合计）",
+    "pb": "close/最新可用人报告期每股净资产；A股取新浪'调整前'列（'调整后'对部分标的异常，弃用），港股取东财 BPS、美股取年报归母股东权益/股数（股数=归母净利/基本EPS）",
+    "div_yield_ttm": "近365日除权除息（闭区间[as_of-365d, as_of]）每股派息合计/close",
+    "vol": "日收益率样本标准差(ddof=1)年化×√252",
+    "mom_12_1": "close[t-21]/close[t-252]−1（剔除最近一月）",
+    "mom_20d": "close[-1]/close[-20]−1（20收盘窗口）",
+    "ma20_break": "close/MA20−1，±2% 确认带",
+    "fund_bars": "ETF/LOF（multi5）：新浪 fund_etf_hist_sina（对 ETF/LOF 均适用）无复权接口，序列即不复权 raw；无财报/分红数据 → 估值/质量/成长因子与股息率不适用，动量/波动照常；交叉源为腾讯 stock_zh_a_hist_tx（东财接口当前网络出口不可达，弃用）",
+    "hk_bars": "港股：新浪 stock_hk_daily（qfq+raw，HKD 计价）；腾讯 web.ifzq.gtimg.cn 交叉源（不复权 HKD）；港股通名单：雪球港股通筛选（降级 ggt_static 快照）",
+    "us_bars": "美股：新浪 stock_us_daily（qfq+raw，USD 计价，无 amount 列）；腾讯 us{TICKER}.OQ/.N/.A 交叉源",
+    "hk_fin": "港股财务/分红：东财 stock_financial_hk_analysis_indicator_em（年度+报告期合并；BASIC_EPS/EPS_TTM/BPS/ROE_YEARLY/营收·净利同比/毛利率）+ stock_hk_dividend_payout_em（除净日+每股派息，取括注前主方案的现金「每股派」并折 HKD，送股/分派他股等非现金分派不计入）；财务原币（常为人民币）经即期汇率折 HKD 对齐报价币种",
+    "us_fin": "美股财务：东财 stock_financial_us_analysis_indicator_em（单季报近 4 季合计得 TTM EPS；年报 ROE）+ stock_financial_us_report_em（资产负债表归母股东权益→BPS，股数=归母净利/基本EPS）；美股无公开分红接口（AKShare 未封装）→ 股息率不适用；东财对部分银行/保险类美股未收录主要指标（上游返回空）→ 该类标的财务因子不适用（价格类照常）"
+  },
+  "market_cap": "总市值（P0.3 敞口报告规模维度）：百度股市通估值 stock_zh_valuation_baidu（indicator='总市值'，period='全部'，单位亿元），仅 A 股股票适用",
+  "note": "永新=永新股份(002014.SZ)；cn4 未提供成本与权重 → 等权名义组合(每标的25%)；multi5 五资产等权 20%×5，纳指以纳指100ETF(513100)近似（A股无综指ETF）；V4-β 支持 A股/港股/美股 混合 universe（按 secid 后缀 .SH/.SZ/.HK/.US 分类）",
+  "fund_corporate_actions": [
+    {
+      "secid": "513100.SH",
+      "dt": "2022-01-14",
+      "prev_close": 5.192,
+      "close": 1.015,
+      "chg": -0.8045,
+      "note": "疑似份额折算/拆分（新浪无复权接口），该日 pct 置 None"
+    }
+  ]
+}

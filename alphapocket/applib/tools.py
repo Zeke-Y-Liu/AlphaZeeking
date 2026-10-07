@@ -10,6 +10,7 @@ from .ctx import Ctx, new_run_id
 from . import data as D
 from . import repo as R
 from . import factors as F
+from . import hypothesis as H
 
 
 def _load(p):
@@ -167,6 +168,13 @@ def portfolio_review(args, ctx):
     next_td, holiday_days = _next_trade_date(ctx, port[-1][0])
 
     reg = _load(ctx.local_repo / "factors" / "registry.json")
+    # R4：信号延迟衰减 caveat（fast_decay 的 engine B signal → 报告挂警示）
+    decay_caveats = [{"signal_id": f["id"], "name": f.get("name"),
+                      "decay_rate": (f.get("delay_decay") or {}).get("decay_rate"),
+                      "t1_open": (f.get("delay_decay") or {}).get("t1_open"),
+                      "n_events": (f.get("delay_decay") or {}).get("n_events")}
+                     for f in reg["factors"]
+                     if (f.get("delay_decay") or {}).get("flag") == "fast_decay"]
     return {
         "id": pf["id"], "name": pf["name"], "as_of": port[-1][0], "base_ccy": pf["base_ccy"],
         "note": pf["note"], "next_trade_date": next_td, "holiday_days": holiday_days,
@@ -175,6 +183,7 @@ def portfolio_review(args, ctx):
                               "ret_1y": ret(252), "max_dd_1y": mdd, "nav": series[-1][1],
                               "method": "等权·日再平衡·名义组合（真实行情合成；停牌/缺K线按0收益·权重冻结近似；最大回撤=近252交易日窗口）"},
         "positions": positions, "signals": signals,
+        "decay_caveats": decay_caveats,
         "factor_health": {"active": [f["id"] for f in reg["factors"] if f["status"] == "active"],
                           "weakening": [f for f in reg["factors"] if f["status"] == "weakening"]},
         "data_quality": {"last_bar": port[-1][0], "calendar_next": next_td, "sources": "AKShare 新浪+腾讯",
@@ -270,7 +279,10 @@ def backtest_run(args, ctx):
     pf = _load(pf_path)
     bars = _load(ctx.local_repo / "market" / "daily_bars.json")
     bt = BT.run_backtest(bars, pf, start=args.get("start"), end=args.get("end"),
-                         rf=float(args.get("rf", 0.0)))
+                         rf=float(args.get("rf", 0.0)),
+                         weighting=str(args.get("weighting") or "equal"),
+                         er_window=int(args.get("er_window") or 250),
+                         max_weight=(float(args["max_weight"]) if args.get("max_weight") else None))
     run_id = new_run_id("bt")
     paths = BT.write_all(bt, ctx.artifacts_dir / run_id, RP.CSS)
     return {"run_id": run_id, "portfolio": pid, "start": bt["start"], "end": bt["end"],
@@ -279,6 +291,171 @@ def backtest_run(args, ctx):
             "benchmark": ({"secid": bt["benchmark"]["secid"], "name": bt["benchmark"]["name"],
                            "metrics": bt["benchmark"]["metrics"]} if bt["benchmark"] else None),
             "excess": bt["excess"], "cost": bt["cost"], "artifacts": paths}
+
+
+# ── research（R1 参数敏感性）────────────────────────────
+def research_sensitivity(args, ctx):
+    """R1：策略级参数敏感性扫描（OAT + 双参数热力图 + 尖峰 flag）→ artifacts/sens_*"""
+    from . import sensitivity as SEN
+    pid = str(args.get("portfolio", "cn4"))
+    pids = ["cn4", "multi5"] if pid == "all" else [pid]
+    bars = _load(ctx.local_repo / "market" / "daily_bars.json")
+    fund = _load(ctx.local_repo / "factors" / "fundamental_values.json")
+    results = []
+    for p in pids:
+        pf_path = ctx.local_repo / "portfolio" / f"{p}.json"
+        if not pf_path.exists():
+            return {"error": f"组合不存在：{p}（{pf_path}）"}
+        rep = SEN.run_scan(_load(pf_path), bars, fund,
+                           start=args.get("start"), end=args.get("end"))
+        run_id = new_run_id("sens")
+        paths = SEN.write_all(rep, ctx.artifacts_dir / run_id)
+        results.append({"run_id": run_id, "portfolio": p, "start": rep["start"], "end": rep["end"],
+                        "baseline": rep["baseline_cell"], "anchor_check": rep["anchor_check"],
+                        "beta_state_consistency": rep["beta_state_consistency"],
+                        "flagged": rep["flagged"],
+                        "oat_verdicts": {k: v["verdict"] for k, v in rep["oat"].items()},
+                        "artifacts": paths})
+    return {"scanned": len(results), "results": results}
+
+
+# ── research（R2 walk-forward 样本外协议）───────────────
+def research_walkforward(args, ctx):
+    """R2：walk-forward 样本外验证（扩展窗口滚动 + lockbox 封存）→ artifacts/wf_*"""
+    from . import walkforward as WF
+    factor = str(args.get("factor", "all"))
+    bars = _load(ctx.local_repo / "market" / "daily_bars.json")
+    fund = _load(ctx.local_repo / "factors" / "fundamental_values.json")
+    registry = _load(ctx.local_repo / "factors" / "registry.json")
+    known = {f["id"] for f in registry["factors"]}
+    if factor != "all" and factor not in known:
+        return {"error": f"因子未注册：{factor}"}
+    cfg = {k: int(args[k]) for k in ("train_min_months", "valid_months", "step_months", "horizon_days")
+           if args.get(k)}
+    ids = [f["id"] for f in registry["factors"]] if factor == "all" else [factor]
+    results = []
+    for fid in ids:
+        rep = WF.run_validation(fid, bars, fund, registry, cfg or None,
+                                start=args.get("start"), end=args.get("end"))
+        if "error" in rep:
+            results.append({"factor": fid, "error": rep["error"]})
+            continue
+        run_id = new_run_id(f"wf_{fid}")
+        paths = WF.write_all(rep, ctx.artifacts_dir / run_id)
+        results.append({"run_id": run_id, "factor": fid, "n_folds": rep["n_folds"],
+                        "lockbox": rep["lockbox"], "verdict": rep["verdict"],
+                        "summary": rep["summary"], "artifacts": paths})
+    return {"validated": len(results), "results": results}
+
+
+def research_audit_split(args, ctx):
+    """R2：audit_split 四查（字段完备 / 取数越界 / lockbox 一次性 / 折叠无重叠）"""
+    from . import walkforward as WF
+    return WF.audit_split(ctx)
+
+
+def research_delay_decay(args, ctx):
+    """R4：时间延迟敏感性实证（0/1/2 日执行衰减表 + 降级联动）→ artifacts/decay_*"""
+    from . import delay_decay as DD
+    bars = _load(ctx.local_repo / "market" / "daily_bars.json")
+    fp = ctx.local_repo / "factors" / "registry.json"
+    reg = _load(fp)
+    rep = DD.run_decay(bars, args.get("signals", "all"),
+                       horizon=int(args.get("horizon") or DD.HORIZON),
+                       start=args.get("start"), end=args.get("end"))
+    changes = DD.apply_registry(reg, rep)
+    rep["registry_changes"] = changes
+    if any(c.get("applied") for c in changes):
+        fp.write_text(json.dumps(reg, ensure_ascii=False, indent=2), encoding="utf-8")
+    run_id = new_run_id("decay")
+    paths = DD.write_all(rep, ctx.artifacts_dir / run_id)
+    return {"run_id": run_id, "n_events": rep["n_events"], "n_signals": rep["n_signals"],
+            "signals": [{k: s[k] for k in ("signal_id", "type", "n_events", "flag")}
+                        for s in rep["signals"]],
+            "registry_changes": changes, "artifacts": paths}
+
+
+# ── research（P0 风险模型最小集）────────────────────────
+def research_risk_model(args, ctx):
+    """P0：风险模型最小集（0.1 波动目标 / 0.2 等风险 / 0.3 敞口 / 0.4 限额）→ artifacts/risk_*"""
+    from . import risk as RISK
+    pid = str(args.get("portfolio", "cn4"))
+    pf_path = ctx.local_repo / "portfolio" / f"{pid}.json"
+    if not pf_path.exists():
+        return {"error": f"组合不存在：{pid}（{pf_path}）"}
+    pf = _load(pf_path)
+    bars = _load(ctx.local_repo / "market" / "daily_bars.json")
+    dims = {d["secid"]: d for d in _load(ctx.local_repo / "dim" / "security.json")}
+    mc_path = ctx.local_repo / "dim" / "market_cap.json"
+    market_cap = _load(mc_path) if mc_path.exists() else {}
+    rep = RISK.run_risk_model(bars, pf, dims, market_cap,
+                              start=args.get("start"), end=args.get("end"))
+    run_id = new_run_id("risk")
+    paths = RISK.write_all(rep, ctx.artifacts_dir / run_id)
+    return {"run_id": run_id, "portfolio": pid, "start": rep["start"], "end": rep["end"],
+            "n_days": rep["n_days"], "dod": rep["dod"], "dod_all": rep["dod_all"],
+            "p0_1": rep["p0_1_vol_target"], "p0_2": rep["p0_2_equal_risk"],
+            "p0_3": rep["p0_3_exposure"], "p0_4": rep["p0_4_limits"],
+            "artifacts": paths}
+
+
+# ── research（P1 因子补齐验收）──────────────────────────
+def research_p1_eval(args, ctx):
+    """P1：因子补齐验收（增量相关 |ρ|<0.6 + A/B 条件门对照）→ artifacts/p1_*"""
+    from . import factor_eval as PE
+    pid = str(args.get("portfolio", "all"))
+    pids = ["cn4", "multi5"] if pid == "all" else [pid]
+    bars = _load(ctx.local_repo / "market" / "daily_bars.json")
+    fund = _load(ctx.local_repo / "factors" / "fundamental_values.json")
+    registry = _load(ctx.local_repo / "factors" / "registry.json")
+
+    def loader(p):
+        fp = ctx.local_repo / "portfolio" / f"{p}.json"
+        return _load(fp) if fp.exists() else None
+
+    damp = args.get("gate_damp")
+    rep = PE.run_p1_eval(pids, bars, fund, registry, loader,
+                         start=args.get("start"), end=args.get("end"),
+                         gate_damp=(0.5 if damp is None else float(damp)),
+                         gate_redistribute=bool(args.get("gate_redistribute")))
+    run_id = new_run_id("p1")
+    paths = PE.write_all(rep, ctx.artifacts_dir / run_id)
+    return {"run_id": run_id, "dod": rep["dod"], "incremental": rep["incremental"],
+            "gate_config": rep.get("gate_config"),
+            "ab": [{k: a[k] for k in ("portfolio", "gain_total_return", "dd_improvement",
+                                      "gate_damp", "gate_redistribute", "threshold", "dod", "gate")
+                    if k in a} for a in rep["ab"]], "artifacts": paths}
+
+
+# ── hypothesis（R3 研报→假设登记通道）───────────────────
+def hypothesis_register(args, ctx):
+    """R3：登记研报→假设（来源/可检验命题/预期方向）→ repo/hypothesis/registry.json"""
+    return H.hypothesis_register(args, ctx)
+
+
+def hypothesis_list(args, ctx):
+    """R3：假设列表；--factor 走反向血缘（一键点回因子来源）"""
+    return H.hypothesis_list(args, ctx)
+
+
+def hypothesis_link(args, ctx):
+    """R3：建立因子↔假设血缘（双向写入，冲突拒绝）"""
+    return H.hypothesis_link(args, ctx)
+
+
+def hypothesis_set_status(args, ctx):
+    """R3：假设状态机迁移（proposed→testing→supported/refuted→retired）"""
+    return H.hypothesis_set_status(args, ctx)
+
+
+def hypothesis_review(args, ctx):
+    """R3：巡检假设复查（weakening/invalid 必答 + healthy 20% 抽查）→ hp_review_*"""
+    return H.hypothesis_review(args, ctx)
+
+
+def factor_activate(args, ctx):
+    """R3/M5 8.1：draft→active 激活门禁（无 hypothesis_id 拒绝，无旁路）"""
+    return H.factor_activate(args, ctx)
 
 
 # ── report ──────────────────────────────────────────────
@@ -348,7 +525,19 @@ TOOLS = {
     "portfolio.rebalance_plan": _tool(portfolio_rebalance_plan, "生成拟调仓/评估单（变更建议，需人工确认）"),
     "portfolio.exec_orders": _tool(portfolio_exec_orders, "调仓执行单：目标权重→金额→整手股数委托清单（待人工确认，不自动下单）"),
     "report.generate": _tool(report_generate, "生成完整报告（HTML+MD，含三建议）"),
-    "backtest.run":    _tool(backtest_run, "组合回测（等权月度再平衡 vs 沪深300ETF）→ HTML+MD+JSON"),
+    "backtest.run":    _tool(backtest_run, "组合回测（等权/等风险加权·月度再平衡 vs 沪深300ETF）→ HTML+MD+JSON"),
+    "research.sensitivity": _tool(research_sensitivity, "R1：策略级参数敏感性扫描（OAT+热力图+尖峰flag）→ HTML+MD+JSON"),
+    "research.walkforward": _tool(research_walkforward, "R2：walk-forward 样本外验证（扩展窗口滚动 + lockbox 封存）→ wf_*/validation.json+md"),
+    "research.audit_split": _tool(research_audit_split, "R2：audit_split 四查（字段完备/取数越界/lockbox 一次性/折叠无重叠）"),
+    "research.delay_decay": _tool(research_delay_decay, "R4：时间延迟敏感性实证（引擎B 0/1/2日执行衰减表 + 降级联动）→ decay_*"),
+    "research.risk_model": _tool(research_risk_model, "P0：风险模型最小集（波动目标/等风险/敞口/限额）→ risk_*"),
+    "research.p1_eval": _tool(research_p1_eval, "P1：因子补齐验收（增量相关 |ρ|<0.6 + A/B 条件门对照）→ p1_*"),
+    "hypothesis.register": _tool(hypothesis_register, "R3：登记研报→假设（来源/可检验命题/预期方向）"),
+    "hypothesis.list": _tool(hypothesis_list, "R3：假设列表；--factor 走反向血缘（点回因子来源）"),
+    "hypothesis.link": _tool(hypothesis_link, "R3：建立因子↔假设血缘（双向写入，冲突拒绝）"),
+    "hypothesis.set_status": _tool(hypothesis_set_status, "R3：假设状态机迁移（proposed→testing→supported/refuted→retired）"),
+    "hypothesis.review": _tool(hypothesis_review, "R3：巡检假设复查（weakening/invalid 必答 + healthy 20% 抽查）→ hp_review_*"),
+    "factor.activate": _tool(factor_activate, "R3/M5 8.1：draft→active 激活门禁（无 hypothesis_id 拒绝，无旁路）"),
     "report.read":     _tool(report_read, "读取最近/指定报告 Markdown（供 agent 解读）"),
     "repo.clone":      _tool(R.repo_clone, "远端 main → 本地 sandbox（AKShare 真实数据）"),
     "repo.status":     _tool(R.repo_status, "本地工作区状态（dirty/changed）"),

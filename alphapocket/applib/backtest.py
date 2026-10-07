@@ -13,8 +13,17 @@ import json
 import math
 from pathlib import Path
 
+from . import factors as F
+
 COMMISSION = 0.00025   # ETF/LOF 佣金万 2.5（单边，免印花税）；保留以兼容旧引用
 DEFAULT_COST_BPS = 2.5  # 默认佣金 2.5bps（万 2.5，与 α 一致）
+
+# P1.4 条件门：卖出信号一致性阈值。规格为「多信号一致才触发」→ 需 ≥2 个卖出类信号
+# 同时成立才触发（单一卖出信号不触发，避免过度触发侵蚀收益）。
+GATE_MIN_SELL_SIGNALS = 2
+# P1.4 软衰减系数：触发门时对标的权重 ×gate_damp（默认 0.5 软降权，释放额度留现金），
+# 而非硬剔除归零 —— 从根上避免「卖在低点」与「单票 100% 集中」两病灶。
+GATE_DAMP_DEFAULT = 0.5
 
 # 再平衡频率：monthly=月末最后交易日（α 现有行为）；quarterly/yearly=日历季末/年末；
 # daily=α 复盘口径（每日收盘回等权）；buyhold=期初等权后不再平衡
@@ -144,9 +153,24 @@ def _rebalance_dates(dates: list, rebalance: str) -> set:
 def run_backtest(bars: dict, portfolio: dict, start: str | None = None,
                  end: str | None = None, rf: float = 0.0,
                  rebalance: str = "monthly", benchmark_secid: str = "510300.SH",
-                 cost_bps: float = DEFAULT_COST_BPS) -> dict:
+                 cost_bps: float = DEFAULT_COST_BPS, weighting: str = "equal",
+                 er_window: int = 250, max_weight: float | None = None,
+                 risk_limits: dict | None = None, sectors: dict | None = None,
+                 track_risk: bool = False, ab_gate: bool = False,
+                 gate_damp: float = GATE_DAMP_DEFAULT,
+                 gate_redistribute: bool = False) -> dict:
+    """组合回测主流程。
+
+    ``ab_gate``（P1.4 辅助型条件变量）：引擎 A 买入需引擎 B 不持卖出信号——再平衡日先按
+    PIT 重算引擎 B 信号，对「多信号一致」看空的标的（≥ ``GATE_MIN_SELL_SIGNALS`` 个卖出类
+    信号同时成立）**软衰减**：权重 ×``gate_damp``（默认 0.5），释放额度默认留现金（降敞口）；
+    ``gate_redistribute=True`` 时把释放额度按比例再分配给未触发标的（保持满仓）。
+    ``gate_damp=0`` 退化为硬剔除。默认 ``ab_gate=False`` 时与既有 V4-α 锚点逐位一致。
+    """
     if rebalance not in REBALANCE_CHOICES:
         raise ValueError(f"未知再平衡频率：{rebalance}（可选 {REBALANCE_CHOICES}）")
+    if weighting not in ("equal", "equal_risk"):
+        raise ValueError(f"未知加权方案：{weighting}（可选 equal / equal_risk）")
     secids = [p["secid"] for p in portfolio["positions"]]
     names = {p["secid"]: p["name"] for p in portfolio["positions"]}
     dates = sorted(set().union(*[{r["dt"] for r in bars[s]} for s in secids]))
@@ -160,7 +184,67 @@ def run_backtest(bars: dict, portfolio: dict, start: str | None = None,
     n = len(secids)
     rebal = _rebalance_dates(dates, rebalance)
     commission = cost_bps / 10000.0
-    w = {s: 1.0 / n for s in secids}
+    tracked = (weighting == "equal_risk") or bool(risk_limits) or bool(track_risk)
+    if tracked:
+        from .risk import inverse_vol_weights, apply_limits, sector_of, annualized_vol, risk_contrib_var
+        sec_map = {s: sector_of((sectors or {}).get(s)) for s in secids}
+
+    def _trailing_vols(d: str) -> dict:
+        past = [x for x in dates if x < d][-int(er_window):]
+        return {s: annualized_vol([rmap[s].get(x, 0.0) for x in past]) for s in secids}
+
+    def _gate_factors(d: str) -> dict:
+        """P1.4 条件门：引擎 B「多信号一致」看空的标的 → 权重衰减系数（PIT：仅用 d 及之前数据）。
+
+        规格「引擎 A 买入需引擎 B 不持有卖出信号（多信号一致才触发）」→ 需
+        ``GATE_MIN_SELL_SIGNALS`` 个及以上卖出类信号同时成立才触发衰减（单一卖出信号不触发）。
+        K 线不足 20 日窗口（无法识别信号）→ 系数 1.0（不误触发）。
+        """
+        out = {}
+        for s in secids:
+            n_hist = sum(1 for r in bars[s] if r.get("close") and r["dt"] <= d)
+            if n_hist < 21:
+                out[s] = 1.0
+                continue
+            n_sell = sum(1 for sig in F.compute_beta(s, bars[s], d)["signals"]
+                         if "卖出" in (sig.get("type") or ""))
+            out[s] = gate_damp if n_sell >= GATE_MIN_SELL_SIGNALS else 1.0
+        return out
+
+    def _rule(d: str):
+        """再平衡目标权重（PIT：仅用 d 之前数据）；返回 (权重, 波动表)。
+
+        基准满仓等权（或等风险）覆盖全部标的；``ab_gate`` 时对触发标的权重 ×衰减系数，
+        释放额度默认留现金（降敞口），``gate_redistribute`` 时按比例再分配给未触发标的。
+        """
+        if not tracked:
+            base = {s: 1.0 / n for s in secids}
+            vols = None
+        else:
+            vols = _trailing_vols(d)
+            base = (inverse_vol_weights({s: vols[s] for s in secids}, max_weight)
+                    if weighting == "equal_risk" else {s: 1.0 / n for s in secids})
+        w = dict(base)
+        if ab_gate:
+            fac = _gate_factors(d)
+            w = {s: base[s] * fac[s] for s in secids}
+            if gate_redistribute:
+                invested = sum(w.values())
+                if invested > 0:
+                    w = {s: w[s] / invested for s in secids}   # 释放额度再分配 → 保持满仓
+            gate_events.append({"dt": d, "n_flagged": sum(1 for s in secids if fac[s] < 1.0),
+                                "n_total": n, "flagged": [s for s in secids if fac[s] < 1.0],
+                                "invested_ratio": round(sum(w.values()), 6)})
+        if tracked and risk_limits:
+            w, bind = apply_limits(w, sec_map, vols, risk_limits)
+            limits_binding.extend({"dt": d, **b} for b in bind)
+        return w, vols
+
+    limits_binding: list[dict] = []
+    gate_events: list[dict] = []
+    rc_vars: list[float] = []
+    w, _ = _rule(dates[0])
+    tgt0 = dict(w)
     nav, series, costs = 1.0, [], []
     for d in dates:
         r = {s: rmap[s].get(d, 0.0) for s in secids}
@@ -169,13 +253,19 @@ def run_backtest(bars: dict, portfolio: dict, start: str | None = None,
         series.append((d, nav))
         for s in secids:   # 权重随价格漂移
             w[s] = w[s] * (1 + r[s]) / (1 + pr)
-        if d in rebal:     # 再平衡日收盘先漂移再回等权，计提换手成本
-            turn = sum(abs(1.0 / n - w[s]) for s in secids)
+        if d in rebal:     # 再平衡日收盘先漂移再回目标权重，计提换手成本
+            tgt, vols = _rule(d)
+            turn = sum(abs(tgt[s] - w[s]) for s in secids)
             cost = turn * commission
             nav *= (1 - cost)
             series[-1] = (d, nav)
             costs.append({"dt": d, "turnover": turn, "cost": cost})
-            w = {s: 1.0 / n for s in secids}
+            if track_risk and vols is not None:
+                v = risk_contrib_var(tgt, vols)
+                if v is not None:
+                    rc_vars.append(v)
+            w = dict(tgt)
+    tgt_final = dict(w)
 
     # 日收益由净值反推（含成本口径一致）
     rets = [series[0][1] - 1.0] + [series[i][1] / series[i - 1][1] - 1 for i in range(1, len(series))]
@@ -213,12 +303,28 @@ def run_backtest(bars: dict, portfolio: dict, start: str | None = None,
 
     mret = _monthly(list(zip(dates, rets)))
     total_cost = (1 - _compound([-c["cost"] for c in costs])) if costs else 0.0
-    strategy = (f"等权·买入持有（20%×{n}，期初等权后不再平衡，无再平衡成本）"
+    wlab = "等风险加权" if weighting == "equal_risk" else "等权"
+    glab = ""
+    if ab_gate:
+        gsub = "剔除" if gate_damp <= 0 else f"衰减×{gate_damp:g}"
+        glab = f"·条件门(A×B 不持卖出信号，{gsub}{'，再分配' if gate_redistribute else ''})"
+    strategy = (f"{wlab}·买入持有{glab}（期初等权后不再平衡，无再平衡成本）"
                 if rebalance == "buyhold"
-                else f"等权·{_FREQ_LONG[rebalance]}（20%×{n}，{_FREQ_EXEC[rebalance]}，含换手成本）")
+                else f"{wlab}·{_FREQ_LONG[rebalance]}{glab}（{_FREQ_EXEC[rebalance]}，含换手成本）")
+    gate = None
+    if ab_gate and gate_events:
+        gate = {
+            "n_rebalances": len(gate_events),
+            "n_flagged": sum(e["n_flagged"] for e in gate_events),
+            "n_fully_derisked": sum(1 for e in gate_events if e["invested_ratio"] <= 1e-9),
+            "avg_invested_ratio": round(sum(e["invested_ratio"] for e in gate_events)
+                                        / len(gate_events), 4),
+            "gate_damp": gate_damp, "redistribute": gate_redistribute,
+            "events": gate_events,
+        }
     return {
         "portfolio": portfolio["id"], "portfolio_name": portfolio["name"],
-        "strategy": strategy,
+        "strategy": strategy, "weighting": weighting, "ab_gate": ab_gate,
         "rebalance": rebalance, "benchmark_secid": benchmark_secid,
         "start": dates[0], "end": dates[-1], "n_days": len(dates), "n_rebalances": len(costs),
         "commission": commission, "cost_bps": cost_bps, "rf": rf,
@@ -230,6 +336,12 @@ def run_backtest(bars: dict, portfolio: dict, start: str | None = None,
         "per_asset": per_asset,
         "cost": {"n": len(costs), "total": total_cost,
                  "avg_turnover": sum(c["turnover"] for c in costs) / len(costs) if costs else 0.0},
+        # P0 风险口径产物：目标权重 / 限额生效记录 / 再平衡时点风险贡献方差均值
+        "initial_weights": tgt0, "target_weights": tgt_final,
+        "limits_binding": limits_binding,
+        # P1.4 条件门产物：门事件 + 平均持仓比（衰减系数；1.0=从未触发门）
+        "gate": gate, "gate_damp": gate_damp, "gate_redistribute": gate_redistribute,
+        "risk_contrib_var": (sum(rc_vars) / len(rc_vars)) if rc_vars else None,
         "data_quality": {"missing_bars": missing,
                          "note": "ETF/LOF 新浪不复权价 → 价格收益；513100 于 2022-01-14 份额折算日 pct 缺失按 0 计；缺 K 线按 0 收益",
                          "corporate_action": "513100.SH 2022-01-14 疑似份额折算（-80.5%），该日不计收益"},

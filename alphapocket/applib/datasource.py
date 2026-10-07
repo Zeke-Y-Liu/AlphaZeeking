@@ -81,6 +81,18 @@ FIN_COLS = {
     "margin":   "主营业务利润率(%)",
 }
 
+# A 股三表关键科目（P1.2 品质因子数据底座 D5）：{入库字段: (报表, 上游列名)}
+# 供 qua_leverage（偿债）/qua_accrual（应计质量）/qua_fcf（自由现金流率）三因子；
+# 仅 A 股适用（港股/美股三表口径不一，暂缺 → 该族因子不适用，透明登记）。
+A_STMT_COLS = {
+    "revenue":      ("利润表", "营业总收入"),
+    "net_profit":   ("利润表", "净利润"),
+    "total_assets": ("资产负债表", "资产总计"),
+    "total_liab":   ("资产负债表", "负债合计"),
+    "ocf":          ("现金流量表", "经营活动产生的现金流量净额"),
+    "capex":        ("现金流量表", "购建固定资产、无形资产和其他长期资产所支付的现金"),
+}
+
 # ── 多市场（A股/港股/美股）公共定义与工具 ─────────────────────────
 
 MARKET_CCY = {"A": "CNY", "HK": "HKD", "US": "USD"}
@@ -699,6 +711,59 @@ def _announce_date(period: str) -> str:
     return (d + dt.timedelta(days=PIT_LAG_DAYS[d.month])).isoformat()
 
 
+def _fetch_market_cap(ak, universe, start: str) -> dict:
+    """总市值历史序列（P0.3 敞口报告的规模维度）。
+
+    来源：百度股市通估值（``ak.stock_zh_valuation_baidu``，indicator='总市值'，period='全部'）。
+    仅 A 股股票适用（百度估值接口覆盖 A 股；基金/港股/美股无此口径）。
+    返回 ``{secid: [[dt, 总市值(亿元)], …]}``（自 start 起）；失败标的跳过并透明告警。
+    """
+    out: dict[str, list] = {}
+    for u in universe:
+        try:
+            df = _retry(lambda u=u: ak.stock_zh_valuation_baidu(
+                symbol=u["code"], indicator="总市值", period="全部"))
+        except Exception as e:                # noqa: BLE001 - 市值缺失不阻断同步
+            print(f"  ⚠ {u['name']} {u['secid']}：总市值拉取失败（{e}），规模维度不适用")
+            continue
+        series = [[_iso(r["date"]), _num(r["value"])]
+                  for _, r in df.iterrows() if _iso(r["date"]) and _iso(r["date"]) >= start]
+        series = [x for x in series if x[1] is not None]
+        if series:
+            out[u["secid"]] = series
+            print(f"  ✓ {u['name']} {u['secid']}：总市值 {len(series)} 点（最新 {series[-1][1]:.1f} 亿）")
+        else:
+            print(f"  ⚠ {u['name']} {u['secid']}：总市值空序列，跳过")
+    return out
+
+
+def _fetch_a_statements(ak, sina: str) -> dict[str, dict]:
+    """A 股三表关键科目（P1.2 品质因子数据底座 D5）。
+
+    来源：新浪 ``ak.stock_financial_report_sina``（利润表/资产负债表/现金流量表）。
+    返回 ``{period(YYYY-MM-DD): {字段…}}``；单表失败 → 该表字段缺省（透明降级，不阻断同步）。
+    """
+    out: dict[str, dict] = {}
+    for sym in ("利润表", "资产负债表", "现金流量表"):
+        cols = {k: c for k, (s, c) in A_STMT_COLS.items() if s == sym}
+        try:
+            df = _retry(lambda s=sym: ak.stock_financial_report_sina(stock=sina, symbol=s))
+        except Exception:                     # noqa: BLE001 - 单表缺失不阻断
+            continue
+        if df is None or len(df) == 0:
+            continue
+        for _, r in df.iterrows():
+            p = str(r.get("报告日"))
+            if len(p) != 8 or not p.isdigit():     # 新浪该接口 报告日 为 YYYYMMDD
+                continue
+            period = f"{p[:4]}-{p[4:6]}-{p[6:8]}"
+            d = out.setdefault(period, {})
+            for k, c in cols.items():
+                if d.get(k) is None:
+                    d[k] = _num(r.get(c))
+    return out
+
+
 def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
               universe=None, incremental_from=None) -> dict:
     """拉取行情/财务/分红/日历 → remote/repo（云端替身）。
@@ -805,6 +870,8 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                           "年报 ROE）+ stock_financial_us_report_em（资产负债表归母股东权益→BPS，股数=归母净利/基本EPS）；"
                           "美股无公开分红接口（AKShare 未封装）→ 股息率不适用；"
                           "东财对部分银行/保险类美股未收录主要指标（上游返回空）→ 该类标的财务因子不适用（价格类照常）"},
+                "market_cap": "总市值（P0.3 敞口报告规模维度）：百度股市通估值 stock_zh_valuation_baidu"
+                              "（indicator='总市值'，period='全部'，单位亿元），仅 A 股股票适用",
             "note": "永新=永新股份(002014.SZ)；cn4 未提供成本与权重 → 等权名义组合(每标的25%)；"
                     "multi5 五资产等权 20%×5，纳指以纳指100ETF(513100)近似（A股无综指ETF）；"
                     "V4-β 支持 A股/港股/美股 混合 universe（按 secid 后缀 .SH/.SZ/.HK/.US 分类）"}
@@ -850,13 +917,15 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
         cross_tx[u["secid"]] = [{"dt": _iso(r["date"]), "close": _num(r["close"])} for _, r in tx.iterrows()]
 
         fin = _retry(lambda: ak.stock_financial_analysis_indicator(symbol=u["code"], start_year=fin_start_year))
+        stmts = _fetch_a_statements(ak, u["sina"])     # P1.2/D5：三表关键科目（按报告期并入）
         reports = []
         for _, r in fin.iterrows():
             period = _iso(r["日期"])
             if not period:
                 continue
             reports.append({"period": period, "announce_date": _announce_date(period),
-                            **{k: _num(r.get(c)) for k, c in FIN_COLS.items()}})
+                            **{k: _num(r.get(c)) for k, c in FIN_COLS.items()},
+                            **(stmts.get(period) or {})})
         dvd = _retry(lambda: ak.stock_history_dividend_detail(symbol=u["code"], indicator="分红"))
         dividends = [{"ex_date": _iso(r["除权除息日"]), "announce": _iso(r["公告日期"]),
                       "dps": (_num(r["派息"]) or 0) / 10, "song": _num(r["送股"]), "zhuang": _num(r["转增"])}
@@ -865,7 +934,7 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
         fundamentals[u["secid"]] = {"reports": sorted(reports, key=lambda x: x["period"]),
                                     "dividends": sorted(dividends, key=lambda x: x["ex_date"])}
         print(f"  ✓ {u['name']} {u['secid']}：bars={len(recs)} raw={len(bars_raw[u['secid']])} "
-              f"tx={len(cross_tx[u['secid']])} 报告期={len(reports)} 分红={len(dividends)}")
+              f"tx={len(cross_tx[u['secid']])} 报告期={len(reports)} 三表期={len(stmts)} 分红={len(dividends)}")
 
     # ── ②' 基金标的（MULTI5 已知 + 用户注册 ETF/LOF）：新浪 fund_etf_hist_sina + 腾讯交叉源 ──
     tq8 = (dt.date.today() - dt.timedelta(days=120)).isoformat().replace("-", "")
@@ -1009,12 +1078,15 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
              {"note": "港股/美股除权除息日（分红/送转/拆股），供 adjust_check 豁免"},
              adjust_ex_dates, "market/adjust_ex_dates.json")
     _reg("dwd_financial_report", "ak.stock_financial_analysis_indicator(A股) + "
-         "stock_financial_hk_analysis_indicator_em(港股) + stock_financial_us_analysis_indicator_em(美股)",
+         "stock_financial_hk_analysis_indicator_em(港股) + stock_financial_us_analysis_indicator_em(美股) + "
+         "stock_financial_report_sina(A股三表：利润表/资产负债表/现金流量表)",
          "新浪财经/东方财富",
          {"start_year": fin_start_year,
           "note": "A股 eps_ytd 累计口径（引擎按 YTD 递推 TTM）；港股/美股附带 eps_ttm 上游直出 TTM，"
                   "港股财务原币经即期汇率折 HKD、美股折 USD 对齐各自报价币种；"
-                  "港股分红 stock_hk_dividend_payout_em，美股无公开分红接口（dividends 为空）"},
+                  "港股分红 stock_hk_dividend_payout_em，美股无公开分红接口（dividends 为空）；"
+                  "A股三表科目（D5/P1.2）：revenue/net_profit/total_assets/total_liab/ocf/capex 按报告期并入，"
+                  "PIT 同 report 时点（报告期+披露窗口），供品质族 qua_leverage/qua_accrual/qua_fcf"},
          fundamentals, "factors/fundamental_values.json")
 
     # ── ③ 维度表 / 组合 / 因子注册中心 / 港股通名单 / 汇率 / 港美日历 ──
@@ -1050,6 +1122,15 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
     _reg("dim_ggt_components", "雪球港股通筛选 market=HK&type=ggt（降级 ggt_static 快照）", "雪球/静态快照",
          {"source": ggt_source}, {"codes": ggt_codes, "source": ggt_source,
                                   "count": len(ggt_codes)}, "market/ggt_components.json")
+
+    # 总市值（P0.3 敞口报告规模维度；仅 A 股股票适用）
+    market_cap = _fetch_market_cap(ak, a_stocks, start)
+    if market_cap:
+        _reg("dim_market_cap", "ak.stock_zh_valuation_baidu(indicator='总市值', period='全部')", "百度股市通",
+             {"start": start, "unit": "亿元",
+              "note": "总市值历史序列（P0.3 敞口报告规模维度）；仅 A 股股票适用；"
+                      "供月末再平衡时点取用（按最近可用点前向取值）"},
+             market_cap, "dim/market_cap.json")
 
     # 港股/美股交易日历：本市场 K 线日期并集推导（A股日历来自新浪，见 ①）
     for mkt, group in (("hk", hk_stocks), ("us", us_stocks)):
@@ -1116,5 +1197,6 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
             "as_of_bars": max((r["dt"] for arr in bars_qfq.values() for r in arr), default=None),
             "universe_fetched": universe_fetched, "universe_missing": universe_missing,
             "universe_failed": universe_failed,
+            "market_cap_secids": sorted(market_cap),
             "incremental_from": dict(incremental_from) if incremental_from else {},
             "per_secid": per_secid}
