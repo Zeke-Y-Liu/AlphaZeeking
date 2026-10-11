@@ -21,7 +21,11 @@ from typing import Any, Callable
 
 @dataclass(frozen=True)
 class EngineSpec:
-    """引擎包装契约（冻结）：id / 版本 / 入参 schema / 输出位范围。"""
+    """引擎包装契约（冻结）：id / 版本 / 入参 schema / 输出位范围。
+
+    ``enum_fields``（T-R2 契约扩展：新增可选字段，不推翻五条）——字符串枚举位域
+    （如引擎B ``state ∈ {above,below,neutral}``），与数值 ``output_range`` 并列。
+    """
 
     engine_id: str
     version: str
@@ -31,6 +35,8 @@ class EngineSpec:
     # 输出位范围：仅约束 range_fields 列出的数值字段（如引擎C 五档 -2..+2）
     output_range: tuple[float, float] | None = None
     range_fields: tuple[str, ...] = ()
+    # 字符串枚举位域：{字段: 允许取值}（T-R2 扩展）
+    enum_fields: dict[str, tuple[str, ...]] | None = None
     note: str = ""
 
 
@@ -51,16 +57,21 @@ def validate_input(spec: EngineSpec, args: dict) -> str | None:
 
 
 def check_output_range(spec: EngineSpec, out: Any) -> list[str]:
-    """输出位范围检查（契约 3）：越界收集告警文本；不截断、不抛异常。"""
-    if spec.output_range is None or not isinstance(out, dict):
+    """输出位范围检查（契约 3）：数值越界 / 枚举出域 → 收集告警文本；不截断、不抛异常。"""
+    if not isinstance(out, dict):
         return []
-    low, high = spec.output_range
     warns = []
-    for f in spec.range_fields:
+    if spec.output_range is not None:
+        low, high = spec.output_range
+        for f in spec.range_fields:
+            v = out.get(f)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                if not (low <= v <= high):
+                    warns.append(f"{spec.engine_id}.{f}={v} 越界 [{low},{high}]（告警不截断）")
+    for f, allowed in (spec.enum_fields or {}).items():
         v = out.get(f)
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
-            if not (low <= v <= high):
-                warns.append(f"{spec.engine_id}.{f}={v} 越界 [{low},{high}]（告警不截断）")
+        if isinstance(v, str) and v not in allowed:
+            warns.append(f"{spec.engine_id}.{f}={v!r} 出域（枚举 {allowed}）（告警不截断）")
     return warns
 
 

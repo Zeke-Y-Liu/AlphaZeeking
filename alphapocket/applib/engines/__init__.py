@@ -7,6 +7,12 @@
 契约五条与架构决策记录：见 base.py 模块注释与
 《任务拆分-组件化重构/T-R1-现状盘点与架构决策.md》（入库可追溯；修订须登记）。
 """
+from .a_factors import ALPHA_SPEC, alpha_engine
+from .b_signals import BETA_SPEC, beta_engine
 from .base import EngineSpec, EngineWrapper, check_output_range, validate_input
+from .c_macro import MACRO_SPEC, macro_engine
 
-__all__ = ["EngineSpec", "EngineWrapper", "check_output_range", "validate_input"]
+__all__ = [
+    "EngineSpec", "EngineWrapper", "check_output_range", "validate_input",
+    "ALPHA_SPEC", "alpha_engine", "BETA_SPEC", "beta_engine", "MACRO_SPEC", "macro_engine",
+]
