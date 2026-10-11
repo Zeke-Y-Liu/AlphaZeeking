@@ -453,6 +453,54 @@ def hypothesis_review(args, ctx):
     return H.hypothesis_review(args, ctx)
 
 
+# ── factor（引擎C 宏观流动性 T-C3）──────────────────────
+MACRO_SCORER_VERSION = ("v1 (T-C2)：分位点×方向 → 阈值触发/跳平带/前值站位/回退；"
+                        "月度 12 月滚动、日度 60 点；带 mid=0.2/hi=0.6")
+
+
+def factor_macro(args, ctx):
+    """引擎C：宏观流动性三市场温度计（只读 regime 查询）。
+
+    只读红线：不写任何状态（仅读 sandbox/repo）；不决策：输出为市场条件变量，
+    不产生买卖信号、不参与权重、不携带任何信号字段（grep 红线）。
+    缺数据 → status=unavailable 透明降级（不抛异常、不虚构档位）。
+    """
+    f = ctx.local_repo / "market" / "macro_liquidity.json"
+    if not f.exists():
+        return {"status": "unavailable",
+                "reason": "macro_liquidity.json 不存在（先 ap fetch 采集宏观指标并 ap clone）"}
+    payload = _load(f)
+    indicators = payload.get("indicators") or {}
+    # as_of 链（不取未来）：显式参数 → payload 落盘 as_of → 旧文件兜底=各指标最新可用 dt
+    as_of = args.get("as_of") or payload.get("as_of")
+    as_of_src = "args" if args.get("as_of") else "payload（T-C1 落盘 as_of）"
+    if not as_of and indicators:
+        as_of = max((v.get("last_dt") for v in indicators.values() if v.get("last_dt")),
+                    default=None)
+        as_of_src = "兜底：indicators 最新 dt（旧文件无顶层 as_of）"
+    if not indicators or not as_of:
+        return {"status": "unavailable",
+                "reason": "indicators 为空或缺 as_of（数据层未采集或拉取全失败降级）"}
+    out = F.compute_macro_liquidity(indicators, as_of)
+    if out["global_score"] is None:
+        out["status"] = "unavailable"
+        out["reason"] = "全市场无可用指标（scorer 全路径 insufficient/no_data 降级）"
+    else:
+        out["status"] = "ok"
+    det = out["detail"]["indicators"]
+    out["notes"] = {   # 口径/版本注记（T-C3 交付 3）
+        "scorer_version": MACRO_SCORER_VERSION,
+        "bands": {"mid": F.MACRO_BAND_MID, "hi": F.MACRO_BAND_HI},
+        "as_of": as_of,
+        "as_of_source": as_of_src,
+        "institutions": sorted({m.get("institution", "?") for m in indicators.values()}),
+        "paths": {p: sum(1 for d in det.values() if d["path"] == p)
+                  for p in ("ok", "carried_prev", "insufficient", "no_data")},
+        "decision_free": True,
+    }
+    return out
+
+
 def factor_activate(args, ctx):
     """R3/M5 8.1：draft→active 激活门禁（无 hypothesis_id 拒绝，无旁路）"""
     return H.factor_activate(args, ctx)
@@ -538,6 +586,7 @@ TOOLS = {
     "hypothesis.set_status": _tool(hypothesis_set_status, "R3：假设状态机迁移（proposed→testing→supported/refuted→retired）"),
     "hypothesis.review": _tool(hypothesis_review, "R3：巡检假设复查（weakening/invalid 必答 + healthy 20% 抽查）→ hp_review_*"),
     "factor.activate": _tool(factor_activate, "R3/M5 8.1：draft→active 激活门禁（无 hypothesis_id 拒绝，无旁路）"),
+    "factor.macro": _tool(factor_macro, "引擎C：宏观流动性三市场温度计（只读 regime 查询，不决策不参与权重）"),
     "report.read":     _tool(report_read, "读取最近/指定报告 Markdown（供 agent 解读）"),
     "repo.clone":      _tool(R.repo_clone, "远端 main → 本地 sandbox（AKShare 真实数据）"),
     "repo.status":     _tool(R.repo_status, "本地工作区状态（dirty/changed）"),

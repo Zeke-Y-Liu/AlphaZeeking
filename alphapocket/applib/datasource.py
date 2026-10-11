@@ -1447,9 +1447,11 @@ def fetch_macro_liquidity(ctx, start: str = "2015-01-01", end: str | None = None
                            "first_dt": series[0]["dt"], "last_dt": series[-1]["dt"],
                            "series": series}
 
+    as_of = max((v["last_dt"] for v in indicators.values() if v["last_dt"]), default=None)
     payload = {"dataset": _MACRO_DATASET["id"], "merge_policy": _MACRO_DATASET["merge_policy"],
                "fetched_at": dt.datetime.now().isoformat(timespec="seconds"),
                "akshare_version": ak.__version__, "start": start, "end": end,
+               "as_of": as_of,   # 数据自描述：各指标最新可用 dt（≈最新交易日，T-C3 工具缺省口径）
                "indicators": indicators, "blacklist": blacklist, "warnings": warns,
                "discipline": {"decision_free": True,
                               "note": "引擎C 数据层：不产生买卖信号、不参与权重决策；"
@@ -1460,7 +1462,6 @@ def fetch_macro_liquidity(ctx, start: str = "2015-01-01", end: str | None = None
     n_ok = sum(1 for v in indicators.values() if v["status"] == "ok")
     n_carried = sum(1 for v in indicators.values() if v["status"] == "carried_old")
     n_unavail = sum(1 for v in indicators.values() if v["status"] == "unavailable")
-    as_of = max((v["last_dt"] for v in indicators.values() if v["last_dt"]), default=None)
     print(f"  ✓ macro_liquidity：{n_ok} ok / {n_carried} carried_old / {n_unavail} unavailable "
           f"（黑名单 {len(blacklist)} 条，as_of={as_of}）")
     return {"fetched": True, "dataset": _MACRO_DATASET["id"],

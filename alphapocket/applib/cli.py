@@ -353,6 +353,40 @@ def cmd_serve(args):
     serve()
 
 
+def cmd_macro(args):
+    """引擎C 宏观流动性温度计：三市场 dim/level + scorer 口径注记（只读，不决策）"""
+    from . import factors as F
+    ctx = Ctx()
+    res = call_tool("factor.macro", {"as_of": args.as_of}, ctx)
+    if "error" in res:
+        sys.exit(f"✗ {res['error']}")
+    keys = ("status", "state", "global", "markets", "global_score", "as_of")
+    print(json.dumps({k: res.get(k) for k in keys}, ensure_ascii=False, indent=2))
+    if res.get("status") == "unavailable":
+        print(f"  降级原因：{res.get('reason')}")
+        return
+    for mkt in ("A", "HK", "US"):
+        rows = sorted(((sid, d) for sid, d in res["detail"]["indicators"].items()
+                       if d["market"] == mkt), key=lambda x: (x[1]["dim"], x[0]))
+        if not rows:
+            continue
+        lvl = res["markets"][mkt]
+        zh = F.MACRO_LEVEL_ZH.get(lvl, lvl) if isinstance(lvl, int) else lvl
+        ms = res["detail"]["market_scores"][mkt]
+        print(f"  [{mkt}] {zh}（{lvl}）  市场评分 {ms if ms is not None else '—'}")
+        for sid, d in rows:
+            if d["score"] is None:
+                print(f"      {sid:<18} {d['dim']}  —（{d['path']}）")
+            else:
+                tag = " ⟲前值站位" if d["stale"] else ""
+                print(f"      {sid:<18} {d['dim']}  score={_fmt(d['score'])}"
+                      f"  p={d['pctile']:.3f}（{F.MACRO_LEVEL_ZH.get(d['level'], '—')}）{tag}")
+    n = res["notes"]
+    print(f"  口径：{n['scorer_version']}")
+    print(f"  来源：{'、'.join(n['institutions'])}｜as_of：{n['as_of']}（{n['as_of_source']}）")
+    print("  纪律：市场条件变量——不决策、不参与权重（decision_free）")
+
+
 def cmd_status(args):
     ctx = Ctx()
     print(json.dumps(R.repo_status({}, ctx), ensure_ascii=False, indent=2))
@@ -449,6 +483,11 @@ def main():
     p1.add_argument("--gate-redistribute", dest="gate_redistribute", action="store_true",
                     help="释放额度再分配给未触发标的（默认留现金降敞口）")
     p1.set_defaults(fn=cmd_p1_eval)
+
+    ma = sub.add_parser("macro", help="引擎C 宏观流动性温度计（三市场 regime，只读不决策）")
+    ma.add_argument("--as-of", dest="as_of", default=None,
+                    help="估值日 ISO（默认取 macro_liquidity.json 落盘 as_of）")
+    ma.set_defaults(fn=cmd_macro)
 
     cp = sub.add_parser("checkpoint", help="检查点管理")
     cp.add_argument("action", choices=["ls", "restore"]); cp.add_argument("id", nargs="?")

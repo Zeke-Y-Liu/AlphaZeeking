@@ -431,3 +431,107 @@ def test_all_insufficient_marks_markets_unavailable():
 
 def test_min_windows_constants():
     assert MACRO_MIN_MONTHLY == 6 and MACRO_MIN_DAILY == 20 and MACRO_BAND_HI == 0.6
+
+
+# ══ 引擎C T-C3 工具层（只读面：factor.macro + ap macro）════════════════════
+
+from applib import cli as CLI
+from applib import tools as TL
+
+
+def _seed_macro_repo(tmp_path) -> Ctx:
+    """在 tmp sandbox/repo 落一份 macro_liquidity.json（密封 fixture，HK 缺资产降级）。"""
+    ctx = _ctx(tmp_path)
+    d = ctx.local_repo / "market"
+    d.mkdir(parents=True, exist_ok=True)
+    payload = {"dataset": "macro_liquidity", "as_of": "2026-10-10", "merge_policy": "carry_old",
+               "indicators": _full_indicators(hk_mode="none")}
+    (d / "macro_liquidity.json").write_text(json.dumps(payload, ensure_ascii=False))
+    return ctx
+
+
+def test_factor_macro_tool_structure(tmp_path):
+    ctx = _seed_macro_repo(tmp_path)
+    res = TL.call_tool("factor.macro", {"as_of": "2025-06-15"}, ctx)
+    assert res["status"] == "ok"
+    assert set(res["markets"]) == {"A", "HK", "US"} and res["markets"]["HK"] == "unavailable"
+    # dim/level 结构完整（总验收 #3 基座）：逐指标 market/dim/level/score
+    for d in res["detail"]["indicators"].values():
+        assert {"market", "dim", "level", "score"} <= set(d)
+    # 口径/版本注记（scorer 版本、as_of、来源机构）
+    n = res["notes"]
+    assert "v1 (T-C2)" in n["scorer_version"] and n["as_of"] == "2025-06-15"
+    assert n["institutions"] == ["测试机构"] and n["decision_free"] is True
+    assert n["paths"]["no_data"] == 3          # HK 三指标透明标注
+    assert "signals" not in json.dumps(res, ensure_ascii=False)   # 不决策 grep 红线（工具面）
+
+
+def test_tool_cli_output_consistent(tmp_path, capsys, monkeypatch):
+    """工具与 CLI 输出一致（同 as_of 冻结键逐字段相等）。"""
+    ctx = _seed_macro_repo(tmp_path)
+    monkeypatch.setattr(CLI, "Ctx", lambda: ctx)
+    res = TL.call_tool("factor.macro", {"as_of": "2025-06-15"}, ctx)
+    CLI.cmd_macro(type("A", (), {"as_of": "2025-06-15"})())
+    out = capsys.readouterr().out
+    head, _ = json.JSONDecoder().raw_decode(out)     # 第一个 JSON 块（冻结键头）
+    assert head == {k: res.get(k) for k in
+                    ("status", "state", "global", "markets", "global_score", "as_of")}
+
+
+def test_macro_degrade_paths(tmp_path):
+    """降级路径：缺文件 / indicators 空 / 全 no_data → unavailable，不抛异常。"""
+    ctx = _ctx(tmp_path)
+    res = TL.call_tool("factor.macro", {}, ctx)                      # 文件缺失
+    assert res["status"] == "unavailable" and "reason" in res
+
+    ctx2 = _ctx(tmp_path / "ws2")
+    d = ctx2.local_repo / "market"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "macro_liquidity.json").write_text(json.dumps({"indicators": {}, "as_of": "2026-10-10"}))
+    res2 = TL.call_tool("factor.macro", {}, ctx2)                    # indicators 空
+    assert res2["status"] == "unavailable"
+
+    ctx3 = _ctx(tmp_path / "ws3")
+    d3 = ctx3.local_repo / "market"
+    d3.mkdir(parents=True, exist_ok=True)
+    empty = {sid: _ind(sid, m, "D3", []) for sid, m in
+             [("cn_m2_yoy", "A"), ("us_fed_rate", "US"), ("hk_hibor_1m", "HK")]}
+    (d3 / "macro_liquidity.json").write_text(
+        json.dumps({"indicators": empty, "as_of": "2026-10-10"}))
+    res3 = TL.call_tool("factor.macro", {}, ctx3)                    # 全 no_data
+    assert res3["status"] == "unavailable" and res3["global"] == "unavailable"
+
+
+def test_macro_tool_readonly(tmp_path):
+    """只读红线：调用前后 sandbox 文件集合与内容不变。"""
+    ctx = _seed_macro_repo(tmp_path)
+
+    def snap():
+        return {str(p.relative_to(ctx.sandbox_dir)): p.read_bytes()
+                for p in sorted(ctx.sandbox_dir.rglob("*")) if p.is_file()}
+
+    before = snap()
+    TL.call_tool("factor.macro", {"as_of": "2025-06-15"}, ctx)
+    assert snap() == before                                          # 无写入
+
+
+def test_macro_default_as_of_from_payload(tmp_path):
+    """缺省 as_of：取 payload 落盘 as_of（组合 K 线最后交易日，T-C1 写入）。"""
+    ctx = _seed_macro_repo(tmp_path)
+    res = TL.call_tool("factor.macro", {}, ctx)
+    assert res["status"] == "ok" and res["as_of"] == "2026-10-10"
+    assert res["notes"]["as_of_source"] == "payload（T-C1 落盘 as_of）"
+
+
+def test_macro_as_of_fallback_from_indicators(tmp_path):
+    """旧文件兜底：payload 无顶层 as_of → 各指标最新可用 dt（T-C1 旧产物兼容）。"""
+    ctx = _seed_macro_repo(tmp_path)
+    f = ctx.local_repo / "market" / "macro_liquidity.json"
+    payload = json.loads(f.read_text())
+    payload.pop("as_of")
+    f.write_text(json.dumps(payload, ensure_ascii=False))
+    res = TL.call_tool("factor.macro", {}, ctx)
+    assert res["status"] == "ok"
+    latest = max(v["last_dt"] for v in payload["indicators"].values() if v["last_dt"])
+    assert res["as_of"] == latest
+    assert "兜底" in res["notes"]["as_of_source"]

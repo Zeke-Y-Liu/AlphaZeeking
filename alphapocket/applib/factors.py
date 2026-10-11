@@ -414,6 +414,7 @@ MACRO_WINDOW_DAILY = 60     # 日度/事件指标滚动窗
 MACRO_MIN_MONTHLY = 6       # 有效样本下限，不足 → 回退（0 档 insufficient）
 MACRO_MIN_DAILY = 20
 MACRO_STATES = {"loose": "偏松", "tight": "偏紧", "neutral": "neutral", "na": "unavailable"}
+MACRO_LEVEL_ZH = {2: "宽松", 1: "偏松", 0: "中性", -1: "偏紧", -2: "紧缩"}   # T-C3 档位中文映射（CLI/前端共用）
 
 # 方向映射（scorer 表输入）：+1 = 值越高越宽松；-1 = 值越高越紧
 MACRO_DIRECTIONS = {
