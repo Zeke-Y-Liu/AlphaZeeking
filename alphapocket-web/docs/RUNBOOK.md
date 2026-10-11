@@ -163,3 +163,44 @@ AP_E2E_CDP=launch make test-e2e
 - **QDII 溢价**：跨境品种场内价可偏离净值，执行前须人工核对 IOPV 溢价。
 - **β 单用户**：审计 actor 固定为 `system`；多用户/权限待接入登录用户后替换（T5.2）。
 - 无券商/交易外发请求（代码评审 + 网络白名单确认）。
+
+## 9. 引擎C 宏观流动性（运行口径 · T-C8 收尾）
+
+> 纪律：市场条件变量——**不决策、不参与权重**；不进 data_risk、不进六项验证门禁
+> （缺失 → unavailable 透明降级，评估照常完成）。
+
+### 9.1 采集与查看（双入口同一内核）
+
+```
+ap fetch 宏观    # fetch_macro_liquidity：12 指标设计（实测 11 命中，HK 三指标 unavailable 降级）
+                 # → sandbox/repo/market/macro_liquidity.json
+ap macro         # CLI：冻结五键 JSON 头 + 三市场逐指标 dim/score/分位表 + 口径注记
+MCP factor.macro # 工具面：读同一 payload → compute_macro_liquidity（与 CLI 逐字段一致）
+```
+
+`ap clone` 后评估自动回填报告 §2.5 与前端引擎C 卡片；payload 缺失 → 降级灰条（不失败）。
+
+### 9.2 三层聚合口径（T-C2，scorer 版本 `v1`）
+
+1. **单指标 scorer**：历史窗口分位点 × 方向 → 阈值触发（±2）/ 跳平带（|s|<0.2 → 0）/
+   前值站位（carried_prev，滞后标注）/ 回退（样本不足 → `insufficient` 档 0，聚合排除不折损）。
+   分位窗：日度 250 日、月度 12 期（新旧双期排位）。
+2. **维度等权**：D1 货币（M2/社融/信贷脉冲）· D2 信用社融 · D3 利率（Shibor/LPR/FR007…）·
+   D4 跨境利差（中美 10Y / FRA-OIS…）→ 维内均值 → 跨维均值；缺维度/缺市场不折损已知维度。
+3. **状态机**：全局五档 ±2…+2 → `state ∈ {tight, neutral, loose}`（+unavailable）；
+   市场级按 A/HK/US 独立聚合，HK 三指标资产缺失 → 市场级 `"unavailable"`。
+
+### 9.3 增量防丢口径（T-C1，红线 4）
+
+- 失败/空窗口 → **旧数据零丢失**：`carried_old` 合并，逐指标落 provenance；
+  成功 → union 合并、同 dt 新值覆盖、**永不物理删除**历史点。
+- 月度指标（M2/社融等）按 **12 个月滚动窗**拉取；PIT 防前视：月度指标 as_of 当月站位点
+  不可用（用上月值站位），日度严格 `dt<=as_of`（T-C2）。
+
+### 9.4 已知边界（诚实登记）
+
+- **HK 三指标（H-0006 资产缺失）**：`hk_rates.json` 无法登记 → 港股市场级持续 unavailable
+  （不折损 A/US 聚合），待数据资产补齐。
+- **engines 配置注入**：引擎C 不经 engines 配置注入版本不符由组件化 T-R3 收编（本版本内联）。
+- **扩展位**：D2/D3 补 `dr007` / `repo_tier_007` / `m1_m2_gap`（macro 12→16 指标）→ M7。
+- e2e 夹具就位但 chromium 实跑受阻（T-C7 登记），单测已覆盖同一渲染分支。

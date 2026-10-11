@@ -138,6 +138,13 @@
 > （向后兼容只增不改，改名/删字段 = 破坏性变更须走契约修订）——
 > `{"state","global","markets":{A,HK,US},"global_score","as_of"}`；
 > 降级归一 unavailable 形态（`state="unavailable"`、`global_score=null`、`as_of=null`）。
+> 档位语义（T-C2 scorer 契约）：五档 `-2…+2`（-2 紧缩 / -1 偏紧 / 0 中性 / +1 偏松 / +2 宽松）；
+> `global`/`markets.*` 为数值档位或 `"unavailable"`（按市场透明降级，HK 缺失不折损 A/US）；
+> `state` 为全局状态词（neutral/loose/tight/unavailable，非买卖信号）；
+> `global_score` 为维度等权聚合打分（D1 货币 / D2 信用社融 / D3 利率 / D4 跨境利差），
+> `as_of` 与评估同日（组合 K 线最后交易日口径）。
+> 数据溯源（T-C1 provenance）：逐指标登记来源机构（中国人民银行 / 国家外汇管理局 /
+> 中国货币网 / FRED / 财新数据 等）与最近增量拉取日。
 > 边界：该字段**不进 data_risk**（不参与数据风险判定）、**不进六项验证门禁**
 > （宏观流动性数据缺失区别于行情数据——透明降级，评估照常完成）。
 > V4-β：多市场组合 `base_ccy=CNY`，各持仓 `trade_ccy` 按标的币种（A股 CNY / 港股 HKD
