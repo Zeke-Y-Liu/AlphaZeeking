@@ -5,7 +5,7 @@ MCP 工具面与 CLI 面暴露引擎C查询能力（只读，regime 查询，不
 
 ## 核心交付
 1. `tools.py` 新增 `factor.macro` 工具：返回完整三市场 dim/level 结构（HK 经 `hk_rates.json` 参与聚合）；缺数据 → `{"status":"unavailable"}` 透明降级
-2. `cli.py` 新增对应命令（`ap factor macro` / `ap no-macro`?，以旧会话实际命令名为准适配）：同一计算内核，双入口不重复实现
+2. `cli.py` 新增对应命令（建议 `ap factor macro`，以本会话 CLI 既有子命令命名风格自定；命令名实现时登记入 RUNBOOK）：同一计算内核，双入口不重复实现
 3. 输出含口径/版本注记（scorer 表版本、as_of、来源机构）
 
 ## DoD 验收
