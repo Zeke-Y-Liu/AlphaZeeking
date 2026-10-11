@@ -11,6 +11,7 @@
 from __future__ import annotations
 import json
 import math
+from collections.abc import Callable
 from pathlib import Path
 
 from . import factors as F
@@ -158,7 +159,8 @@ def run_backtest(bars: dict, portfolio: dict, start: str | None = None,
                  risk_limits: dict | None = None, sectors: dict | None = None,
                  track_risk: bool = False, ab_gate: bool = False,
                  gate_damp: float = GATE_DAMP_DEFAULT,
-                 gate_redistribute: bool = False) -> dict:
+                 gate_redistribute: bool = False,
+                 rule_fn: Callable[[str], dict] | None = None) -> dict:
     """组合回测主流程。
 
     ``ab_gate``（P1.4 辅助型条件变量）：引擎 A 买入需引擎 B 不持卖出信号——再平衡日先按
@@ -166,11 +168,22 @@ def run_backtest(bars: dict, portfolio: dict, start: str | None = None,
     信号同时成立）**软衰减**：权重 ×``gate_damp``（默认 0.5），释放额度默认留现金（降敞口）；
     ``gate_redistribute=True`` 时把释放额度按比例再分配给未触发标的（保持满仓）。
     ``gate_damp=0`` 退化为硬剔除。默认 ``ab_gate=False`` 时与既有 V4-α 锚点逐位一致。
+
+    ``rule_fn``（M1 动态权重通道，与 ``ab_gate`` 互斥）：``rule_fn(d) -> {secid: weight}``
+    在每个再平衡日（含期初日）被调用，返回目标权重——PIT 纪律由 rule_fn 自负
+    （只准使用 d 及之前的数据）。契约：权重非负、无杠杆（Σw ≤ 1+1e-9，差额为现金）、
+    Σw > 0、不得返回未声明标的；违例显式报错（不静默截断/归一化）。
+    Σw < 1 合法（留现金降敞口），``invested_ratio`` 逐次登记于 ``rule.events``。
+    设置后 ``weighting`` 等权/等风险基準不再参与（rule_fn 全权决定目标权重）。
     """
     if rebalance not in REBALANCE_CHOICES:
         raise ValueError(f"未知再平衡频率：{rebalance}（可选 {REBALANCE_CHOICES}）")
     if weighting not in ("equal", "equal_risk"):
         raise ValueError(f"未知加权方案：{weighting}（可选 equal / equal_risk）")
+    if rule_fn is not None and ab_gate:
+        raise ValueError("rule_fn 与 ab_gate 互斥（动态权重与条件门二选一）")
+    if rule_fn is not None and risk_limits:
+        raise ValueError("rule_fn 与 risk_limits 互斥（M1：动态权重不做限额叠加）")
     secids = [p["secid"] for p in portfolio["positions"]]
     names = {p["secid"]: p["name"] for p in portfolio["positions"]}
     dates = sorted(set().union(*[{r["dt"] for r in bars[s]} for s in secids]))
@@ -211,12 +224,41 @@ def run_backtest(bars: dict, portfolio: dict, start: str | None = None,
             out[s] = gate_damp if n_sell >= GATE_MIN_SELL_SIGNALS else 1.0
         return out
 
+    def _apply_rule_fn(d: str) -> dict:
+        """M1 动态权重通道：rule_fn(d) → 校验后的目标权重（违例显式报错，不静默修正）。"""
+        out = rule_fn(d)
+        if not isinstance(out, dict):
+            raise ValueError(f"rule_fn({d}) 须返回 {{secid: weight}}，实得 {type(out).__name__}")
+        unknown = sorted(set(out) - set(secids))
+        if unknown:
+            raise ValueError(f"rule_fn({d}) 返回未声明标的 {unknown}")
+        w = {}
+        for s in secids:
+            v = out.get(s, 0.0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                raise ValueError(f"rule_fn({d}) 权重 {s}={v!r} 非数值")
+            if v < 0:
+                raise ValueError(f"rule_fn({d}) 出现负权重 {s}={v}（不支持做空）")
+            w[s] = float(v)
+        total = sum(w.values())
+        if total > 1.0 + 1e-9:
+            raise ValueError(f"rule_fn({d}) 权重和 {total:.6f} > 1（不支持杠杆，差额为现金）")
+        if total <= 0:
+            raise ValueError(f"rule_fn({d}) 权重和为 0（无有效持仓）")
+        rule_events.append({"dt": d, "invested_ratio": round(total, 6),
+                            "n_active": sum(1 for v in w.values() if v > 1e-12),
+                            "n_total": n})
+        return w
+
     def _rule(d: str):
         """再平衡目标权重（PIT：仅用 d 之前数据）；返回 (权重, 波动表)。
 
-        基准满仓等权（或等风险）覆盖全部标的；``ab_gate`` 时对触发标的权重 ×衰减系数，
-        释放额度默认留现金（降敞口），``gate_redistribute`` 时按比例再分配给未触发标的。
+        ``rule_fn`` 优先（M1 动态权重通道）；否则基准满仓等权（或等风险）覆盖全部标的；
+        ``ab_gate`` 时对触发标的权重 ×衰减系数，释放额度默认留现金（降敞口），
+        ``gate_redistribute`` 时按比例再分配给未触发标的。
         """
+        if rule_fn is not None:
+            return _apply_rule_fn(d), None
         if not tracked:
             base = {s: 1.0 / n for s in secids}
             vols = None
@@ -242,6 +284,7 @@ def run_backtest(bars: dict, portfolio: dict, start: str | None = None,
 
     limits_binding: list[dict] = []
     gate_events: list[dict] = []
+    rule_events: list[dict] = []
     rc_vars: list[float] = []
     w, _ = _rule(dates[0])
     tgt0 = dict(w)
@@ -304,6 +347,8 @@ def run_backtest(bars: dict, portfolio: dict, start: str | None = None,
     mret = _monthly(list(zip(dates, rets)))
     total_cost = (1 - _compound([-c["cost"] for c in costs])) if costs else 0.0
     wlab = "等风险加权" if weighting == "equal_risk" else "等权"
+    if rule_fn is not None:
+        wlab = "动态权重(rule_fn)"
     glab = ""
     if ab_gate:
         gsub = "剔除" if gate_damp <= 0 else f"衰减×{gate_damp:g}"
@@ -322,9 +367,19 @@ def run_backtest(bars: dict, portfolio: dict, start: str | None = None,
             "gate_damp": gate_damp, "redistribute": gate_redistribute,
             "events": gate_events,
         }
+    rule = None
+    if rule_fn is not None and rule_events:
+        rule = {
+            "n_rebalances": len(rule_events),
+            "avg_invested_ratio": round(sum(e["invested_ratio"] for e in rule_events)
+                                        / len(rule_events), 4),
+            "min_active": min(e["n_active"] for e in rule_events),
+            "events": rule_events,
+        }
     return {
         "portfolio": portfolio["id"], "portfolio_name": portfolio["name"],
         "strategy": strategy, "weighting": weighting, "ab_gate": ab_gate,
+        "rule_fn": rule_fn is not None,
         "rebalance": rebalance, "benchmark_secid": benchmark_secid,
         "start": dates[0], "end": dates[-1], "n_days": len(dates), "n_rebalances": len(costs),
         "commission": commission, "cost_bps": cost_bps, "rf": rf,
@@ -341,6 +396,8 @@ def run_backtest(bars: dict, portfolio: dict, start: str | None = None,
         "limits_binding": limits_binding,
         # P1.4 条件门产物：门事件 + 平均持仓比（衰减系数；1.0=从未触发门）
         "gate": gate, "gate_damp": gate_damp, "gate_redistribute": gate_redistribute,
+        # M1 动态权重产物：rule_fn 逐再平衡日事件（invested_ratio/n_active）
+        "rule": rule,
         "risk_contrib_var": (sum(rc_vars) / len(rc_vars)) if rc_vars else None,
         "data_quality": {"missing_bars": missing,
                          "note": "ETF/LOF 新浪不复权价 → 价格收益；513100 于 2022-01-14 份额折算日 pct 缺失按 0 计；缺 K 线按 0 收益",

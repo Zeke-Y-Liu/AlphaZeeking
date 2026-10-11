@@ -1,0 +1,51 @@
+{
+  "chain": "本会话检查点链（编号独立起算；notes.corresponds 对应旧会话 CP-0020~0026，对齐《旧会话进度迁移报告》§4）",
+  "next": 4,
+  "items": [
+    {
+      "cp_id": "CP-0001",
+      "milestone": "引擎C 宏观流动性全链收口（批1，T-C1~T-C8 8/8）",
+      "corresponds": "旧会话 CP-0020 之引擎C 部分",
+      "ts": "2026-10-11",
+      "commits": ["886f566..009624d"],
+      "deliverables": [
+        "fetch_macro_liquidity（18 探 12 中，12 指标）+ compute_macro_liquidity 三层聚合状态机",
+        "factor.macro MCP 工具 + ap macro CLI（只读双入口）",
+        "portfolio_review regime 块 + 报告 §2.5 三市场温度计（_macro_summary 五键冻结契约）",
+        "PortfolioDetailView 引擎C 三态卡片 + e2e 夹具",
+        "API.md/RUNBOOK.md 口径登记，总验收 9 项复核"
+      ],
+      "verify": {"tests": "pass", "alpha_suite": "全绿（引擎C 后基线）"}
+    },
+    {
+      "cp_id": "CP-0002",
+      "milestone": "组件化重构收口（批2，T-R1~T-R12 12/12）",
+      "corresponds": "旧会话 CP-0020",
+      "ts": "2026-10-12",
+      "commits": ["efaae8c..6fe65a7"],
+      "deliverables": [
+        "engines/ 包装层（契约五条冻结）+ EngineSpec + T-R3 配置注入",
+        "registry 写保护三语义（覆盖→merge/用户优先/orphan 标记）",
+        "DatasetSpec 声明式数据集（15 项单点声明，_MACRO_ 派生收编）",
+        "fetch_all(mode=) 三模式 + MCP engine.metrics 四工具 + data_missing 单点",
+        "T-R11 五面回归全绿：α149 / core186+6s / web99 / bff39 / e2e7；T-R12 总验收 8/8 留证"
+      ],
+      "verify": {"tests": "pass", "five_face_regression": "全绿"}
+    },
+    {
+      "cp_id": "CP-0003",
+      "milestone": "M1 因子仓库单仓地基（批3：注册中心+三引擎+物化+PIT 审计+rule_fn）",
+      "corresponds": "旧会话 CP-0021（factorlib 重建，旧实现未入库）",
+      "ts": "2026-10-12",
+      "deliverables": [
+        "factorlib 单仓（registry/ 三引擎 sql·python_udf·qlib_expr / preprocess / materialize 三模式 / pit_audit），仅依赖 duckdb·pyyaml，表契约 dwd_daily_bar·dwd_financial_report 独立声明",
+        "val_pe_ttm YAML 端到端：注册→SQL 计算→物化→查询→审计（真实 repo 9 标的物化 5572 行，公告日切换正确）",
+        "M1 DoD 四项测试锚定：黄金样例 10 标的×4 时点手工推演逐位误差=0；复现性两次重算 digest 一致（含反向篡改锚）；篡改 announce_date→period 对齐被 PIT 审计捕获",
+        "引擎输出契约收敛：缺失即无行（NULL 值不产出）+ dt/used_* 统一 YYYY-MM-DD 字符串 + body 未引用参数不传",
+        "run_backtest 增 rule_fn 动态权重通道（与 ab_gate/risk_limits 互斥）：收盘再平衡时序锚定、留现金语义 invested_ratio 登记、违例显式报错"
+      ],
+      "verify": {"factorlib": "39 passed", "alpha_suite": "155 passed（149 基线 + 6 rule_fn）", "pit_audit": "0 violations"},
+      "notes": "局限：core/web/bff/e2e 五面回归待环境重建后复跑（本沙箱缺 core/.venv 与 PG16）；本批变更面不触及（backtest.py 仅新增可选参数、factorlib 为无反向依赖新包，OpenAPI schema 未变）"
+    }
+  ]
+}
