@@ -11,6 +11,11 @@ from . import data as D
 from . import repo as R
 from . import factors as F
 from . import hypothesis as H
+from . import datasets as _DS          # T-R9：engine.metrics.list 数据集声明派生
+
+
+def _now_ts():
+    return dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _load(p):
@@ -574,6 +579,110 @@ def _tool(fn, desc):
     return {"fn": fn, "desc": desc}
 
 
+# ── engine.metrics 四工具（T-R9）：引擎指标元数据 CRUD ────────────────────
+# 红线：工具 = 写保护之上的薄层（add 幂等不覆盖 / remove orphan 不物理删）；
+# 操作留痕不可关闭（registry.operations 逐次登记）。
+def _registry_path(ctx):
+    return ctx.local_repo / "factors" / "registry.json"
+
+
+def _log_operation(reg: dict, op: str, mid: str, fields=None, actor: str = "mcp") -> dict:
+    rec = {"op": op, "id": mid, "ts": _now_ts(),
+           "actor": actor, "fields": sorted(fields) if fields else None}
+    reg.setdefault("operations", []).append(rec)
+    return rec
+
+
+def engine_metrics_list(args, ctx):
+    """list：因子/信号/宏观指标元数据全景（空态不炸；宏观指标从 DatasetSpec 声明派生）。"""
+    reg = _load(_registry_path(ctx))
+    out = {"factors": reg.get("factors", []),
+           "n_factors": len(reg.get("factors", []))}
+    try:
+        specs = _DS.registry_specs()               # DatasetSpec 单点声明（T-R5）
+        out["datasets"] = {k: {"path": v.path, "merge_policy": v.merge_policy}
+                           for k, v in specs.items()}
+        out["n_datasets"] = len(specs)
+    except Exception:                            # noqa: BLE001 - spec 异常不影响因子列表
+        out["datasets"] = {}
+    return out
+
+
+def _require_type(t):
+    if t not in ("alpha", "signal", "macro"):
+        raise ValueError(f"type 非法：{t!r}（须 alpha / signal / macro）")
+
+
+def engine_metrics_add(args, ctx):
+    """add：登记新指标。幂等（同 id 已存在 → 不覆盖既有条目=用户改动安全）。"""
+    mid = str(args.get("id") or "").strip()
+    if not mid:
+        raise ValueError("add 须提供 id")
+    _require_type(str(args.get("type") or ""))
+    p = _registry_path(ctx)
+    reg = _load(p)
+    old = next((f for f in reg.get("factors", []) if f.get("id") == mid), None)
+    if old is not None:
+        return {"added": False, "id": mid,
+                "reason": "id 已存在（幂等：不覆盖既有条目，用户改动安全）",
+                "existing": {k: old.get(k) for k in ("status", "version", "name")}}
+    entry = {k: v for k, v in args.items()
+             if k not in ("actor",) and v is not None}
+    entry["id"] = mid
+    entry.setdefault("status", "draft")
+    entry.setdefault("version", "v0.1")
+    reg.setdefault("factors", []).append(entry)
+    log = _log_operation(reg, "add", mid, fields=entry.keys(), actor=str(args.get("actor") or "mcp"))
+    p.write_text(json.dumps(reg, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"added": True, "id": mid, "status": entry["status"], "operation": log}
+
+
+def engine_metrics_update(args, ctx):
+    """update：字段级更新（id 不可改；仅显式列出的字段变动；留痕）。"""
+    mid = str(args.get("id") or "").strip()
+    fields = args.get("fields") or {}
+    if not mid or not isinstance(fields, dict) or not fields:
+        raise ValueError("update 须提供 id 与 fields{字段:值}")
+    if "id" in fields:
+        raise ValueError("id 不可修改（remove 重建）")
+    p = _registry_path(ctx)
+    reg = _load(p)
+    old = next((f for f in reg.get("factors", []) if f.get("id") == mid), None)
+    if old is None:
+        return {"updated": False, "id": mid, "reason": "id 不存在（先 add）"}
+    changed = {k: old.get(k) for k in fields if k in old and old[k] != fields[k]}
+    for k, v in fields.items():
+        old[k] = v
+    log = _log_operation(reg, "update", mid, fields=fields.keys(),
+                         actor=str(args.get("actor") or "mcp"))
+    log["before"] = changed                       # 留痕：改了什么（旧值快照）
+    p.write_text(json.dumps(reg, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"updated": True, "id": mid, "changed": changed, "operation": log}
+
+
+def engine_metrics_remove(args, ctx):
+    """remove：orphan 标记不物理删（T-R4 三语义 ③；M5 生命周期接管后续处置）。"""
+    mid = str(args.get("id") or "").strip()
+    if not mid:
+        raise ValueError("remove 须提供 id")
+    p = _registry_path(ctx)
+    reg = _load(p)
+    old = next((f for f in reg.get("factors", []) if f.get("id") == mid), None)
+    if old is None:
+        return {"removed": False, "id": mid, "reason": "id 不存在"}
+    if old.get("status") == "orphan":
+        return {"removed": False, "id": mid, "reason": "已是 orphan（幂等）"}
+    before = old.get("status")
+    old["status"] = "orphan"
+    old["removed_at"] = dt.date.today().isoformat()
+    log = _log_operation(reg, "remove", mid, fields=["status", "removed_at"],
+                         actor=str(args.get("actor") or "mcp"))
+    log["before"] = {"status": before}
+    p.write_text(json.dumps(reg, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"removed": True, "id": mid, "status": "orphan",
+            "physical": "条目保留（不物理删；M5 T-L3 生命周期接管）", "operation": log}
+
+
 TOOLS = {
     "data.sync":       _tool(D.data_sync, "同步远端数据集（AKShare 真实数据）到本地 DuckDB"),
     "data.query":      _tool(D.data_query, "只读 SQL 点查（强制 LIMIT）"),
@@ -597,6 +706,10 @@ TOOLS = {
     "hypothesis.set_status": _tool(hypothesis_set_status, "R3：假设状态机迁移（proposed→testing→supported/refuted→retired）"),
     "hypothesis.review": _tool(hypothesis_review, "R3：巡检假设复查（weakening/invalid 必答 + healthy 20% 抽查）→ hp_review_*"),
     "factor.activate": _tool(factor_activate, "R3/M5 8.1：draft→active 激活门禁（无 hypothesis_id 拒绝，无旁路）"),
+    "engine.metrics.list": _tool(engine_metrics_list, "引擎指标元数据全景（因子/信号 + 数据集声明派生）"),
+    "engine.metrics.add": _tool(engine_metrics_add, "登记新指标（幂等：同 id 不覆盖既有条目）"),
+    "engine.metrics.update": _tool(engine_metrics_update, "字段级更新（id 不可改；留痕 before 快照）"),
+    "engine.metrics.remove": _tool(engine_metrics_remove, "orphan 标记不物理删（M5 生命周期接管）"),
     "factor.macro": _tool(factor_macro, "引擎C：宏观流动性三市场温度计（只读 regime 查询，不决策不参与权重）"),
     "report.read":     _tool(report_read, "读取最近/指定报告 Markdown（供 agent 解读）"),
     "repo.clone":      _tool(R.repo_clone, "远端 main → 本地 sandbox（AKShare 真实数据）"),
