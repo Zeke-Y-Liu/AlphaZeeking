@@ -14,6 +14,8 @@
    失败只 ``logger.warning`` 不阻断；
 4. ``portfolio_review`` / ``portfolio_rebalance_plan``（applib 工具）→ 渲染报告 →
    上传产物（MinIO）→ 写 ``runs`` 记录 → 返回 ``{run_uid, artifact_keys, summary}``。
+   ``summary.macro_liquidity``（T-C5）为引擎C regime 块透传（消费不实现，
+   缺失/不可用归 ``{"status": "unavailable"}``，不阻断评估、不进门禁）。
 
 β 阶段限制（登记，不单方面改契约）
 ---------------------------------
@@ -106,13 +108,21 @@ def _signal_states(review: dict[str, Any]) -> dict[str, int]:
 
 
 def _build_summary(review: dict[str, Any]) -> dict[str, Any]:
-    """组装 ``runs.summary``（字段冻结，供 T6.4 前端直接读）。"""
+    """组装 ``runs.summary``（字段冻结，供 T6.4 前端直接读）。
+
+    引擎C（T-C5）：``macro_liquidity`` **消费不实现**——直接透传 applib
+    ``portfolio_review`` 产出的 regime 块（结构 = T-C2 冻结契约五键 + status；
+    detail/notes 为允许扩展键）。缺失（旧工具输出）归一为 ``{"status": "unavailable"}``
+    （透明降级：不阻断评估，不进门禁、不进 data_risk）。core 不重复计算。
+    """
+    macro = review.get("macro_liquidity")
     return {
         "as_of": review.get("as_of"),
         "portfolio_metrics": review.get("portfolio_metrics"),
         "position_count": len(review.get("positions") or []),
         "signal_count": len(review.get("signals") or []),
         "signal_states": _signal_states(review),
+        "macro_liquidity": macro if isinstance(macro, dict) else {"status": "unavailable"},
     }
 
 

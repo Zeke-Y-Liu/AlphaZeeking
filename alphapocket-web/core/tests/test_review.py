@@ -81,6 +81,9 @@ def cleanup(pg_ready) -> Iterator[dict]:
     state: dict = {"job_ids": [], "run_uids": [], "secids": [], "pids": []}
     yield state
     with session_scope() as db:
+        if state["job_ids"]:
+            # 兜底：用例中断未收集 run_uid 时，按 job 关联清 runs（防 FK 泄漏污染下游用例）
+            db.execute(delete(Run).where(Run.job_id.in_(state["job_ids"])))
         if state["run_uids"]:
             db.execute(delete(Run).where(Run.run_uid.in_(state["run_uids"])))
         if state["job_ids"]:
@@ -176,6 +179,16 @@ def _wait_job(api_client: TestClient, job_id: str, timeout: float = 15.0) -> dic
 # ── 用例 ────────────────────────────────────────────────────────
 
 
+# 引擎C regime 块（T-C2 冻结契约五键 + status，模拟 applib 真实输出——core 消费不实现）
+MACRO_OK = {
+    "status": "ok", "state": "neutral", "global": 0,
+    "markets": {"A": -1, "HK": "unavailable", "US": 0}, "global_score": -0.149,
+    "as_of": "2026-01-06",
+    "detail": {"indicators": {}}, "notes": {"scorer_version": "v1 (T-C2)", "decision_free": True},
+}
+MACRO_DOWN = {"status": "unavailable", "reason": "macro_liquidity.json 不存在（未采集，不阻断评估）"}
+
+
 def test_review_gate_failed_409_and_no_job(api_client, cleanup, monkeypatch) -> None:
     """用例 1：数据门禁非全绿 → 409 VERIFY_GATE_FAILED，且不提交 job。"""
     pid = _rand("test_rv_gate")
@@ -229,6 +242,7 @@ def test_review_green_gate_job_succeeds(api_client, ws_root, cleanup, monkeypatc
             {"signal_id": "s4"},
             {"signal_id": "s5", "state": "bogus"},
         ],
+        "macro_liquidity": dict(MACRO_OK),
     }
     fixture_plan = {"plan_id": "RP-TEST", "status": "draft", "diff_trades": []}
 
@@ -272,6 +286,10 @@ def test_review_green_gate_job_succeeds(api_client, ws_root, cleanup, monkeypatc
     assert summary["position_count"] == 2
     assert summary["signal_count"] == 5
     assert summary["signal_states"] == {"above": 1, "below": 1, "neutral": 0}
+    # 引擎C regime 块透传（T-C5：消费不实现，结构 = T-C2 冻结契约）
+    ml = summary["macro_liquidity"]
+    for key in ("status", "state", "global", "markets", "global_score", "as_of"):
+        assert ml[key] == MACRO_OK[key]
     assert result["artifact_keys"] == sorted(
         f"runs/{result['run_uid']}/{name}" for name in ARTIFACT_NAMES
     )
@@ -283,6 +301,12 @@ def test_review_green_gate_job_succeeds(api_client, ws_root, cleanup, monkeypatc
     assert run.as_of == date(2026, 1, 6)
     assert run.artifact_keys == result["artifact_keys"]
     assert run.summary["signal_states"] == {"above": 1, "below": 1, "neutral": 0}
+    # PG 实查 summary:macro_liquidity 结构符合冻结契约（T-C5 DoD #2 / 总验收 #5）
+    pg_ml = run.summary["macro_liquidity"]
+    assert pg_ml["status"] == "ok" and pg_ml["state"] == "neutral"
+    assert pg_ml["markets"] == {"A": -1, "HK": "unavailable", "US": 0}
+    assert pg_ml["global_score"] == pytest.approx(-0.149)
+    assert "signals" not in pg_ml                      # 不决策 grep 红线
 
 
 def test_get_runs_filters_and_limit(api_client, cleanup) -> None:
@@ -339,6 +363,60 @@ def test_review_missing_portfolio_404(api_client) -> None:
     resp = api_client.post("/api/v1/portfolios/test_rv_no_such_pid/review")
     assert resp.status_code == 404, resp.text
     assert resp.json()["code"] == ErrorCode.NOT_FOUND.value
+
+
+def test_review_macro_unavailable_passthrough(api_client, ws_root, cleanup, monkeypatch) -> None:
+    """用例 6（T-C5）：引擎C 透明降级——unavailable 透传落库，评估 job 照常 done。
+
+    总验收 #5 实测样本：HK 缺数据 → 透明降级；同步恢复后自动回填（MACRO_OK 路径）。
+    """
+    pid = _rand("test_rv_macro")
+    _make_portfolio(cleanup, pid, n=1)
+    sync_job = _insert_sync_job(cleanup)
+    _insert_verify_all_pass(sync_job)
+
+    fixture_review = {
+        "as_of": "2026-01-06",
+        "portfolio_metrics": {"day_ret": 0.01},
+        "positions": [{"secid": "a", "beta": {"state": "neutral"}}],
+        "signals": [],
+        "macro_liquidity": dict(MACRO_DOWN),          # 宏观数据缺失
+    }
+    monkeypatch.setattr("app.services.review._ensure_gap", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "app.services.review.tools.portfolio_review", lambda a, c: dict(fixture_review)
+    )
+    monkeypatch.setattr(
+        "app.services.review.tools.portfolio_rebalance_plan",
+        lambda a, c: {"plan_id": "RP-T", "status": "draft", "diff_trades": []},
+    )
+    def fake_render_all(review, plan, ctx, run_id, art_dir, verify=None):
+        art_dir = Path(art_dir)
+        art_dir.mkdir(parents=True, exist_ok=True)
+        for name in ARTIFACT_NAMES:
+            (art_dir / name).write_text(name, encoding="utf-8")
+        return {n: str(art_dir / n) for n in ARTIFACT_NAMES}
+
+    monkeypatch.setattr("app.services.review.report.render_all", fake_render_all)
+    monkeypatch.setattr(
+        "app.services.review.artifacts.put_run_artifacts",
+        lambda run_uid, files: sorted(f"runs/{run_uid}/{n}" for n in files),
+    )
+
+    resp = api_client.post(f"/api/v1/portfolios/{pid}/review")
+    assert resp.status_code == 202, resp.text
+    job_id = resp.json()["job_id"]
+    cleanup["job_ids"].append(job_id)
+    job = _wait_job(api_client, job_id)
+    assert job["status"] == "done", job                       # 评估不失败
+    ml = job["result"]["summary"]["macro_liquidity"]
+    assert ml["status"] == "unavailable" and "不阻断" in ml["reason"]
+    assert "signals" not in ml
+
+    with SessionLocal() as db:                                # PG 落库实查（DoD #2 降级样本）
+        run = db.execute(select(Run).where(Run.job_id == job_id)).scalar_one()
+    assert run.summary["macro_liquidity"] == dict(MACRO_DOWN)
+    cleanup["run_uids"].append(run.run_uid)
 
 
 def test_run_review_unmaterialized_raises_not_found(tmp_path, pg_ready) -> None:
