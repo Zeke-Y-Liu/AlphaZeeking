@@ -252,3 +252,19 @@ core 的 OpenAPI 冻结后，前端可生成类型与调用骨架（替换手写
 # 需 core 已启动
 pnpm -C web gen:api     # → web/src/api/generated/schema.d.ts
 ```
+
+## 7. MCP 内核工具（组件化 T-R9/T-R10 · α 侧）
+
+α 内核经 MCP 暴露的工具（宿主 agent 消费；写操作为写保护之上的薄层，操作留痕不可关闭）。
+组件化新增：
+
+| 工具 | 语义 | 关键行为 |
+|------|------|----------|
+| `engine.metrics.list` | 因子全景 + DatasetSpec 派生 | 只读；registry 15 项 + spec 派生 merge_policy/path |
+| `engine.metrics.add` | 登记新因子 | 幂等（同 id 不覆盖用户改动）；默认 draft/v0.1 |
+| `engine.metrics.update` | 字段级更新 | id 不可改；before 快照留痕进 registry.operations |
+| `engine.metrics.remove` | 下线因子 | orphan 标记不物理删（写保护语义 3） |
+| `data.missing` | 数据缺失检测 | 按 DatasetSpec.validation 声明驱动；**提示不阻断**（透明降级，见 RUNBOOK §13） |
+
+完整调用契约（入参/返回/错误码/幂等/留痕）见
+[T-R9-工具文档](../../任务拆分-组件化重构/T-R9-工具文档.md)。

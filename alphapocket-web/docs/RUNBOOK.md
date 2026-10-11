@@ -232,3 +232,32 @@ MCP factor.macro # 工具面：读同一 payload → compute_macro_liquidity（�
   并输出 `mode_warning` 告警（防误触覆盖）；建议生产路径全部显式传 mode。
 - **冲突拒绝**：`--mode bootstrap/refresh` 与显式 incremental_from 同传 → ValueError
   （窗口自定，防旁路覆盖）。模式与起点写入 `provenance.mode/mode_source` 可追溯。
+
+## 12. registry 写保护与 orphan 处置（T-R4/T-R7 · 三语义）
+
+- **三语义**：① 覆盖→merge（机器拉取不再整文件覆盖用户登记）；② 用户改动优先
+  （条目字段冲突保用户值；`MACHINE_FIELDS = {version, universe, type, horizon_days}`
+  为机器字段新胜——边界见 [writeguard.py](../../alphapocket/applib/writeguard.py)）；
+  ③ orphan 标记不物理删（消失条目加 `orphan: true` + `orphaned_at`，可审计可恢复）。
+- **守护面**（GUARDED_RELS，快照-恢复守护）：`factors/registry.json`、
+  `portfolio/cn4.json`、`portfolio/multi5.json`、`market/daily_bars.json`、
+  `market/daily_bars_raw.json`、`market/cross_check_tx.json`；财务/分红/日历/市值/宏观
+  为上游全量重拉（覆盖=修正），不入守护面。
+- **orphan 处置**：orphan 条目默认保留在文件内（不参与计算但可查询）；
+  人工确认废弃后可物理删除（删前建议 `ap` 外部留档）；恢复 = 下一轮拉取重现即自动去 orphan。
+- **合并策略单点**：merge 逻辑一律委托 [datasets](../../alphapocket/applib/datasets/__init__.py)
+  的 MERGE_POLICY_FN 注册表（overwrite / union_bars / registry_merge / portfolio_merge /
+  carry_old），restore_guard 落盘格式由 MERGE_POLICY_FORMAT 声明；新增策略只注册表，不得私造第二实现。
+
+## 13. data_missing 检测（T-R10 · 提示不阻断，与门禁失败语义的显式区别）
+
+- **入口**：MCP 工具 `data.missing`（stale_days 可调，缺省 7）→
+  [check_data_missing](../../alphapocket/applib/datasets/__init__.py) 单点检测。
+- **驱动源**：DatasetSpec.validation 声明（`required_keys` / `min_rows` / `as_of_field`）；
+  新增数据集在 registry.json 写声明即自动接入检测（零代码）。
+- **severity**：missing(4) > invalid(3) > incomplete(2) > stale(1) > ok(0)，
+  单数据集只返回最严重 status 与 reason。
+- **红线（透明降级）**：检测结果只产提示、**不抛异常、不阻断评估流程、不进门禁**——
+  web 黄条 / 引擎C unavailable 灰条同语义消费。与行情门禁 data_risk 的失败语义
+  （可阻断、可 FAIL）显式区别：数据缺失 → 提示可见 + 结果标注 unavailable/降级，流程继续。
+- **全量缺失也安全**：空仓/全缺场景返回结构化结果（summary 计数 + semantics 自描述），不失败。
