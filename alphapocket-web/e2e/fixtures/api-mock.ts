@@ -167,6 +167,36 @@ const GLOBALMIX_PORTFOLIO: PortfolioFixture = {
   positions: makePositions([CN4[0], MULTI5[0], HKUS[0], HKUS[1], HKUS[2]]),
 };
 
+/* ── 引擎C 宏观流动性（T-C7 e2e 夹具：T-C2 全量块 + T-C6 冻结五键两形态） ── */
+/** 正常态（multi5 剧本 A）：温度计五档呈现。 */
+const MACRO_BLOCK_OK = {
+  status: 'ok', state: 'loose', global: 1,
+  markets: { A: 1, HK: 0, US: 1 },
+  global_score: 0.458, as_of: AS_OF,
+  detail: { indicators: {} }, notes: { scorer_version: 'v1 (T-C2)', decision_free: true },
+};
+const MACRO_SUMMARY_OK = {
+  state: 'loose', global: 1,
+  markets: { A: 1, HK: 0, US: 1 },
+  global_score: 0.458, as_of: AS_OF,
+};
+/** 降级态（cn4 剧本 B）：灰条「宏观数据缺失，评估继续」——透明降级语义可复现。 */
+const MACRO_BLOCK_NA = {
+  status: 'unavailable', state: 'unavailable', global: 'unavailable',
+  markets: { A: 'unavailable', HK: 'unavailable', US: 'unavailable' },
+  global_score: null, as_of: null,
+  detail: null, notes: null,
+};
+const MACRO_SUMMARY_NA = {
+  state: 'unavailable', global: 'unavailable',
+  markets: { A: 'unavailable', HK: 'unavailable', US: 'unavailable' },
+  global_score: null, as_of: null,
+};
+/** cn4（剧本 B seed 回归）演示降级分支；其余组合正常态。 */
+const macroBlock = (pf: PortfolioFixture) => (pf.pid === 'cn4' ? MACRO_BLOCK_NA : MACRO_BLOCK_OK);
+const macroSummary = (pf: PortfolioFixture) =>
+  pf.pid === 'cn4' ? MACRO_SUMMARY_NA : MACRO_SUMMARY_OK;
+
 /* ── 产物构建（α 锚点） ─────────────────────────────────────── */
 
 function buildReview(pf: PortfolioFixture) {
@@ -237,6 +267,7 @@ function buildReview(pf: PortfolioFixture) {
       cooldown: i === 2,
     })),
     factor_health: { active: ['mom_12_1'], weakening: [] },
+    macro_liquidity: macroBlock(pf),
     data_quality: { last_bar: AS_OF, calendar_next: NEXT_TRADE_DATE },
   };
 }
@@ -805,6 +836,7 @@ async function handle(route: Route, store: MockStore): Promise<void> {
           position_count: review.positions.length,
           signal_count: review.signals.length,
           signal_states: {},
+          macro_liquidity: macroSummary(pf),   // T-C6 冻结五键（cn4=降级形态 / 其余=正常态）
         });
         store.artifacts[`${uid}/review.json`] = review;
         store.artifacts[`${uid}/report.html`] = `<html><body><h1>${pf.name} 报告</h1></body></html>`;

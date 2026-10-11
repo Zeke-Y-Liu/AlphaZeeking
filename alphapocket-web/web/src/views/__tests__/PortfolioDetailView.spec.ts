@@ -39,7 +39,7 @@ function makePortfolio(over: Partial<Portfolio> = {}): Portfolio {
   };
 }
 
-function makeRun(): Run {
+function makeRun(over: Partial<Run> = {}): Run {
   return {
     id: 9,
     run_uid: 'run-x',
@@ -50,8 +50,21 @@ function makeRun(): Run {
     summary: {},
     artifact_keys: ['review.json'],
     created_at: '2024-06-28T00:00:00Z',
+    ...over,
   };
 }
+
+/** 引擎C 冻结五键夹具（T-C6 契约示例形态 / 降级归一形态）。 */
+const MACRO_OK = {
+  state: 'loose', global: 1,
+  markets: { A: 1, HK: 0, US: 1 },
+  global_score: 0.458, as_of: '2024-06-28',
+};
+const MACRO_NA = {
+  state: 'unavailable', global: 'unavailable',
+  markets: { A: 'unavailable', HK: 'unavailable', US: 'unavailable' },
+  global_score: null, as_of: null,
+};
 
 function makeReview(): ReviewPayload {
   return {
@@ -202,5 +215,71 @@ describe('PortfolioDetailView', () => {
 
     expect(wrapper.find('[data-test="empty-state"]').exists()).toBe(true);
     expect(wrapper.find('[data-test="empty-evaluate"]').text()).toContain('先运行评估');
+  });
+
+  it('引擎C 卡片 ok 态：全局档位 / score / 三市场档位中文 / as_of（消费 T-C6 冻结五键）', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    mListRuns.mockResolvedValue([makeRun({ summary: { macro_liquidity: MACRO_OK } })]);
+    mArtifact.mockResolvedValue(makeReview());
+
+    const { wrapper } = await mountDetail();
+
+    expect(wrapper.find('[data-test="macro-card"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="macro-global"]').text()).toBe('偏松');          // global=1 → 偏松
+    expect(wrapper.find('[data-test="macro-score"]').text()).toBe('0.458');
+    // 三市场档位中文映射：A股 偏松 / 港股 中性 / 美股 偏松
+    expect(wrapper.find('[data-test="macro-market-A"]').text()).toBe('A股 偏松');
+    expect(wrapper.find('[data-test="macro-market-HK"]').text()).toBe('港股 中性');
+    expect(wrapper.find('[data-test="macro-market-US"]').text()).toBe('美股 偏松');
+    expect(wrapper.find('[data-test="macro-asof"]').text()).toContain('2024-06-28');
+    // 注记：只呈现不引导
+    expect(wrapper.text()).toContain('不参与决策、不参与权重');
+  });
+
+  it('引擎C 卡片 unavailable 态：灰条降级可见且不阻断页面（透明降级语义）', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    mListRuns.mockResolvedValue([makeRun({ summary: { macro_liquidity: MACRO_NA } })]);
+    mArtifact.mockResolvedValue(makeReview());
+
+    const { wrapper } = await mountDetail();
+
+    expect(wrapper.find('[data-test="macro-unavailable"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="macro-unavailable"]').text()).toContain('宏观数据缺失，评估继续');
+    // 评估内容照常渲染（不阻断页面）：体检卡与引擎A 仍在
+    expect(wrapper.find('[data-test="metric-day"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="macro-card"]').exists()).toBe(false);
+  });
+
+  it('引擎C 卡片 error 态：结构异常兜底提示（真实验链路不可达时透明降级）', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    // 结构异常：state 非法且 markets 缺失（mock/契约外的脏数据）
+    mListRuns.mockResolvedValue([
+      makeRun({ summary: { macro_liquidity: { state: 42 } as unknown as Run['summary'] } }),
+    ]);
+    mArtifact.mockResolvedValue(makeReview());
+
+    const { wrapper } = await mountDetail();
+
+    expect(wrapper.find('[data-test="macro-error"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="macro-error"]').text()).toContain('不阻断评估');
+  });
+
+  it('引擎C 卡片文案 grep：无决策性动词（买入/卖出/调仓）', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    mListRuns.mockResolvedValue([makeRun({ summary: { macro_liquidity: MACRO_OK } })]);
+    mArtifact.mockResolvedValue(makeReview());
+
+    const { wrapper } = await mountDetail();
+
+    const cardText = wrapper.find('[data-test="macro-card"]').text();
+    for (const word of ['买入', '卖出', '调仓']) {
+      expect(cardText).not.toContain(word);
+    }
+    // 旧 run 无 macro_liquidity 字段 → unavailable 降级（向后兼容）
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    mListRuns.mockResolvedValue([makeRun()]);
+    mArtifact.mockResolvedValue(makeReview());
+    const { wrapper: w2 } = await mountDetail();
+    expect(w2.find('[data-test="macro-unavailable"]').exists()).toBe(true);
   });
 });

@@ -129,6 +129,58 @@ function hasCooldown(secid: string): boolean {
   return (review.value?.signals ?? []).some((s) => s.secid === secid && Boolean(s.cooldown));
 }
 
+/* ── 引擎C 宏观流动性卡片（T-C7：消费 T-C6 冻结五键，只呈现不引导） ── */
+type MacroState = 'ok' | 'unavailable' | 'error';
+
+const macroSummary = computed<Record<string, unknown> | null>(() => {
+  const m = run.value?.summary?.macro_liquidity as unknown;
+  return m && typeof m === 'object' ? (m as Record<string, unknown>) : null;
+});
+
+/** 三态判定：缺字段/旧 run → unavailable（向后兼容）；结构异常 → error 兜底。 */
+const macroState = computed<MacroState>(() => {
+  const m = macroSummary.value;
+  if (m == null || m.state === 'unavailable') return 'unavailable';
+  const mk = m.markets as unknown;
+  if (typeof m.state !== 'string' || mk == null || typeof mk !== 'object') return 'error';
+  return 'ok';
+});
+
+/** 温度计五档中文档位（对齐 applib factors.MACRO_LEVEL_ZH / report.py §2.5）。 */
+const MACRO_LEVEL_ZH: Record<string, string> = {
+  '2': '宽松', '1': '偏松', '0': '中性', '-1': '偏紧', '-2': '紧缩',
+};
+
+const MACRO_TONE: Record<string, BadgeTone> = {
+  '2': 'success', '1': 'info', '0': 'default', '-1': 'warn', '-2': 'danger',
+};
+
+function macroLevelText(v: number | string | null | undefined): string {
+  if (typeof v !== 'number') return DASH;
+  return MACRO_LEVEL_ZH[String(v)] ?? String(v);
+}
+
+const MACRO_MARKET_LABEL: Record<string, string> = { A: 'A股', HK: '港股', US: '美股' };
+
+const macroMarkets = computed(() =>
+  Object.entries(MACRO_MARKET_LABEL).map(([key, label]) => {
+    const mk = (macroSummary.value?.markets ?? {}) as Record<string, unknown>;
+    const v = mk[key] as number | string | null | undefined;
+    return {
+      key,
+      label,
+      text: typeof v === 'number' ? `${label} ${macroLevelText(v)}` : label,
+      tone: (typeof v === 'number' ? MACRO_TONE[String(v)] ?? 'default' : 'default') as BadgeTone,
+      na: typeof v !== 'number',
+    };
+  }),
+);
+
+const macroScoreText = computed(() => {
+  const s = macroSummary.value?.global_score;
+  return typeof s === 'number' && Number.isFinite(s) ? s.toFixed(3) : DASH;
+});
+
 /* ── 下一交易日指引 ────────────────────────────── */
 const actions = computed<string[]>(() => {
   const set = new Set<string>();
@@ -386,6 +438,36 @@ onMounted(load);
               <p v-else class="ap-muted">暂无持仓信号。</p>
             </ApCard>
 
+            <ApCard title="引擎C · 宏观流动性">
+              <template #extra>
+                <span v-if="macroState === 'ok'" class="ap-muted" data-test="macro-asof">
+                  as_of {{ fmtDate(macroSummary?.as_of as string) }}
+                </span>
+              </template>
+              <div v-if="macroState === 'ok'" class="ap-row mc-head" data-test="macro-card">
+                <span class="ap-kicker">全局</span>
+                <ApBadge :tone="(MACRO_TONE[String(macroSummary?.global)] ?? 'default')" data-test="macro-global">
+                  {{ macroLevelText(macroSummary?.global as number | string | null) }}
+                </ApBadge>
+                <span class="ap-muted">score <b class="ap-mono" data-test="macro-score">{{ macroScoreText }}</b></span>
+                <ApBadge
+                  v-for="m in macroMarkets"
+                  :key="m.key"
+                  :tone="m.tone"
+                  :data-test="`macro-market-${m.key}`"
+                >
+                  {{ m.text }}
+                </ApBadge>
+              </div>
+              <div v-else-if="macroState === 'unavailable'" class="ap-muted" data-test="macro-unavailable">
+                宏观数据缺失，评估继续。
+              </div>
+              <div v-else class="ap-muted" data-test="macro-error">
+                宏观流动性数据异常（不阻断评估）。
+              </div>
+              <p class="ap-muted mc-note">市场条件参考 · 不参与决策、不参与权重。</p>
+            </ApCard>
+
             <ApCard title="下一交易日指引">
               <div class="ap-row nt-head">
                 <span class="ap-kicker">下一交易日</span>
@@ -541,6 +623,16 @@ onMounted(load);
 }
 .fa-card__row:last-child {
   border-bottom: 0;
+}
+/* 引擎C 宏观流动性卡片（T-C7） */
+.mc-head {
+  gap: var(--ap-sp-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.mc-note {
+  margin: var(--ap-sp-2) 0 0;
+  font-size: var(--ap-fs-sm);
 }
 @media (max-width: 767px) {
   .pd-metrics {

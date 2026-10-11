@@ -107,6 +107,8 @@ export interface RunSummary {
     position_count?: number;
     signal_count?: number;
     signal_states?: unknown;
+    /** 引擎C 冻结五键（T-C6 契约）；缺失/旧 run → 前端按 unavailable 降级呈现。 */
+    macro_liquidity?: MacroLiquiditySummary | null;
   } | null;
 }
 
@@ -408,6 +410,33 @@ export interface AuthTokens {
   user: AuthUser;
 }
 
+/* ── 引擎C 宏观流动性（T-C6 冻结契约 + T-C7 前端） ───────────── */
+
+/** 引擎C 冻结五键（core ``runs.summary.macro_liquidity``，services.review._macro_summary
+ * 产出；API.md §4.4 注释同步：字段级冻结，向后兼容只增不改）。 */
+export interface MacroLiquiditySummary {
+  /** 全局档位：-2…+2；unavailable 形态为 'unavailable'。 */
+  state: string;
+  /** 全局档位（数值）；降级为 'unavailable'。 */
+  global: number | string | null;
+  /** 三市场档位；降级态三市场均为 'unavailable'。 */
+  markets: { A: number | string | null; HK: number | string | null; US: number | string | null };
+  /** 全局打分（维度等权聚合）；降级为 null。 */
+  global_score: number | null;
+  /** 档位基准日（与评估同日）；降级为 null。 */
+  as_of: string | null;
+}
+
+/** 引擎C regime 块（applib review.json 全量产物，T-C2/T-C4：冻结五键 +
+ *  status/detail/notes 扩展键；summary 层由 core 提炼为 MacroLiquiditySummary）。 */
+export interface MacroLiquidityBlock extends MacroLiquiditySummary {
+  status?: string | null;
+  reason?: string | null;
+  detail?: Record<string, unknown> | null;
+  notes?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
 /* ── 评估产物契约（applib review.json，冻结；方案书 §5.2 / T6.4） ── */
 
 /** 体检指标（review.json → portfolio_metrics）。 */
@@ -493,6 +522,8 @@ export interface ReviewPayload {
   positions?: ReviewPosition[];
   signals?: ReviewSignal[];
   factor_health?: { active?: string[]; weakening?: string[] } | null;
+  /** 引擎C regime 块（T-C2/T-C4 全量产物；前端卡片消费 runs.summary 五键，此为报告层扩展）。 */
+  macro_liquidity?: MacroLiquidityBlock | null;
   data_quality?: {
     last_bar?: string | null;
     calendar_next?: string | null;

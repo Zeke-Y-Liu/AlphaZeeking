@@ -52,6 +52,14 @@ test.describe('剧本 A · multi5 全流', () => {
     await expect(page.getByTestId('holiday-days')).toHaveText('3');
     await expect(page.getByTestId('actions').locator('li')).toHaveCount(2);
 
+    /* 引擎C 卡片（T-C7）：正常态温度计——全局档位/score/三市场档位/注记 */
+    await expect(page.getByTestId('macro-card')).toBeVisible();
+    await expect(page.getByTestId('macro-global')).toHaveText('偏松');
+    await expect(page.getByTestId('macro-score')).toHaveText('0.458');
+    await expect(page.getByTestId('macro-market-HK')).toHaveText('港股 中性');
+    await expect(page.getByTestId('macro-asof')).toContainText('2026-09-30');
+    await expect(page.getByTestId('macro-card').locator('..')).toContainText('不参与决策');
+
     /* ③ 回测：A2 锚点（累计 +105.6% / 1393 日 / 69 次再平衡） */
     await page.goto('/portfolios/multi5/backtest');
     await expect(page.getByTestId('bt-empty')).toBeVisible();
