@@ -232,3 +232,202 @@ def test_discipline_markers(tmp_path, monkeypatch):
     assert "signals" not in text and '"signal"' not in text   # 不决策 grep 红线（数据层无信号字段）
     assert all(payload["indicators"][sid]["institution"]
                for sid in ("cn_m2_yoy", "us_fed_rate", "hk_hibor_1m"))  # provenance 机构名
+
+
+# ══ 引擎C T-C2 计算层（纯函数，全密封）═════════════════════════════════════
+
+import datetime as _dt
+
+from applib.factors import (MACRO_BAND_HI, MACRO_MIN_DAILY, MACRO_MIN_MONTHLY,
+                            compute_macro_liquidity)
+
+
+def _monthly(values, y0=2024, m0=1) -> list[dict]:
+    dts, y, m = [], y0, m0
+    for _ in values:
+        dts.append(f"{y:04d}-{m:02d}-01")
+        m += 1
+        if m > 12:
+            y, m = y + 1, 1
+    return [{"dt": d, "value": v} for d, v in zip(dts, values)]
+
+
+def _daily(values, base=_dt.date(2025, 6, 15) - _dt.timedelta(days=59)) -> list[dict]:
+    """默认尾部对齐 AS_OF（2025-06-15）→ 日度最新点不 stale（path=ok）。"""
+    return [{"dt": (base + _dt.timedelta(days=i)).isoformat(), "value": v}
+            for i, v in enumerate(values)]
+
+
+def _ind(sid, market, dim, series, *, value=None) -> dict:
+    return {"market": market, "dim": dim, "name": sid, "unit": "%", "institution": "测试机构",
+            "interface": "test", "status": "ok", "rows": len(series),
+            "first_dt": series[0]["dt"] if series else None,
+            "last_dt": series[-1]["dt"] if series else None,
+            "series": value if value is not None else series}
+
+
+AS_OF = "2025-06-15"          # 组合 K 线最后交易日（调用方传入，PIT 不取未来）
+
+
+# ── scorer 表四路径：方向 / 阈值触发 / 阈值跳平 / 回退 ─────────────────────
+
+def test_scorer_four_paths():
+    from applib.factors import _macro_scorer
+    meta = {"id": "x", "name": "x", "market": "A", "dim": "D3"}
+
+    # 触发（极端分位）：12 个月度点，当前值最高 → p≈0.96 → |score|>=HI → 极端档
+    up = _monthly(list(range(1, 13)))
+    loose = _macro_scorer({**meta, "id": "cn_m2_yoy"}, up, "2025-01-10")     # dir=+1
+    assert loose["path"] == "ok" and loose["level"] == 2 and loose["score"] >= MACRO_BAND_HI
+    tight = _macro_scorer({**meta, "id": "shibor_1w"}, up, "2025-01-10")     # dir=-1 同分位反转
+    assert tight["score"] <= -MACRO_BAND_HI and tight["level"] == -2
+    assert loose["score"] == -tight["score"]                                 # 方向路径：镜像
+
+    # 跳平（中位）：当前值在窗口中位（4.5：<4.5 有 4 个，==有 1 个 → p=4.5/9=0.5）→ 0 档
+    flat = _macro_scorer({**meta, "id": "cn_m2_yoy"},
+                         _monthly([1, 2, 3, 4, 5, 6, 7, 8, 4.5]), "2024-10-10")
+    assert flat["pctile"] == 0.5 and flat["level"] == 0 and flat["score"] == 0.0
+
+    # 回退（样本不足）：月度 5 点 < MACRO_MIN_MONTHLY → 0 档 insufficient
+    few = _macro_scorer({**meta, "id": "cn_m2_yoy"}, _monthly([1, 2, 3, 4, 5]), "2024-06-10")
+    assert few["path"] == "insufficient" and few["level"] == 0 and few["score"] is None
+
+    # 无数据：HK 缺资产 → no_data
+    nd = _macro_scorer({**meta, "id": "hk_hibor_1m"}, [], AS_OF)
+    assert nd["path"] == "no_data" and nd["level"] is None
+
+
+def test_scorer_double_period_ranking():
+    """新+旧双期排位：先升后降序列，cur=65/prev=75 的窗口分位手工可复算。"""
+    from applib.factors import _macro_scorer
+    meta = {"id": "cn_m2_yoy", "name": "M2同比", "market": "A", "dim": "D2"}
+    vals = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120,
+            115, 105, 95, 85, 75, 65, 55, 45, 35, 25, 15, 5]
+    # as_of=2025-06-10 → 月度可用 2024-01..2025-05 = 前 17 点，cur=vals[16]=75，prev=85
+    sc = _macro_scorer(meta, _monthly(vals), "2025-06-10")
+    # cur 窗口=[60..75]（12 点）→ #(<75)=2 (60,70) → p=2.5/12
+    assert sc["pctile"] == round(2.5 / 12, 4)
+    # prev 窗口=[50..85]（12 点）→ #(<85)=4 (50,60,70,80) → p=4.5/12
+    assert sc["prev_pctile"] == round(4.5 / 12, 4)
+    assert sc["prev_pctile"] > sc["pctile"]       # 下降段：前期排位高于当前
+
+
+def test_monthly_lookahead_guard():
+    """月度前值站位防前视：as_of 当月的站位点不可用 → 用上月值；日度不取 as_of 之后。"""
+    from applib.factors import _macro_scorer
+    meta = {"id": "cn_m2_yoy", "name": "M2同比", "market": "A", "dim": "D2"}
+    series = _monthly([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], y0=2024)   # 2024-01..2024-12
+    sc = _macro_scorer(meta, series, "2025-02-15")
+    assert sc["cur_dt"] == "2024-12-01"           # 站位到最近可用月（2025-01 点位不存在于序列）
+    series_with_cur = series + [{"dt": "2025-02-01", "value": 99.0}]      # 当月点已落库（假想）
+    sc2 = _macro_scorer(meta, series_with_cur, "2025-02-15")
+    assert sc2["cur_dt"] == "2024-12-01" and sc2["cur_value"] == 12.0     # 当月点被 PIT 过滤
+
+    dmeta = {"id": "shibor_1w", "name": "Shibor", "market": "A", "dim": "D3"}
+    ds = _daily([1.0 + 0.01 * i for i in range(60)], base=_dt.date(2025, 1, 1))  # 至 2025-03-01
+    dsc = _macro_scorer(dmeta, ds, "2025-02-15")
+    assert dsc["cur_dt"] == "2025-02-15"          # 日度严格 dt<=as_of，不取未来
+
+
+def test_stale_marks_carried_prev():
+    """前值站位滞后标注：月度最新可用点早于上一月 → carried_prev + stale。"""
+    from applib.factors import _macro_scorer
+    meta = {"id": "cn_m2_yoy", "name": "M2同比", "market": "A", "dim": "D2"}
+    series = _monthly([1, 2, 3, 4, 5, 6, 7, 8, 9], y0=2024)               # 至 2024-09-01
+    sc = _macro_scorer(meta, series, "2025-01-10")
+    assert sc["path"] == "carried_prev" and sc["stale"] is True
+    assert sc["cur_dt"] == "2024-09-01"           # 站位到四个月前旧值
+
+
+# ── 缺值归一化（缺维度不折损）与冻结契约 ──────────────────────────────────
+
+def _full_indicators(hk_mode="none") -> dict:
+    """构造 A(4 指标 2 维)/US(2 指标 2 维)/HK 场景的 indicators 字典（形状对齐 T-C1 产物）。"""
+    a = {
+        "cn_m2_yoy": _ind("cn_m2_yoy", "A", "D2", _monthly(list(range(1, 25)))),
+        "cn_srzg": _ind("cn_srzg", "A", "D2", _monthly([100 + i for i in range(24)])),
+        "shibor_1w": _ind("shibor_1w", "A", "D3", _daily([1.0 + 0.01 * i for i in range(120)])),
+        "lpr_1y": _ind("lpr_1y", "A", "D3", _daily([3.0 + 0.01 * i for i in range(120)])),
+    }
+    us = {
+        "us_fed_rate": _ind("us_fed_rate", "US", "D1", _daily([5.0 - 0.01 * i for i in range(120)])),
+        "us_10y_2y": _ind("us_10y_2y", "US", "D3", _daily([0.5 + 0.01 * i for i in range(120)])),
+    }
+    if hk_mode == "partial":     # HK 仅 D3 一维可用（D4 缺）→ 缺维度不折损
+        hk = {"hk_hibor_1m": _ind("hk_hibor_1m", "HK", "D3", _daily([4.0 + 0.01 * i for i in range(120)])),
+              "hk_hibor_3m": _ind("hk_hibor_3m", "HK", "D3", []),
+              "hk_usdcnh": _ind("hk_usdcnh", "HK", "D4", [])}
+    elif hk_mode == "full":
+        hk = {"hk_hibor_1m": _ind("hk_hibor_1m", "HK", "D3", _daily([4.0 + 0.01 * i for i in range(120)])),
+              "hk_hibor_3m": _ind("hk_hibor_3m", "HK", "D3", _daily([4.5 + 0.01 * i for i in range(120)])),
+              "hk_usdcnh": _ind("hk_usdcnh", "HK", "D4", _daily([7.8 - 0.001 * i for i in range(120)]))}
+    else:
+        hk = {"hk_hibor_1m": _ind("hk_hibor_1m", "HK", "D3", []),
+              "hk_hibor_3m": _ind("hk_hibor_3m", "HK", "D3", []),
+              "hk_usdcnh": _ind("hk_usdcnh", "HK", "D4", [])}
+    return {**a, **us, **hk}
+
+
+def test_missing_dimension_normalization():
+    """HK 仅 D3 可用 → HK 档位由该维决定（缺维度不折损已知维度）并标注路径。"""
+    out = compute_macro_liquidity(_full_indicators(hk_mode="partial"), AS_OF)
+    assert out["markets"]["HK"] in (-2, -1, 0, 1, 2)          # 非 unavailable（部分维度即可判）
+    d3 = [v for v in out["detail"]["indicators"].values()
+          if v["market"] == "HK" and v["dim"] == "D3"]
+    d4 = [v for v in out["detail"]["indicators"].values()
+          if v["market"] == "HK" and v["dim"] == "D4"]
+    # D3 维部分可用（1m ok、3m no_data）→ 维内均值只取可用项；D4 全缺
+    assert any(v["path"] in ("ok", "carried_prev") for v in d3)
+    assert all(v["path"] in ("ok", "carried_prev") for v in d3 if v["score"] is not None)
+    assert all(v["path"] == "no_data" for v in d4)
+    # HK 档位 == D3 可用项均值档（单可用项等价于直接映射）
+    assert out["markets"]["HK"] == next(v["level"] for v in d3 if v["score"] is not None)
+
+
+def test_frozen_contract_and_idempotent():
+    out1 = compute_macro_liquidity(_full_indicators(hk_mode="full"), AS_OF)
+    out2 = compute_macro_liquidity(_full_indicators(hk_mode="full"), AS_OF)
+    assert out1 == out2                                        # 幂等重算一致（纯函数）
+
+    for key in ("state", "global", "markets", "global_score", "as_of"):
+        assert key in out1                                     # 冻结契约五键
+    assert out1["as_of"] == AS_OF
+    assert set(out1["markets"]) == {"A", "HK", "US"}
+    assert out1["global"] in (-2, -1, 0, 1, 2)
+    assert -1.0 <= out1["global_score"] <= 1.0
+    assert out1["state"] in ("neutral", "偏松", "偏紧", "unavailable")
+    for lvl in out1["markets"].values():                       # 输出位范围约束
+        assert lvl in (-2, -1, 0, 1, 2, "unavailable")
+    assert "signals" not in json.dumps(out1, ensure_ascii=False)   # 不决策 grep 红线
+    assert out1["detail"]["bands"]["window_monthly"] == 12     # scorer 表参数可追溯
+
+
+def test_state_machine_tokens():
+    # 偏松：A/US 全部构造为「值越走越松」→ score>=HI
+    out = compute_macro_liquidity(_full_indicators(hk_mode="full"), AS_OF)
+    if out["global_score"] is not None and out["global_score"] >= MACRO_BAND_HI:
+        assert out["state"] == "偏松"
+    # 全缺数据 → unavailable
+    empty = {sid: _ind(sid, m, d, []) for sid, m, d in
+             [("cn_m2_yoy", "A", "D2"), ("us_fed_rate", "US", "D1"), ("hk_hibor_1m", "HK", "D3")]}
+    out2 = compute_macro_liquidity(empty, AS_OF)
+    assert out2["state"] == "unavailable" and out2["global"] == "unavailable"
+    assert out2["global_score"] is None and out2["markets"] == {"A": "unavailable",
+                                                                "HK": "unavailable",
+                                                                "US": "unavailable"}
+
+
+def test_all_insufficient_marks_markets_unavailable():
+    """全部样本不足（回退路径）→ 指标 0 档 insufficient，市场 unavailable（不虚报中性）。"""
+    few = {sid: _ind(sid, m, d, _monthly([1, 2, 3]) if m != "US" else _daily([1.0, 2.0]))
+           for sid, m, d in [("cn_m2_yoy", "A", "D2"), ("us_fed_rate", "US", "D1"),
+                             ("hk_hibor_1m", "HK", "D3")]}
+    out = compute_macro_liquidity(few, AS_OF)
+    assert all(v["path"] == "insufficient" and v["level"] == 0
+               for v in out["detail"]["indicators"].values())
+    assert set(out["markets"].values()) == {"unavailable"}
+    assert out["state"] == "unavailable"
+
+
+def test_min_windows_constants():
+    assert MACRO_MIN_MONTHLY == 6 and MACRO_MIN_DAILY == 20 and MACRO_BAND_HI == 0.6

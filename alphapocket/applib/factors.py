@@ -393,3 +393,154 @@ def iter_signal_events(secid: str, bars: list[dict], signal_id: str = "all", hor
                 "exit_close": exit_close,
             })
     return evs
+
+
+# ══ 引擎C · 宏观流动性计算层（T-C2）══════════════════════════════════════════
+# 纯函数：无 IO、无时钟（幂等重算一致）；输入 = T-C1 macro_liquidity payload 的
+# indicators 字段 + as_of（组合 K 线最后交易日，由调用方传入——不取未来）。
+# 不决策：输出为市场条件变量（regime 温度计），不产生买卖信号、不参与权重；
+# 消费方（T-C3 工具层 / T-C5 报告层）仅做展示与参考。
+# 输出位范围约束（engines/macro.py 包装器语义，组件化 T-R2/R3 收编）：档位恒在
+# -2..+2 ∪ {"unavailable"}，评分 clamp 于 [-1,1]。
+# 三层聚合：① scorer 表（逐指标：分位点×方向 → 阈值触发 / 阈值跳平 / 前值站位 /
+# 样本不足回退）② 维度等权（D1–D4 维内均值→跨维均值，缺维度不折损已知维度）
+# ③ 检验状态机（neutral / 偏松 / 偏紧 / unavailable）。
+
+MACRO_DIMS = {"D1": "央行注入", "D2": "货币总量", "D3": "价格信号", "D4": "跨境流动"}
+MACRO_BAND_MID = 0.2        # 跳平带：|score| < 0.2 → 0 档
+MACRO_BAND_HI = 0.6         # 触发带：|score| >= 0.6 → 极端档（±2）；状态机 偏松/偏紧 分界
+MACRO_WINDOW_MONTHLY = 12   # 月度指标 12 月滚动窗
+MACRO_WINDOW_DAILY = 60     # 日度/事件指标滚动窗
+MACRO_MIN_MONTHLY = 6       # 有效样本下限，不足 → 回退（0 档 insufficient）
+MACRO_MIN_DAILY = 20
+MACRO_STATES = {"loose": "偏松", "tight": "偏紧", "neutral": "neutral", "na": "unavailable"}
+
+# 方向映射（scorer 表输入）：+1 = 值越高越宽松；-1 = 值越高越紧
+MACRO_DIRECTIONS = {
+    "cn_m2_yoy": +1, "cn_srzg": +1,
+    "shibor_1w": -1, "lpr_1y": -1, "fr007": -1,
+    "cn_us_spread_10y": +1,
+    "us_fed_rate": -1, "us_10y_2y": +1,
+    "us_cpi_yoy": -1, "us_nonfarm": -1, "us_gdp": -1,
+    "hk_hibor_1m": -1, "hk_hibor_3m": -1,
+    "hk_usdcnh": -1,   # 港汇方向映射随 H-0006 实测数据复核（本会话 HK 降级不影响主线）
+}
+
+
+def _macro_bands(score: float) -> int:
+    """档位映射（阈值触发 + 跳平带）：|s|>=HI → ±2；|s|>=MID → ±1；|s|<MID → 0（跳平）。"""
+    if score >= MACRO_BAND_HI:
+        return 2
+    if score >= MACRO_BAND_MID:
+        return 1
+    if score > -MACRO_BAND_MID:
+        return 0
+    if score > -MACRO_BAND_HI:
+        return -1
+    return -2
+
+
+def _macro_is_monthly(series: list[dict]) -> bool:
+    """月度指标识别：全部 dt 为月初站位（T-C1 约定）→ 月度。"""
+    return bool(series) and all(str(r["dt"]).endswith("-01") for r in series)
+
+
+def _macro_usable(series: list[dict], as_of: str, monthly: bool) -> list[dict]:
+    """PIT 可用集（不取未来）：日度/事件 dt<=as_of；月度 dt < as_of 当月（前值站位防前视）。"""
+    ms = as_of[:8] + "01"
+    return [r for r in series if r["dt"] < ms] if monthly else [r for r in series if r["dt"] <= as_of]
+
+
+def _macro_scorer(meta: dict, series: list[dict], as_of: str) -> dict:
+    """单指标 scorer 表：分位点×方向 → score ∈ [-1,1] → 档位 ∈ {-2..2}；新+旧双期排位。
+
+    四路径：触发（越阈值给极端档）/ 跳平（|s|<MID → 0）/ 前值站位（月度当月点不可用，
+    上月值站位；stale 标注站位滞后）/ 回退（样本不足 → 0 档 insufficient）。
+    """
+    sid = meta.get("id", "?")
+    dirn = MACRO_DIRECTIONS.get(sid, 0)
+    monthly = _macro_is_monthly(series)
+    win_max = MACRO_WINDOW_MONTHLY if monthly else MACRO_WINDOW_DAILY
+    win_min = MACRO_MIN_MONTHLY if monthly else MACRO_MIN_DAILY
+    base = {"name": meta.get("name"), "market": meta.get("market"), "dim": meta.get("dim"),
+            "dir": dirn, "monthly": monthly, "score": None, "level": None,
+            "pctile": None, "prev_pctile": None, "cur_dt": None, "cur_value": None,
+            "stale": False, "n_window": 0}
+    if not series:
+        return {**base, "path": "no_data", "level": None}
+    usable = _macro_usable(series, as_of, monthly)
+    values = [r["value"] for r in usable]
+    if len(values) < win_min:
+        # 回退：样本不足 → 0 档 insufficient（展示 0 档；聚合时排除，不折损其余指标）
+        return {**base, "path": "insufficient", "level": 0, "n_window": len(values)}
+    cur = usable[-1]
+    # 站位滞后标注：月度最新可用点早于 as_of 上一月 → 前值站位到更旧月份；日度滞后 > 10 自然日
+    if monthly:
+        prev_month = _prev_month_start(as_of)
+        stale = cur["dt"] < prev_month
+    else:
+        y, m, d = map(int, as_of.split("-"))
+        stale = cur["dt"] < (dt.date(y, m, d) - dt.timedelta(days=10)).isoformat()
+    p = _pctile(values[-win_max:], cur["value"])
+    score = round(max(-1.0, min(1.0, (2 * p - 1) * dirn)), 4)
+    prev_p = None
+    if len(values) >= 2:
+        prev_p = _pctile(values[-(win_max + 1):-1], values[-2])
+    return {**base, "path": "carried_prev" if stale else "ok", "stale": stale,
+            "pctile": round(p, 4), "prev_pctile": None if prev_p is None else round(prev_p, 4),
+            "cur_dt": cur["dt"], "cur_value": cur["value"],
+            "score": score, "level": _macro_bands(score), "n_window": min(len(values), win_max)}
+
+
+def _prev_month_start(as_of: str) -> str:
+    y, m = int(as_of[:4]), int(as_of[5:7])
+    return f"{y - 1}-12-01" if m == 1 else f"{y}-{m - 1:02d}-01"
+
+
+def compute_macro_liquidity(indicators: dict, as_of: str) -> dict:
+    """引擎C T-C2：12+ 指标时序 → 三市场温度计（冻结契约，幂等重算一致）。
+
+    输入：indicators = macro_liquidity.json 的 indicators 字段（T-C1 产物，含 series）；
+    as_of = 组合 K 线最后交易日（调用方传入，PIT 不取未来）。
+    输出（冻结）：``{state, global, markets: {A, HK, US}, global_score, as_of}``；
+    ``detail`` 为非冻结扩展（scorer 表 + 聚合中间量），供 T-C3/T-C5 消费。
+    纪律：纯函数不决策；输出仅为市场条件变量，不产生买卖信号、不参与权重。
+    """
+    detail: dict[str, dict] = {}
+    dim_scores: dict[str, dict[str, list[float]]] = {m: {} for m in ("A", "HK", "US")}
+    for sid, meta in indicators.items():
+        sc = _macro_scorer({**meta, "id": sid}, meta.get("series") or [], as_of)
+        detail[sid] = sc
+        if sc["path"] in ("ok", "carried_prev") and sc["market"] in dim_scores:
+            dim_scores[sc["market"]].setdefault(sc["dim"], []).append(sc["score"])
+
+    # ② 维度等权：维内均值 → 跨维均值（缺维度/缺市场不折损已知维度均值）
+    market_scores: dict[str, float | None] = {}
+    for mkt, dims in dim_scores.items():
+        if dims:
+            market_scores[mkt] = round(sum(sum(v) / len(v) for v in dims.values()) / len(dims), 4)
+        else:
+            market_scores[mkt] = None
+
+    markets: dict[str, int | str] = {}
+    for mkt, s in market_scores.items():
+        markets[mkt] = "unavailable" if s is None else _macro_bands(s)
+
+    valid = {m: s for m, s in market_scores.items() if s is not None}
+    if valid:
+        global_score = round(sum(valid.values()) / len(valid), 3)
+        global_lvl = _macro_bands(global_score)
+        state = (MACRO_STATES["loose"] if global_score >= MACRO_BAND_HI
+                 else MACRO_STATES["tight"] if global_score <= -MACRO_BAND_HI
+                 else MACRO_STATES["neutral"])
+    else:
+        global_score, global_lvl, state = None, "unavailable", MACRO_STATES["na"]
+
+    return {"state": state, "global": global_lvl, "markets": markets,
+            "global_score": global_score, "as_of": as_of,
+            "detail": {"indicators": detail, "market_scores": market_scores,
+                       "dims": MACRO_DIMS,
+                       "bands": {"mid": MACRO_BAND_MID, "hi": MACRO_BAND_HI,
+                                 "window_monthly": MACRO_WINDOW_MONTHLY,
+                                 "window_daily": MACRO_WINDOW_DAILY,
+                                 "min_monthly": MACRO_MIN_MONTHLY, "min_daily": MACRO_MIN_DAILY}}}
