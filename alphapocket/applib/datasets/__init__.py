@@ -21,10 +21,10 @@ from pathlib import Path
 
 from .. import writeguard
 
-__all__ = ["KNOWN_MERGE_POLICIES", "MERGE_POLICY_FN", "SourceSpec", "DatasetSpec",
-           "validate_spec", "load_specs", "merge_by_policy", "persist_spec",
-           "PENDING_MIGRATION", "registry_specs", "load_registry_raw",
-           "carry_old_rows", "carry_old_merge"]
+__all__ = ["KNOWN_MERGE_POLICIES", "MERGE_POLICY_FN", "MERGE_POLICY_FORMAT",
+           "SourceSpec", "DatasetSpec", "validate_spec", "load_specs",
+           "merge_by_policy", "persist_spec", "MIGRATION_LOG",
+           "registry_specs", "load_registry_raw", "carry_old_rows", "carry_old_merge"]
 
 
 @dataclass(frozen=True)
@@ -46,17 +46,32 @@ class DatasetSpec:
     validation: dict = field(default_factory=dict)     # ⑤ 验证联动（T-R10 消费）
 
 
-# 合并策略枚举（T-R5 冻结；T-R7 收敛为注册表后此处降级为引用）
-KNOWN_MERGE_POLICIES = ("overwrite", "union_bars", "carry_old",
-                        "registry_merge", "portfolio_merge")
+# 策略→实现委托（零第二实现：全部复用既有函数；未注册策略显式拒绝）。
+# T-R7 收敛：本表即合并策略单一事实源（KNOWN_MERGE_POLICIES 由其派生）；
+# 签名统一 ``(old, new) -> (merged, info)``——registry/portfolio 适配器把
+# "_merge" 键从产物中摘出作为 info（restore_guard 落盘前不再需要 pop）。
+def _registry_merge_fn(old, new):
+    m = writeguard.merge_registry(old, new)
+    return m, m.pop("_merge", {})
 
-# 策略→实现委托（零第二实现：全部复用既有函数；未注册策略显式拒绝）
+
+def _portfolio_merge_fn(old, new):
+    m = writeguard.merge_portfolio(old, new)
+    return m, m.pop("_merge", {})
+
+
 MERGE_POLICY_FN = {
+    "overwrite": None,                              # 新内容即最终态（上游全量重拉=修正，不合并）
     "union_bars": writeguard.merge_bars,            # (old, new) -> (merged, info)
-    "registry_merge": lambda old, new: (writeguard.merge_registry(old, new), {}),
-    "portfolio_merge": lambda old, new: (writeguard.merge_portfolio(old, new), {}),
-    # "carry_old" ← datasource.fetch_macro_liquidity 内联逻辑，T-R6 物理迁移后注册
+    "registry_merge": _registry_merge_fn,
+    "portfolio_merge": _portfolio_merge_fn,
+    # "carry_old" ← 定义于下方 T-R6 段，注册行紧随其定义之后
 }
+
+# 冻结枚举 = 已注册实现集合（单一事实源：新增策略只需注册本表，校验自动跟随）；
+# MERGE_POLICY_FORMAT：restore_guard 落盘格式声明（T-R7，等价保持——registry/
+# portfolio 缩进 2 且 info 进 summary；bars 类紧凑且 summary 含 dt_total）。
+# 两表均在 carry_old 注册行之后派生（见下方 T-R6 段末尾）。
 
 _VALID_ROLES = ("primary", "fallback", "crosscheck")
 
@@ -121,12 +136,17 @@ def load_specs(path: str | Path) -> dict[str, DatasetSpec]:
 
 # ── spec→fetch 驱动通道（T-R6 存量迁移后 fetch_all 按 spec 驱动）───────────
 def merge_by_policy(spec: DatasetSpec, new, old=None):
-    """按 spec.merge_policy 委托既有实现（零第二实现）；未注册策略显式拒绝。"""
-    fn = MERGE_POLICY_FN.get(spec.merge_policy)
-    if fn is None:
+    """按 spec.merge_policy 委托既有实现（零第二实现）；统一 ``(merged, info)`` 返回。
+
+    overwrite 注册为 None（新内容即最终态，不合并）→ 返回 ``(new, {})``。
+    """
+    if spec.merge_policy not in MERGE_POLICY_FN:
         raise NotImplementedError(
             f"DatasetSpec[{spec.dataset_id}].merge_policy={spec.merge_policy!r} "
-            f"实现未注册（T-R6 收编存量定义后注册；当前拒绝私造第二实现）")
+            f"实现未注册（拒绝私造第二实现；注册 MERGE_POLICY_FN）")
+    fn = MERGE_POLICY_FN[spec.merge_policy]
+    if fn is None:
+        return new, {}
     return fn(old or {}, new or {})
 
 
@@ -198,6 +218,18 @@ def carry_old_merge(old: dict, new: dict) -> tuple[dict, dict]:
 
 MERGE_POLICY_FN["carry_old"] = carry_old_merge
 
+# 冻结枚举 = 已注册实现集合（单一事实源：新增策略只需注册本表，校验自动跟随）
+KNOWN_MERGE_POLICIES = tuple(MERGE_POLICY_FN)
+
+# restore_guard 落盘格式（T-R7 声明化：等价保持——registry/portfolio 缩进 2 且
+# info 进 summary；bars 类紧凑且 summary 含 dt_total）
+MERGE_POLICY_FORMAT = {
+    "union_bars": {"indent": None, "summary": "bars"},
+    "carry_old": {"indent": 2, "summary": "info"},
+    "registry_merge": {"indent": 2, "summary": "info"},
+    "portfolio_merge": {"indent": 2, "summary": "info"},
+}
+
 
 # ── T-R6 迁移审计记录（2026-10-11 全部 15 项迁移完成并销账，保留为审计轨迹）──
 # 单点声明 = datasets/registry.json；fetch_all/_macro 已全部改为 spec 驱动，
@@ -221,5 +253,4 @@ MIGRATION_LOG: tuple[dict, ...] = (
 )
 # 不迁项（离线 mock 种子初始化，非拉取数据集）：seed.py（fx/security/registry/
 # fundamental_values/portfolio×3/signals/strategy 等 10 处）——豁免登记保持有效。
-# 兼容别名（T-R5 引入名，T-R7 收敛时清理）：
-PENDING_MIGRATION = MIGRATION_LOG
+# （T-R7：PENDING_MIGRATION 兼容别名已删除，引用方统一 MIGRATION_LOG）
