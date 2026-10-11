@@ -23,7 +23,8 @@ from .. import writeguard
 
 __all__ = ["KNOWN_MERGE_POLICIES", "MERGE_POLICY_FN", "SourceSpec", "DatasetSpec",
            "validate_spec", "load_specs", "merge_by_policy", "persist_spec",
-           "PENDING_MIGRATION"]
+           "PENDING_MIGRATION", "registry_specs", "load_registry_raw",
+           "carry_old_rows", "carry_old_merge"]
 
 
 @dataclass(frozen=True)
@@ -137,24 +138,88 @@ def persist_spec(repo: Path, spec: DatasetSpec, payload) -> Path:
     return p
 
 
-# ── T-R6 存量迁移清单（DoD 3：迁移前登记，逐项物理迁移后销账）─────────────
-# fetch_all 内联定义（datasource.py，_reg 调用点）：T-R6 逐项迁移
-PENDING_MIGRATION: tuple[dict, ...] = (
+# ── T-R6 存量迁移：单点声明文件（datasets/registry.json，15 项逐字迁移）─────
+_REGISTRY_FILE = Path(__file__).resolve().parent / "registry.json"
+_SPECS_CACHE: dict[str, DatasetSpec] | None = None
+
+
+def load_registry_raw() -> dict:
+    """声明文件原样加载（含 macro indicators 等扩展键；load_specs 忽略的键保留）。"""
+    return json.loads(_REGISTRY_FILE.read_text(encoding="utf-8"))
+
+
+def registry_specs() -> dict[str, DatasetSpec]:
+    """全部数据集 spec（单点声明 + schema 校验；缓存，T-R6 起唯一数据集定义来源）。"""
+    global _SPECS_CACHE
+    if _SPECS_CACHE is None:
+        _SPECS_CACHE = load_specs(_REGISTRY_FILE)
+    return _SPECS_CACHE
+
+
+# ── carry_old 合并策略（T-R6 从 datasource.fetch_macro_liquidity 内联逻辑物理迁移；
+#    单点实现，datasource 与 MERGE_POLICY_FN 共同引用，零第二实现）────────────────
+def carry_old_rows(old_rows: list, new_rows: list) -> list:
+    """行级 union 内核：旧点全保留；同 dt 新值覆盖=点位修正；永不物理删除已落盘点。"""
+    merged: dict = {r["dt"]: r["value"] for r in (old_rows or []) if r.get("dt")}
+    merged.update({r["dt"]: r["value"] for r in (new_rows or []) if r.get("dt")})
+    return [{"dt": d, "value": merged[d]} for d in sorted(merged)]
+
+
+def carry_old_merge(old: dict, new: dict) -> tuple[dict, dict]:
+    """payload 级 carry_old（MERGE_POLICY_FN 契约 ``(old, new) -> (merged, info)``）。
+
+    ``new.indicators`` 逐指标：status=ok → 行级 union（first/last/rows 以合并后为准）；
+    status≠ok（拉取失败占位）→ 旧指标序列完整保留并标 carried_old（旧数据零丢失）；
+    无旧可保 → 占位原样（unavailable 语义，不虚报）。
+    """
+    old_ind = (old or {}).get("indicators", {})
+    new_ind = (new or {}).get("indicators", {})
+    out, info = {}, {"carried": [], "unioned": []}
+    for sid, nd in new_ind.items():
+        od = old_ind.get(sid) or {}
+        if nd.get("status") == "ok":
+            series = carry_old_rows(od.get("series"), nd.get("series"))
+            out[sid] = {**nd, "series": series, "rows": len(series),
+                        "first_dt": series[0]["dt"] if series else None,
+                        "last_dt": series[-1]["dt"] if series else None}
+            info["unioned"].append(sid)
+        elif od.get("series"):                       # 失败但有旧数据 → carry_old（红线 4）
+            osr = od["series"]
+            out[sid] = {**nd, "status": "carried_old", "series": osr,
+                        "rows": len(osr), "first_dt": osr[0]["dt"], "last_dt": osr[-1]["dt"]}
+            info["carried"].append(sid)
+        else:                                        # 失败且无旧 → 透明 unavailable
+            out[sid] = nd
+    info["carried"].sort()
+    info["unioned"].sort()
+    merged = {**new, "indicators": out, "_merge": info}
+    return merged, info
+
+
+MERGE_POLICY_FN["carry_old"] = carry_old_merge
+
+
+# ── T-R6 迁移审计记录（2026-10-11 全部 15 项迁移完成并销账，保留为审计轨迹）──
+# 单点声明 = datasets/registry.json；fetch_all/_macro 已全部改为 spec 驱动，
+# 等价性实测：provenance 的 dataset/interface/upstream/file 逐字节零差异。
+MIGRATION_LOG: tuple[dict, ...] = (
     {"dataset_id": "dwd_trade_calendar", "path": "market/trade_calendar.json", "src": "fetch_all ①"},
     {"dataset_id": "dwd_daily_bar", "path": "market/daily_bars.json", "src": "fetch_all ②"},
     {"dataset_id": "dwd_daily_bar_raw", "path": "market/daily_bars_raw.json", "src": "fetch_all ②"},
     {"dataset_id": "cross_check_tx", "path": "market/cross_check_tx.json", "src": "fetch_all ②"},
     {"dataset_id": "adjust_ex_dates", "path": "market/adjust_ex_dates.json", "src": "fetch_all ②'"},
     {"dataset_id": "dwd_financial_report", "path": "factors/fundamental_values.json", "src": "fetch_all ②"},
-    {"dataset_id": "dim_ggt_components", "path": "dim/ggt_components.json", "src": "fetch_all ③"},
+    {"dataset_id": "dim_ggt_components", "path": "market/ggt_components.json", "src": "fetch_all ③"},
     {"dataset_id": "dim_market_cap", "path": "dim/market_cap.json", "src": "fetch_all ③"},
     {"dataset_id": "dwd_trade_calendar_mkt", "path": "market/trade_calendar_*.json", "src": "fetch_all ③"},
-    {"dataset_id": "dim_security", "path": "dim/security.json", "src": "fetch_all ③（seed 同）"},
+    {"dataset_id": "dim_security", "path": "dim/security.json", "src": "fetch_all ③（seed 同构）"},
     {"dataset_id": "portfolio_cn4", "path": "portfolio/cn4.json", "src": "fetch_all ④"},
     {"dataset_id": "portfolio_multi5", "path": "portfolio/multi5.json", "src": "fetch_all ④"},
     {"dataset_id": "factor_registry", "path": "factors/registry.json", "src": "fetch_all ④"},
     {"dataset_id": "market_fx", "path": "market/fx.json", "src": "fetch_all ④（seed 同）"},
-    {"dataset_id": "macro_liquidity", "path": "market/macro_liquidity.json", "src": "fetch_macro_liquidity（T-C1，carry_old）"},
+    {"dataset_id": "macro_liquidity", "path": "market/macro_liquidity.json", "src": "fetch_macro_liquidity（T-C1，carry_old→datasets 单点）"},
 )
 # 不迁项（离线 mock 种子初始化，非拉取数据集）：seed.py（fx/security/registry/
-# fundamental_values/portfolio×3/signals/strategy 等 10 处）——T-R6 销账时保持该豁免登记。
+# fundamental_values/portfolio×3/signals/strategy 等 10 处）——豁免登记保持有效。
+# 兼容别名（T-R5 引入名，T-R7 收敛时清理）：
+PENDING_MIGRATION = MIGRATION_LOG

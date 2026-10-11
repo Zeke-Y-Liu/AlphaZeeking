@@ -105,6 +105,7 @@ _DIV_CCY_ALIAS = {"港币": "HKD", "港元": "HKD", "人民币": "CNY", "美元"
 
 # 港股通标的静态快照（兜底；在线源为雪球港股通筛选）
 from applib.ggt_static import GGT_SNAPSHOT_DATE, GGT_STATIC  # noqa: E402
+from applib.datasets import carry_old_merge, load_registry_raw  # T-R6 单点声明/carry_old 内核
 
 _SINA_HQ_URL = "https://hq.sinajs.cn/list="
 _TX_QT_URL = "https://qt.gtimg.cn/q="
@@ -880,18 +881,30 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                     "multi5 五资产等权 20%×5，纳指以纳指100ETF(513100)近似（A股无综指ETF）；"
                     "V4-β 支持 A股/港股/美股 混合 universe（按 secid 后缀 .SH/.SZ/.HK/.US 分类）"}
 
-    def _reg(dataset, interface, upstream, params, rows, relpath):
+    from .datasets import registry_specs   # T-R6 单点声明（datasets/registry.json）
+    _SPECS = registry_specs()
+
+    def _reg(ds_id, rows, params=None, mkt=None):
+        """T-R6 spec 驱动登记：dataset/interface/upstream/path 全部来自
+        datasets/registry.json 单点声明（调用点不再出现数据集定义字面量）；
+        params 运行时值与声明 fetch_params 合并（显式运行时覆盖声明默认）。"""
+        s = _SPECS[ds_id]
+        fmt = {"mkt": mkt} if mkt else {}
+        relpath = s.path.format(**fmt)
         p = repo / relpath
-        (repo / relpath).parent.mkdir(parents=True, exist_ok=True)
+        p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8") if relpath.endswith(".json") else None
-        prov["sources"].append({"dataset": dataset, "interface": interface, "upstream": upstream,
-                                "params": params, "file": relpath, "sha256": _sha256_file(p),
+        src = s.sources[0]
+        merged_params = {**s.fetch_params, **(params or {})}
+        prov["sources"].append({"dataset": ds_id, "interface": src.interface.format(**fmt),
+                                "upstream": src.upstream,
+                                "params": merged_params, "file": relpath, "sha256": _sha256_file(p),
                                 "bytes": p.stat().st_size})
 
     # ── ① 交易日历 ──
     cal = _retry(lambda: ak.tool_trade_date_hist_sina())
     dates = [_iso(d) for d in cal["trade_date"].tolist()]
-    _reg("dwd_trade_calendar", "ak.tool_trade_date_hist_sina()", "新浪财经", {}, dates, "market/trade_calendar.json")
+    _reg("dwd_trade_calendar", dates)
 
     # 汇率（港元/美元兑人民币）：港股/美股财务与分红币种归一需要，提前取一次复用（③ 落盘）
     fx = fetch_fx()
@@ -1069,29 +1082,14 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
         print(f"  ✓ {u['name']} {u['secid']}：us bars={len(recs)}(tx:{tx_sym}) raw={len(sina_raw)}(sina) "
               f"tx_cross={len(cross_tx[u['secid']])} 除息日={len(ex_dates_us)} 报告期={len(us_reports)}")
 
-    _reg("dwd_daily_bar", "ak.stock_zh_a_daily/stock_hk_daily(qfq) + 腾讯usK线(raw口径) + ak.fund_etf_hist_sina", "新浪财经/腾讯证券",
-         {"start": start, "end": today, "note": "A股/港股 qfq 前复权；美股 腾讯序列（raw 口径，新浪美股qfq部分标的存在噪声，弃用）；ETF/LOF 无复权接口（raw）"}, bars_qfq, "market/daily_bars.json")
-    _reg("dwd_daily_bar_raw", "ak.stock_zh_a_daily/stock_hk_daily/stock_us_daily(adjust='')", "新浪财经",
-         {"start": start, "end": today, "note": "A股/港股/美股股票 raw（基金无复权对，由 cross_source 双源覆盖）；美股 raw 兼作腾讯主序列的独立对账源"}, bars_raw, "market/daily_bars_raw.json")
-    _reg("cross_check_tx", "ak.stock_zh_a_hist_tx() + web.ifzq.gtimg.cn(hk/us)", "腾讯证券",
-         {"window_days": 120, "note": "A股（股票与基金）走 stock_zh_a_hist_tx；港股 hk{code}、美股 us{TICKER}.OQ/.N/.A 走腾讯K线接口"}, cross_tx, "market/cross_check_tx.json")
+    _reg("dwd_daily_bar", bars_qfq, {"start": start, "end": today})
+    _reg("dwd_daily_bar_raw", bars_raw, {"start": start, "end": today})
+    _reg("cross_check_tx", cross_tx)
     if adjust_ex_dates:
         # 港股/美股除权除息日（腾讯 qfq 事件元数据 FHcontent/ggContent 的 cqr）：
         # adjust_check 经典 qfq-vs-raw 对账的豁免名单（回购 HGcontent 不影响复权，不计入）
-        _reg("adjust_ex_dates", "web.ifzq.gtimg.cn(hk/us, qfq 事件元数据)", "腾讯证券",
-             {"note": "港股/美股除权除息日（分红/送转/拆股），供 adjust_check 豁免"},
-             adjust_ex_dates, "market/adjust_ex_dates.json")
-    _reg("dwd_financial_report", "ak.stock_financial_analysis_indicator(A股) + "
-         "stock_financial_hk_analysis_indicator_em(港股) + stock_financial_us_analysis_indicator_em(美股) + "
-         "stock_financial_report_sina(A股三表：利润表/资产负债表/现金流量表)",
-         "新浪财经/东方财富",
-         {"start_year": fin_start_year,
-          "note": "A股 eps_ytd 累计口径（引擎按 YTD 递推 TTM）；港股/美股附带 eps_ttm 上游直出 TTM，"
-                  "港股财务原币经即期汇率折 HKD、美股折 USD 对齐各自报价币种；"
-                  "港股分红 stock_hk_dividend_payout_em，美股无公开分红接口（dividends 为空）；"
-                  "A股三表科目（D5/P1.2）：revenue/net_profit/total_assets/total_liab/ocf/capex 按报告期并入，"
-                  "PIT 同 report 时点（报告期+披露窗口），供品质族 qua_leverage/qua_accrual/qua_fcf"},
-         fundamentals, "factors/fundamental_values.json")
+        _reg("adjust_ex_dates", adjust_ex_dates)
+    _reg("dwd_financial_report", fundamentals, {"start_year": fin_start_year})
 
     # ── ③ 维度表 / 组合 / 因子注册中心 / 港股通名单 / 汇率 / 港美日历 ──
 
@@ -1121,36 +1119,29 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                          "source": "V4-β 美股 universe"})
         return rows
 
-    (repo / "dim" / "security.json").write_text(json.dumps(_dim_rows(), ensure_ascii=False, indent=2),
-                                                encoding="utf-8")
-    _reg("dim_ggt_components", "雪球港股通筛选 market=HK&type=ggt（降级 ggt_static 快照）", "雪球/静态快照",
-         {"source": ggt_source}, {"codes": ggt_codes, "source": ggt_source,
-                                  "count": len(ggt_codes)}, "market/ggt_components.json")
+    (repo / _SPECS["dim_security"].path).write_text(json.dumps(_dim_rows(), ensure_ascii=False, indent=2),
+                                                    encoding="utf-8")
+    _reg("dim_ggt_components", {"codes": ggt_codes, "source": ggt_source,
+                                "count": len(ggt_codes)}, {"source": ggt_source})
 
     # 总市值（P0.3 敞口报告规模维度；仅 A 股股票适用）
     market_cap = _fetch_market_cap(ak, a_stocks, start)
     if market_cap:
-        _reg("dim_market_cap", "ak.stock_zh_valuation_baidu(indicator='总市值', period='全部')", "百度股市通",
-             {"start": start, "unit": "亿元",
-              "note": "总市值历史序列（P0.3 敞口报告规模维度）；仅 A 股股票适用；"
-                      "供月末再平衡时点取用（按最近可用点前向取值）"},
-             market_cap, "dim/market_cap.json")
+        _reg("dim_market_cap", market_cap, {"start": start})
 
     # 港股/美股交易日历：本市场 K 线日期并集推导（A股日历来自新浪，见 ①）
     for mkt, group in (("hk", hk_stocks), ("us", us_stocks)):
         days = sorted({r["dt"] for u in group for r in bars_qfq.get(u["secid"], []) if r["dt"]})
         if days:
-            _reg(f"dwd_trade_calendar_{mkt}", f"K线日期并集推导（{mkt} 市场）", "新浪财经",
-                 {"note": "由本市场全部标的 K 线日期并集推导，供日历校验按市场分组"},
-                 days, f"market/trade_calendar_{mkt}.json")
-    (repo / "portfolio" / "cn4.json").write_text(json.dumps({
+            _reg("dwd_trade_calendar_mkt", days, mkt=mkt)
+    (repo / _SPECS["portfolio_cn4"].path).write_text(json.dumps({
         "id": "cn4", "name": "cn4 · 赛轮/永新/福耀/分众", "base_ccy": "CNY",
         "strategy_binding": "cn4_quality_v1",
         "note": "用户指定四标的（永新=永新股份002014.SZ）；未提供权重 → 等权名义组合 25%×4",
         "positions": [{"secid": u["secid"], "name": u["name"], "market": "A",
                        "weight": 25.0, "trade_ccy": "CNY"} for u in CN4]},
         ensure_ascii=False, indent=2), encoding="utf-8")
-    (repo / "portfolio" / "multi5.json").write_text(json.dumps({
+    (repo / _SPECS["portfolio_multi5"].path).write_text(json.dumps({
         "id": "multi5", "name": "multi5 · 沪深300/南方原油/黄金/纳指/十年国债", "base_ccy": "CNY",
         "strategy_binding": "multi_asset_v1",
         "note": "五资产等权名义组合 20%×5（A股宽基/原油/黄金/美股/国债）；全部 A 股上市、人民币计价"
@@ -1175,9 +1166,9 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                  for f, n in alpha_factors] +
                 [{"id": f, "name": n, "type": "signal", "status": "active", "version": "v1.0",
                   "universe": ["CN", "HK", "US"], "horizon_days": 20} for f, n in signal_factors]}
-    (repo / "factors" / "registry.json").write_text(json.dumps(registry, ensure_ascii=False, indent=2),
-                                                    encoding="utf-8")
-    (repo / "market" / "fx.json").write_text(json.dumps({
+    (repo / _SPECS["factor_registry"].path).write_text(json.dumps(registry, ensure_ascii=False, indent=2),
+                                                       encoding="utf-8")
+    (repo / _SPECS["market_fx"].path).write_text(json.dumps({
         **fetch_fx(),
         "note": "V4-β 多市场组合需要：港元/美元持仓按 HKD_CNY/USD_CNY 折算人民币口径；"
                 "港股通标的实际以港币报价、人民币结算（存在汇率与结算价差）"}, ensure_ascii=False, indent=2),
@@ -1227,65 +1218,13 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
 
 _HK_RATES_REL = "market/hk_rates.json"   # H-0006 三件套产物（本会话缺失 → HK 恒降级）
 
-_MACRO_DATASET = {
-    "id": "macro_liquidity",
-    "path": "market/macro_liquidity.json",
-    "merge_policy": "carry_old",
-    # 旧会话基准：18 探 12 中（AKShare 1.19.1）；本会话实测 11 指标命中，
-    # 港股 3 件套依赖 H-0006 资产（hk_rates.json 缺失 → requires 标记，恒 unavailable）
-    "sources": [
-        # ── A 股市场（6 指标）──
-        {"id": "cn_m2_yoy", "market": "A", "dim": "D2", "name": "M2 同比", "unit": "%",
-         "institution": "中国人民银行", "interface": "macro_china_money_supply", "params": {},
-         "date": {"col": "月份", "format": "cn_month"},
-         "value": {"col": "货币和准货币(M2)-同比增长"}},
-        {"id": "cn_srzg", "market": "A", "dim": "D2", "name": "社融规模增量(当月)", "unit": "亿元",
-         "institution": "中国人民银行", "interface": "macro_china_shrzgm", "params": {},
-         "date": {"col": "月份", "format": "yyyymm"},
-         "value": {"col": "社会融资规模增量"}},
-        {"id": "shibor_1w", "market": "A", "dim": "D3", "name": "Shibor 1周", "unit": "%",
-         "institution": "全国银行间同业拆借中心", "interface": "macro_china_shibor_all", "params": {},
-         "date": {"col": "日期", "format": "date"}, "value": {"col": "1W-定价"}},
-        {"id": "lpr_1y", "market": "A", "dim": "D3", "name": "LPR 1年", "unit": "%",
-         "institution": "全国银行间同业拆借中心", "interface": "macro_china_lpr", "params": {},
-         "date": {"col": "TRADE_DATE", "format": "date"}, "value": {"col": "LPR1Y"}},
-        {"id": "fr007", "market": "A", "dim": "D3", "name": "FR007 质押式回购定盘利率", "unit": "%",
-         "institution": "全国银行间同业拆借中心", "interface": "repo_rate_hist",
-         "params": {"window_days": 240},      # 实测上游窗口上限 270~365 天间 → 240 天分页
-         "date": {"col": "date", "format": "date"}, "value": {"col": "FR007"}, "paged": True},
-        {"id": "cn_us_spread_10y", "market": "A", "dim": "D4", "name": "中美 10Y 国债利差",
-         "unit": "pct", "institution": "中国债券信息网/美国财政部（东方财富汇总）",
-         "interface": "bond_zh_us_rate", "params": {},
-         "date": {"col": "日期", "format": "date"},
-         "value": {"cols_sub": ["中国国债收益率10年", "美国国债收益率10年"]},
-         "note": "利差=中债10Y−美债10Y；美方点位滞后于中方 → 序列截至美方最后可用点"},
-        # ── 美股市场（5 指标）──
-        {"id": "us_fed_rate", "market": "US", "dim": "D1", "name": "美联储联邦基金利率", "unit": "%",
-         "institution": "美联储（金十数据汇总）", "interface": "macro_bank_usa_interest_rate", "params": {},
-         "date": {"col": "日期", "format": "date"}, "value": {"col": "今值", "dropna": True},
-         "note": "未来议息会议行今值为空（dropna 跳过）"},
-        {"id": "us_10y_2y", "market": "US", "dim": "D3", "name": "美债 10Y-2Y 利差", "unit": "pct",
-         "institution": "美国财政部（东方财富汇总）", "interface": "bond_zh_us_rate", "params": {},
-         "date": {"col": "日期", "format": "date"},
-         "value": {"col": "美国国债收益率10年-2年", "dropna": True}},
-        {"id": "us_cpi_yoy", "market": "US", "dim": "D1", "name": "美国 CPI 同比", "unit": "%",
-         "institution": "美国劳工统计局（金十数据汇总）", "interface": "macro_usa_cpi_yoy", "params": {},
-         "date": {"col": "时间", "format": "date"}, "value": {"col": "现值", "dropna": True}},
-        {"id": "us_nonfarm", "market": "US", "dim": "D1", "name": "美国非农就业人数变动", "unit": "万人",
-         "institution": "美国劳工统计局（金十数据汇总）", "interface": "macro_usa_non_farm", "params": {},
-         "date": {"col": "日期", "format": "date"}, "value": {"col": "今值", "dropna": True}},
-        {"id": "us_gdp", "market": "US", "dim": "D1", "name": "美国 GDP 年化季环比", "unit": "%",
-         "institution": "美国经济分析局（金十数据汇总）", "interface": "macro_usa_gdp_monthly", "params": {},
-         "date": {"col": "日期", "format": "date"}, "value": {"col": "今值", "dropna": True}},
-        # ── 港股市场（3 指标）：H-0006 资产缺失 → requires 标记，恒 unavailable 透明降级 ──
-        {"id": "hk_hibor_1m", "market": "HK", "dim": "D3", "name": "HIBOR 1月", "unit": "%",
-         "institution": "香港银行公会", "interface": "hk_rates_file", "requires": "H-0006"},
-        {"id": "hk_hibor_3m", "market": "HK", "dim": "D3", "name": "HIBOR 3月", "unit": "%",
-         "institution": "香港银行公会", "interface": "hk_rates_file", "requires": "H-0006"},
-        {"id": "hk_usdcnh", "market": "HK", "dim": "D4", "name": "港汇 USD/CNH", "unit": "pct",
-         "institution": "香港金管局/财资市场公会", "interface": "hk_rates_file", "requires": "H-0006"},
-    ],
-}
+
+def _macro_dataset_def() -> dict:
+    """T-R6：宏观数据集定义从 datasets/registry.json 单点声明派生
+    （原 _MACRO_DATASET 常量已物理删除，不留双轨；指标级声明 = 条目 indicators 扩展键）。"""
+    raw = load_registry_raw()["macro_liquidity"]
+    return {"id": "macro_liquidity", "path": raw["path"],
+            "merge_policy": raw["merge_policy"], "sources": raw["indicators"]}
 
 
 def _macro_month_cn(x) -> str | None:
@@ -1317,7 +1256,7 @@ def _macro_repo_rate_hist(ak, start: str, end: str, window_days: int):
 
 
 def _macro_call_iface(ak, spec: dict, start: str, end: str, cache: dict):
-    """接口分派（列名/参数/顺序全部 2026-10-11 实测后写死，见 _MACRO_DATASET 注记）；
+    """接口分派（列名/参数/顺序全部 2026-10-11 实测后写死，见 datasets/registry.json 注记）；
     共享接口（bond_zh_us_rate）单次拉取进程内缓存。"""
     name = spec["interface"]
     if name in cache:
@@ -1407,8 +1346,9 @@ def fetch_macro_liquidity(ctx, start: str = "2015-01-01", end: str | None = None
     """
     import akshare as ak
     end = end or dt.date.today().isoformat()
+    _MACRO = _macro_dataset_def()              # T-R6：定义来自 datasets/registry.json 单点声明
     repo = ctx.repo_dir
-    fpath = repo / _MACRO_DATASET["path"]
+    fpath = repo / _MACRO["path"]
     old = None
     if fpath.exists():
         try:
@@ -1418,10 +1358,9 @@ def fetch_macro_liquidity(ctx, start: str = "2015-01-01", end: str | None = None
     old_ind = (old or {}).get("indicators", {})
 
     iface_cache: dict = {}
-    indicators, warns, blacklist = {}, [], []
-    for spec in _MACRO_DATASET["sources"]:
+    new_ind, warns, blacklist = {}, [], []
+    for spec in _MACRO["sources"]:
         sid = spec["id"]
-        old_rows = old_ind.get(sid, {}).get("series") or []
         try:
             if spec.get("requires") == "H-0006":
                 rows = _hk_rows_from_file(repo, spec)
@@ -1440,25 +1379,21 @@ def fetch_macro_liquidity(ctx, start: str = "2015-01-01", end: str | None = None
             blacklist.append({"indicator": sid, "interface": spec["interface"],
                               "kind": kind, "reason": reason[:200],
                               "ts": dt.datetime.now().isoformat(timespec="seconds")})
-            if old_rows:                           # carry_old：旧数据完整保留
-                indicators[sid] = {**_macro_meta(spec), "status": "carried_old",
-                                   "rows": len(old_rows),
-                                   "first_dt": old_rows[0]["dt"], "last_dt": old_rows[-1]["dt"],
-                                   "series": old_rows}
-            else:                                  # 无旧可保 → 空序列（unavailable 语义）
-                indicators[sid] = {**_macro_meta(spec), "status": "unavailable",
-                                   "rows": 0, "first_dt": None, "last_dt": None, "series": []}
+            # 失败占位（unavailable）；旧数据保留/状态标 carried_old 由 carry_old_merge 单点处理
+            new_ind[sid] = {**_macro_meta(spec), "status": "unavailable",
+                            "rows": 0, "first_dt": None, "last_dt": None, "series": []}
             continue
-        # 成功拉取 → union 合并（增量防丢：旧点全保留；同 dt 新值覆盖=点位修正）
-        merged: dict[str, float] = {r["dt"]: r["value"] for r in old_rows}
-        merged.update({r["dt"]: r["value"] for r in rows})
-        series = [{"dt": d, "value": merged[d]} for d in sorted(merged)]
-        indicators[sid] = {**_macro_meta(spec), "status": "ok", "rows": len(series),
-                           "first_dt": series[0]["dt"], "last_dt": series[-1]["dt"],
-                           "series": series}
+        new_ind[sid] = {**_macro_meta(spec), "status": "ok", "rows": len(rows),
+                        "first_dt": rows[0]["dt"] if rows else None,
+                        "last_dt": rows[-1]["dt"] if rows else None, "series": rows}
+
+    # carry_old 合并（T-R6 单点迁移至 datasets.carry_old_merge）：
+    # ok → union（旧点全保留，同 dt 新值覆盖）；失败 → 旧数据完整保留（carried_old）
+    merged_payload, _ = carry_old_merge({"indicators": old_ind}, {"indicators": new_ind})
+    indicators = merged_payload["indicators"]
 
     as_of = max((v["last_dt"] for v in indicators.values() if v["last_dt"]), default=None)
-    payload = {"dataset": _MACRO_DATASET["id"], "merge_policy": _MACRO_DATASET["merge_policy"],
+    payload = {"dataset": _MACRO["id"], "merge_policy": _MACRO["merge_policy"],
                "fetched_at": dt.datetime.now().isoformat(timespec="seconds"),
                "akshare_version": ak.__version__, "start": start, "end": end,
                "as_of": as_of,   # 数据自描述：各指标最新可用 dt（≈最新交易日，T-C3 工具缺省口径）
@@ -1474,8 +1409,8 @@ def fetch_macro_liquidity(ctx, start: str = "2015-01-01", end: str | None = None
     n_unavail = sum(1 for v in indicators.values() if v["status"] == "unavailable")
     print(f"  ✓ macro_liquidity：{n_ok} ok / {n_carried} carried_old / {n_unavail} unavailable "
           f"（黑名单 {len(blacklist)} 条，as_of={as_of}）")
-    return {"fetched": True, "dataset": _MACRO_DATASET["id"],
-            "file": _MACRO_DATASET["path"], "merge_policy": _MACRO_DATASET["merge_policy"],
+    return {"fetched": True, "dataset": _MACRO["id"],
+            "file": _MACRO["path"], "merge_policy": _MACRO["merge_policy"],
             "indicators": {sid: {"rows": v["rows"], "status": v["status"],
                                  "last_dt": v["last_dt"]} for sid, v in indicators.items()},
             "n_ok": n_ok, "n_carried_old": n_carried, "n_unavailable": n_unavail,

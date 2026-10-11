@@ -102,13 +102,27 @@ def test_merge_by_policy_delegates():
     assert m["factors"][0]["status"] == "paused"        # 用户改动胜出（与 T-R4 等价）
 
 
-def test_merge_by_policy_rejects_unregistered():
-    s = _ok(merge_policy="carry_old")
+def test_merge_by_policy_registered_and_rejects_unknown():
+    # T-R6 收编：carry_old 已注册（物理迁移自 datasource 内联逻辑，零第二实现）
+    sc = _ok(merge_policy="carry_old")
+    old = {"indicators": {"k": {"status": "ok", "series": [{"dt": "2024-01-01", "value": 1}]}}}
+    new = {"indicators": {"k": {"status": "ok", "series": [{"dt": "2024-01-02", "value": 2}]}}}
+    merged, info = DS.merge_by_policy(sc, new, old)
+    assert [r["dt"] for r in merged["indicators"]["k"]["series"]] == ["2024-01-01", "2024-01-02"]
+    assert info["unioned"] == ["k"]
+    # 失败占位 → 旧数据保留（carried_old，红线 4）
+    merged2, info2 = DS.merge_by_policy(
+        sc, {"indicators": {"k": {"status": "unavailable", "series": []}}}, old)
+    assert merged2["indicators"]["k"]["status"] == "carried_old"
+    assert merged2["indicators"]["k"]["series"] == old["indicators"]["k"]["series"]
+    assert info2["carried"] == ["k"]
+    # 未知策略仍显式拒绝（不私造第二实现）
+    s = _ok(merge_policy="upsert_v3")
     try:
         DS.merge_by_policy(s, {}, {})
         raise AssertionError("should reject")
-    except NotImplementedError as e:
-        assert "T-R6" in str(e) and "carry_old" in str(e)   # 显式拒绝不私造第二实现
+    except (ValueError, NotImplementedError) as e:
+        assert "upsert_v3" in str(e)
 
 
 # ── persist_spec：相对 repo 落盘 ─────────────────────────────────────────
@@ -118,11 +132,22 @@ def test_persist_spec_writes_relative_path(tmp_path):
     assert p == tmp_path / "market/daily_bars.json" and json.loads(p.read_text()) == {"k": 1}
 
 
-# ── 迁移清单（DoD 3）：存量硬编码定义已登记，T-R6 逐项销账 ────────────────
-def test_pending_migration_covers_hardcoded():
-    ids = {m["dataset_id"] for m in DS.PENDING_MIGRATION}
+# ── 迁移清单（DoD 3）：T-R6 已全部迁移完成（单点声明覆盖 + spec 驱动）─────────
+def test_migration_log_fully_covered_by_registry():
+    ids = {m["dataset_id"] for m in DS.MIGRATION_LOG}
     assert {"dwd_daily_bar", "dwd_financial_report", "macro_liquidity",
             "factor_registry", "portfolio_cn4"} <= ids
-    assert all(set(m) >= {"dataset_id", "path", "src"} for m in DS.PENDING_MIGRATION)
-    # 合并策略枚举与 writeguard 现有能力对齐（单点声明，无第二实现）
+    assert all(set(m) >= {"dataset_id", "path", "src"} for m in DS.MIGRATION_LOG)
+    # 全部迁移项在单点声明中有 spec（无遗留硬编码定义）
+    specs = DS.registry_specs()
+    assert ids <= set(specs), f"迁移项缺 spec: {ids - set(specs)}"
+    # spec 驱动等价锚点：策略实现全部委托既有模块（零第二实现）
     assert DS.MERGE_POLICY_FN["union_bars"].__module__.endswith("writeguard")
+    assert DS.MERGE_POLICY_FN["carry_old"].__module__.endswith("datasets")
+
+
+def test_macro_def_from_registry():
+    from applib.datasource import _macro_dataset_def
+    d = _macro_dataset_def()
+    assert d["id"] == "macro_liquidity" and d["path"] == "market/macro_liquidity.json"
+    assert d["merge_policy"] == "carry_old" and len(d["sources"]) == 14   # A6/US5/HK3
