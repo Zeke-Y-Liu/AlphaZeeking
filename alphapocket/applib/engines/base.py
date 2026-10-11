@@ -18,6 +18,9 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
+# 引擎注册表版本（T-R3 版本绑定锚）：引擎集/契约变更时 bump（M1 注册中心接管后由 registry 提供）
+ENGINE_REGISTRY_VERSION = "v1"
+
 
 @dataclass(frozen=True)
 class EngineSpec:
@@ -82,23 +85,43 @@ class EngineWrapper:
 
         alpha_engine = EngineWrapper(EngineSpec(...), F.compute_alpha)
         out = alpha_engine({"secid": ..., "bars": [...], ...})
+        out = alpha_engine({"secid": ...}, config={"params": {"win": 10}})   # T-R3 注入
+
+    配置注入（T-R3，经包装层不绕过契约）：``config = {params, enabled,
+    registry_version}``——params 作为入参默认值层（显式 args 优先）；enabled=False
+    → ``status=disabled`` 不进公式；registry_version 与 ``ENGINE_REGISTRY_VERSION``
+    核对，不符 → ``_version_warning`` 显式登记（不静默、不阻断产出）。
     """
 
     def __init__(self, spec: EngineSpec, compute_fn: Callable):
         self.spec = spec
         self._fn = compute_fn          # 委托目标（factors.compute_x，原位不动）
 
-    def __call__(self, args: dict) -> dict:
+    def __call__(self, args: dict, config: dict | None = None) -> dict:
         t0 = time.monotonic()
-        err = validate_input(self.spec, dict(args))
+        cfg = config or {}
+        if cfg.get("enabled") is False:
+            return {"status": "disabled",
+                    "reason": f"{self.spec.engine_id} 已由引擎配置停用（enabled=false）",
+                    "_engine": self._prov(t0, status="disabled")}
+        merged = {**(cfg.get("params") or {}), **dict(args)}   # 显式入参 > 配置默认
+        warn_cfg = (None if cfg.get("params")
+                    else [f"{self.spec.engine_id}: 未显式配置参数，走函数签名默认（T-R3 注入通道）"])
+        err = validate_input(self.spec, merged)
         if err:
             return {"status": "invalid_input", "error": err,
                     "_engine": self._prov(t0, status="invalid_input")}
-        out = self._fn(**dict(args))   # 委托（契约 1：公式体只存在于 factors.py）
+        out = self._fn(**merged)       # 委托（契约 1：公式体只存在于 factors.py）
         out = dict(out) if isinstance(out, dict) else {"value": out}
         warns = check_output_range(self.spec, out)
         if warns:
             out["_range_warnings"] = warns     # 显式告警不静默截断（契约 3）
+        if cfg.get("registry_version") and cfg["registry_version"] != ENGINE_REGISTRY_VERSION:
+            out["_version_warning"] = (        # 版本不符：显式登记不静默、不阻断（T-R3）
+                f"{self.spec.engine_id}: 配置 registry_version={cfg['registry_version']!r} "
+                f"≠ 注册表 {ENGINE_REGISTRY_VERSION!r}（结果照常产出；处置见 RUNBOOK §10）")
+        if warn_cfg:
+            out["_config_warnings"] = warn_cfg
         out["_engine"] = self._prov(t0, status="ok")
         return out
 

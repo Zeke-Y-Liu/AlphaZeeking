@@ -9,10 +9,13 @@
 """
 from .a_factors import ALPHA_SPEC, alpha_engine
 from .b_signals import BETA_SPEC, beta_engine
-from .base import EngineSpec, EngineWrapper, check_output_range, validate_input
+from .base import (ENGINE_REGISTRY_VERSION, EngineSpec, EngineWrapper,
+                   check_output_range, validate_input)
 from .c_macro import MACRO_SPEC, macro_engine
+from .config import engine_config_for, load_engine_config
 
 __all__ = [
     "EngineSpec", "EngineWrapper", "check_output_range", "validate_input",
+    "ENGINE_REGISTRY_VERSION", "load_engine_config", "engine_config_for",
     "ALPHA_SPEC", "alpha_engine", "BETA_SPEC", "beta_engine", "MACRO_SPEC", "macro_engine",
 ]

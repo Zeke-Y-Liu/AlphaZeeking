@@ -204,3 +204,19 @@ MCP factor.macro # 工具面：读同一 payload → compute_macro_liquidity（�
 - **engines 配置注入**：引擎C 不经 engines 配置注入版本不符由组件化 T-R3 收编（本版本内联）。
 - **扩展位**：D2/D3 补 `dr007` / `repo_tier_007` / `m1_m2_gap`（macro 12→16 指标）→ M7。
 - e2e 夹具就位但 chromium 实跑受阻（T-C7 登记），单测已覆盖同一渲染分支。
+
+## 10. 引擎配置注入与版本绑定（T-R3 · 处置口径）
+
+- **配置位置**：`sandbox/repo/config/engines.json`（或进程内 dict），形态
+  `{engine_id: {params, enabled, registry_version}}`；缺文件/缺条目 → 走函数签名
+  默认并输出 `_config_warnings`（不静默）。
+- **注入顺序**：显式入参 > `config.params` > compute_x 函数签名默认；注入经包装层
+  `__call__(args, config=...)`，不得绕过 T-R1/T-R2 契约（校验/位范围/provenance 全程生效）。
+- **版本绑定**：配置 `registry_version` 与 `ENGINE_REGISTRY_VERSION`（engines/base.py，
+  当前 `v1`）核对。**不符 → `_version_warning` 显式登记：结果照常产出、不静默、不阻断**
+  （已知遗留观察「版本不符、结果正确产出」即此口径，与引擎C 00-总览 §8 双向引用）。
+- **处置**：版本不符出现后 → 1) 核对配置文件的 registry_version 是否过期；
+  2) 若为引擎集/契约变更 → bump base.py 常量（M1 注册中心建立后改由 registry 提供）；
+  3) 对齐后重跑该评估 run，`_version_warning` 消失即为处置完成。
+- **停用**：`enabled: false` → 包装器返回 `status=disabled`（不进公式）；
+  报告/工具层对该引擎输出的消费方须处理 disabled 形态（T-R11 回归面覆盖）。
