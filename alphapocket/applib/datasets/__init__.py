@@ -24,7 +24,8 @@ from .. import writeguard
 __all__ = ["KNOWN_MERGE_POLICIES", "MERGE_POLICY_FN", "MERGE_POLICY_FORMAT",
            "SourceSpec", "DatasetSpec", "validate_spec", "load_specs",
            "merge_by_policy", "persist_spec", "MIGRATION_LOG",
-           "registry_specs", "load_registry_raw", "carry_old_rows", "carry_old_merge"]
+           "registry_specs", "load_registry_raw", "carry_old_rows", "carry_old_merge",
+           "check_data_missing"]
 
 
 @dataclass(frozen=True)
@@ -254,3 +255,113 @@ MIGRATION_LOG: tuple[dict, ...] = (
 # 不迁项（离线 mock 种子初始化，非拉取数据集）：seed.py（fx/security/registry/
 # fundamental_values/portfolio×3/signals/strategy 等 10 处）——豁免登记保持有效。
 # （T-R7：PENDING_MIGRATION 兼容别名已删除，引用方统一 MIGRATION_LOG）
+
+
+# ── T-R10 data_missing 检测（单点）：按 spec.validation 声明驱动，零代码接入 ──
+_MISSING_SEVERITY = {"ok": 0, "stale": 1, "incomplete": 2, "invalid": 3, "missing": 4}
+
+
+def _payload_shape_scan(payload, field: str):
+    """通用取数：顶层字段优先；否则扫描全部 list 值的行内 max（dict-of-lists 形态）。"""
+    if isinstance(payload, dict):
+        if field in payload:
+            return payload[field]
+        best = None
+        for v in payload.values():
+            if isinstance(v, list):
+                for r in v:
+                    if isinstance(r, dict) and r.get(field) and (best is None or r[field] > best):
+                        best = r[field]
+        return best
+    return None
+
+
+def _check_one_dataset(repo: Path, spec: DatasetSpec, stale_days: int, today: str) -> dict:
+    """单数据集检测：missing > invalid > incomplete > stale > ok（最严重为 status）。"""
+    import datetime as _dt
+    checks = {}
+    item = {"dataset": spec.dataset_id, "path": spec.path,
+            "status": "ok", "checks": checks}
+    # 模板路径（trade_calendar_{mkt}.json / *.json）→ glob 任一命中即视为有数据
+    if "*" in spec.path or "{" in spec.path:
+        pat = spec.path.split("{")[0].replace("*", "")
+        hits = sorted(repo.glob(f"{pat}*.json")) if pat else []
+        target = hits[0] if hits else repo / spec.path
+    else:
+        target = repo / spec.path
+    v = spec.validation
+    if not target.exists():
+        checks["data_missing"] = {"pass": False,
+                                  "note": f"文件不存在（未采集或拉取失败）：{spec.path}"}
+        item["status"] = "missing"
+        item["reason"] = checks["data_missing"]["note"]
+        return item
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        checks["json_parse"] = {"pass": False, "note": f"JSON 解析失败（损坏）：{type(e).__name__}"}
+        item["status"] = "invalid"
+        item["reason"] = checks["json_parse"]["note"]
+        return item
+    # 完整性：required_keys（顶层键存在性）
+    miss_keys = [k for k in v.get("required_keys", []) if k not in payload]
+    checks["required_keys"] = {"pass": not miss_keys,
+                               "note": f"缺字段 {miss_keys}" if miss_keys else "ok"}
+    # 行数下限：min_rows（list/dict-of-lists/dict 通用计数）
+    if "min_rows" in v:
+        if isinstance(payload, list):
+            n = len(payload)
+        elif isinstance(payload, dict):
+            lists = [len(x) for x in payload.values() if isinstance(x, list)]
+            n = sum(lists) if lists else len(payload)
+        else:
+            n = 0
+        checks["min_rows"] = {"pass": n >= v["min_rows"],
+                              "note": f"rows={n} (min {v['min_rows']})"}
+    # 新鲜度：as_of_field（顶层字段或行内 max；不可解析为日期 → 跳过不虚报）
+    if v.get("as_of_field"):
+        raw = _payload_shape_scan(payload, v["as_of_field"])
+        try:
+            asof = _dt.date.fromisoformat(str(raw)[:10])
+            gap = (_dt.date.fromisoformat(today) - asof).days
+            checks["freshness"] = {"pass": gap <= stale_days,
+                                   "note": f"as_of={asof} 距今 {gap} 天 (stale>{stale_days})"}
+        except ValueError:
+            checks["freshness"] = {"pass": True,
+                                   "note": f"as_of_field={v['as_of_field']!r} 非日期形态，跳过新鲜度"}
+    _CHECK_SEVERITY = {"data_missing": "missing", "json_parse": "invalid",
+                       "required_keys": "incomplete", "min_rows": "incomplete",
+                       "freshness": "stale"}
+    item["status"] = max((_CHECK_SEVERITY[k] for k, c in checks.items() if not c["pass"]),
+                         key=lambda s: _MISSING_SEVERITY[s], default=None) or "ok"
+    if item["status"] != "ok":
+        first_fail = next(k for k in checks if not checks[k]["pass"])
+        item["reason"] = checks[first_fail]["note"]
+    return item
+
+
+def check_data_missing(ctx=None, repo: Path | None = None, specs=None,
+                       stale_days: int = 7, today: str | None = None) -> dict:
+    """T-R10：逐数据集缺失/完整性/新鲜度检测（**提示不阻断**——透明降级语义）。
+
+    与行情门禁（data_risk，失败语义）的显式区别：本函数只产提示，不抛异常、
+    不阻断评估流程；web 黄条/引擎C unavailable 灰条同语义消费。
+    检测逻辑单点：新增数据集在 registry.json 声明 ``validation`` 即自动接入（零代码）。
+    返回 ``{checked_at, stale_days, datasets: {id: item}, summary: {ok,missing,…},
+    semantics}``。
+    """
+    import datetime as _dt
+    today = today or _dt.date.today().isoformat()
+    repo = repo or (ctx.local_repo if ctx is not None else None)
+    if repo is None:
+        raise ValueError("check_data_missing 须提供 ctx 或 repo")
+    specs = specs if specs is not None else registry_specs()
+    out = {ds_id: _check_one_dataset(repo, sp, stale_days, today)
+           for ds_id, sp in specs.items()}
+    summary = {k: 0 for k in _MISSING_SEVERITY}
+    for it in out.values():
+        summary[it["status"]] += 1
+    return {"checked_at": _dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            "stale_days": stale_days, "datasets": out, "summary": summary,
+            "semantics": ("提示不阻断（透明降级）：missing/stale/incomplete/invalid 仅提示可见，"
+                          "评估流程不失败、不进门禁（区别于 data_risk 失败语义）")}

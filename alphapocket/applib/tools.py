@@ -27,6 +27,11 @@ def factor_list(args, ctx):
     return _load(ctx.local_repo / "factors" / "registry.json")
 
 
+def _data_missing(args, ctx):
+    """T-R10 data.missing：逐数据集缺失/完整性/新鲜度检测（提示不阻断，透明降级）。"""
+    return _DS.check_data_missing(ctx, stale_days=int(args.get("stale_days") or 7))
+
+
 def _bars_reports(ctx):
     """从本地 repo 取真实 bars/报告/分红（review 独立可复现：review = f(repo)）"""
     bars = _load(ctx.local_repo / "market" / "daily_bars.json")
@@ -686,6 +691,7 @@ def engine_metrics_remove(args, ctx):
 TOOLS = {
     "data.sync":       _tool(D.data_sync, "同步远端数据集（AKShare 真实数据）到本地 DuckDB"),
     "data.query":      _tool(D.data_query, "只读 SQL 点查（强制 LIMIT）"),
+    "data.missing":    _tool(_data_missing, "T-R10 数据缺失检测（提示不阻断；按 DatasetSpec.validation 声明驱动）"),
     "factor.list":     _tool(factor_list, "列出因子注册中心（id/类型/状态/版本）"),
     "factor.compute":  _tool(factor_compute, "引擎B：20日信号因子（mom/vol/MA20突破/新高/距高点）"),
     "factor.compute_alpha": _tool(factor_compute_alpha, "引擎A：中长期因子（估值/质量/成长/动量/红利低波+五维）"),
