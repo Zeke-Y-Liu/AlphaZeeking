@@ -98,6 +98,28 @@ def _next_trade_date(ctx, as_of):
     return None, 0
 
 
+def _macro_block(ctx, as_of: str) -> dict:
+    """引擎C regime 块（T-C4 集成层）：as_of 与评估同日（组合 K 线最后交易日）。
+
+    透明降级（红线2）：宏观数据缺失/损坏区别于行情数据——不进门禁、评估不失败，
+    status=unavailable 透传；不决策（红线1）：块内无任何信号字段、不参与权重。
+    """
+    f = ctx.local_repo / "market" / "macro_liquidity.json"
+    if not f.exists():
+        return {"status": "unavailable",
+                "reason": "macro_liquidity.json 不存在（未采集，不阻断评估）"}
+    try:
+        ind = _load(f).get("indicators") or {}
+        if not ind:
+            return {"status": "unavailable", "reason": "indicators 为空（数据层未采集）"}
+        m = F.compute_macro_liquidity(ind, as_of)
+        m["status"] = "ok" if m["global_score"] is not None else "unavailable"
+        return m
+    except Exception as e:                         # noqa: BLE001 - 宏观块解析失败不阻断评估
+        return {"status": "unavailable",
+                "reason": f"宏观 payload 解析失败透明降级（{type(e).__name__}）"}
+
+
 def portfolio_review(args, ctx):
     pid = str(args.get("portfolio", "cn4"))
     pf_path = ctx.local_repo / "portfolio" / f"{pid}.json"
@@ -184,6 +206,7 @@ def portfolio_review(args, ctx):
                               "method": "等权·日再平衡·名义组合（真实行情合成；停牌/缺K线按0收益·权重冻结近似；最大回撤=近252交易日窗口）"},
         "positions": positions, "signals": signals,
         "decay_caveats": decay_caveats,
+        "macro_liquidity": _macro_block(ctx, port[-1][0]),   # 引擎C：as_of 与评估同日（T-C4）
         "factor_health": {"active": [f["id"] for f in reg["factors"] if f["status"] == "active"],
                           "weakening": [f for f in reg["factors"] if f["status"] == "weakening"]},
         "data_quality": {"last_bar": port[-1][0], "calendar_next": next_td, "sources": "AKShare 新浪+腾讯",
@@ -454,8 +477,6 @@ def hypothesis_review(args, ctx):
 
 
 # ── factor（引擎C 宏观流动性 T-C3）──────────────────────
-MACRO_SCORER_VERSION = ("v1 (T-C2)：分位点×方向 → 阈值触发/跳平带/前值站位/回退；"
-                        "月度 12 月滚动、日度 60 点；带 mid=0.2/hi=0.6")
 
 
 def factor_macro(args, ctx):
@@ -487,17 +508,7 @@ def factor_macro(args, ctx):
         out["reason"] = "全市场无可用指标（scorer 全路径 insufficient/no_data 降级）"
     else:
         out["status"] = "ok"
-    det = out["detail"]["indicators"]
-    out["notes"] = {   # 口径/版本注记（T-C3 交付 3）
-        "scorer_version": MACRO_SCORER_VERSION,
-        "bands": {"mid": F.MACRO_BAND_MID, "hi": F.MACRO_BAND_HI},
-        "as_of": as_of,
-        "as_of_source": as_of_src,
-        "institutions": sorted({m.get("institution", "?") for m in indicators.values()}),
-        "paths": {p: sum(1 for d in det.values() if d["path"] == p)
-                  for p in ("ok", "carried_prev", "insufficient", "no_data")},
-        "decision_free": True,
-    }
+    out["notes"] = F.macro_scorer_notes(indicators, out, as_of, as_of_src)   # 口径注记单一来源
     return out
 
 

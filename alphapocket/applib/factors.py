@@ -415,6 +415,20 @@ MACRO_MIN_MONTHLY = 6       # 有效样本下限，不足 → 回退（0 档 ins
 MACRO_MIN_DAILY = 20
 MACRO_STATES = {"loose": "偏松", "tight": "偏紧", "neutral": "neutral", "na": "unavailable"}
 MACRO_LEVEL_ZH = {2: "宽松", 1: "偏松", 0: "中性", -1: "偏紧", -2: "紧缩"}   # T-C3 档位中文映射（CLI/前端共用）
+MACRO_SCORER_VERSION = ("v1 (T-C2)：分位点×方向 → 阈值触发/跳平带/前值站位/回退；"
+                        "月度 12 月滚动、日度 60 点；带 mid=0.2/hi=0.6")
+
+
+def macro_scorer_notes(indicators: dict, out: dict, as_of: str, as_of_source: str) -> dict:
+    """口径/版本注记（T-C3 工具面 / T-C4 报告 §2.5 共用单一来源，不决策 grep 兼容）。"""
+    det = out["detail"]["indicators"]
+    return {"scorer_version": MACRO_SCORER_VERSION,
+            "bands": {"mid": MACRO_BAND_MID, "hi": MACRO_BAND_HI},
+            "as_of": as_of, "as_of_source": as_of_source,
+            "institutions": sorted({(m.get("institution") or "?") for m in indicators.values()}),
+            "paths": {p: sum(1 for d in det.values() if d["path"] == p)
+                      for p in ("ok", "carried_prev", "insufficient", "no_data")},
+            "decision_free": True}
 
 # 方向映射（scorer 表输入）：+1 = 值越高越宽松；-1 = 值越高越紧
 MACRO_DIRECTIONS = {

@@ -437,6 +437,7 @@ def test_min_windows_constants():
 
 from applib import cli as CLI
 from applib import tools as TL
+from applib import factors as F
 
 
 def _seed_macro_repo(tmp_path) -> Ctx:
@@ -521,6 +522,141 @@ def test_macro_default_as_of_from_payload(tmp_path):
     res = TL.call_tool("factor.macro", {}, ctx)
     assert res["status"] == "ok" and res["as_of"] == "2026-10-10"
     assert res["notes"]["as_of_source"] == "payload（T-C1 落盘 as_of）"
+
+
+# ══ 引擎C T-C4 集成层（portfolio_review regime 块 + 报告 §2.5）══════════════
+
+from applib import report as REP
+
+
+def test_review_macro_block_states(tmp_path):
+    """_macro_block 三态：存在→ok 冻结五键 / 缺失→unavailable / 损坏→unavailable 不抛异常。"""
+    ctx = _seed_macro_repo(tmp_path)
+    m = TL._macro_block(ctx, "2025-06-13")
+    assert m["status"] == "ok" and m["as_of"] == "2025-06-13"          # as_of 与评估同日
+    for k in ("state", "global", "markets", "global_score", "as_of"):
+        assert k in m                                                   # 冻结契约透传
+
+    ctx2 = _ctx(tmp_path / "ws2")
+    m2 = TL._macro_block(ctx2, "2025-06-13")                            # 缺文件
+    assert m2["status"] == "unavailable" and "不阻断" in m2["reason"]
+
+    ctx3 = _seed_macro_repo(tmp_path / "ws3")
+    (ctx3.local_repo / "market" / "macro_liquidity.json").write_text("{broken json")
+    m3 = TL._macro_block(ctx3, "2025-06-13")                            # 损坏 payload
+    assert m3["status"] == "unavailable" and "解析失败" in m3["reason"]
+
+
+def _ok_macro() -> dict:
+    inds = _full_indicators(hk_mode="none")
+    out = compute_macro_liquidity(inds, "2025-06-13")
+    return {**out, "status": "ok",
+            "notes": F.macro_scorer_notes(inds, out, "2025-06-13", "payload（T-C1 落盘 as_of）")}
+
+
+def _degraded_macro() -> dict:
+    return {"status": "unavailable", "reason": "macro_liquidity.json 不存在（未采集，不阻断评估）"}
+
+
+def _fake_review(macro: dict) -> dict:
+    """最小完整 review（render_html/render_md 全字段），宏观块注入。"""
+    return {
+        "id": "cn4", "name": "测试组合", "as_of": "2025-06-13", "base_ccy": "CNY",
+        "note": "T-C4 测试组合", "next_trade_date": "2025-06-16", "holiday_days": 0,
+        "portfolio_metrics": {"day_ret": 0.01, "ret_20d": 0.02, "ret_ytd": 0.03, "ret_1y": 0.1,
+                              "max_dd_1y": -0.05, "nav": 1.1, "method": "等权·日再平衡（测试）"},
+        "positions": [{
+            "secid": "510300.SH", "name": "测试ETF", "industry": "宽基", "weight": 100,
+            "asset_type": "ETF", "settle": "ETF T+0", "cost": "无印花税",
+            "close": 4.0, "day_pct": 1.0,
+            "alpha": {"val_pe_ttm": None, "val_pb": None, "val_pe_pct": None, "val_pb_pct": None,
+                      "div_yield_ttm": None, "qua_roe_ttm": None, "qua_margin": None,
+                      "grow_rev_yoy": None, "grow_np_yoy": None, "mom_12_1": 0.05,
+                      "vol_250": 0.2, "used_period": None, "pe_hist_n": None},
+            "beta": {"mom_20d": 0.01, "vol_20d": 0.15, "ma20": 3.9, "ma20_break": 0.02,
+                     "state": "above", "high20_touch": False, "dist_high20": -0.01,
+                     "high20_intra": 4.05, "low20": 3.8, "sigma_daily": 0.009,
+                     "band_low": 3.85, "band_high": 4.0},
+            "dims": {}, "grades": {}, "composite": None, "composite_grade": None,
+            "flags": ["ETF（无财报期，估值/质量/成长不适用）"]}],
+        "signals": [], "decay_caveats": [], "macro_liquidity": macro,
+        "factor_health": {"active": [], "weakening": []},
+        "data_quality": {"last_bar": "2025-06-13", "calendar_next": "2025-06-16",
+                         "sources": "AKShare", "provenance": "x"},
+    }
+
+
+def _fake_plan() -> dict:
+    return {"plan_id": "PL-TEST", "status": "pending_human", "diff_trades": [],
+            "turnover_est": "0%", "cost_est_cny": 0, "cost_note": "测试"}
+
+
+def _seed_provenance(tmp_path) -> Ctx:
+    ctx = _ctx(tmp_path)
+    d = ctx.local_repo / "market"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "provenance.json").write_text(json.dumps(
+        {"sources": [{"dataset": "market/daily_bars.json", "interface": "test",
+                      "params": "-", "sha256": "x", "upstream": "测试源"}],
+         "akshare_version": "1.19.1",
+         "fetched_at": "2025-06-13T00:00:00", "pit_rules": {"note": "测试 PIT 规则"}},
+        ensure_ascii=False))
+    return ctx
+
+
+def test_report_macro_section_snapshot(tmp_path):
+    """报告快照：§2.5 HTML/MD 结构、档位映射、口径注记、零外部依赖。"""
+    ctx = _seed_provenance(tmp_path)
+    review = _fake_review(_ok_macro())
+    html = REP.macro_section_html(review)
+    # 结构：标题 + 全局/三市场 + 指标明细表 + 口径注记
+    assert "②·5 宏观流动性" in html and "Engine C" in html
+    for k in ("全局", "A 市场", "HK 市场", "US 市场"):
+        assert k in html
+    assert "市场条件变量" in html and "不决策、不参与权重" in html          # 纪律注记
+    assert "v1 (T-C2)" in html and "2025-06-13" in html                    # 口径/版本注记
+    assert "carried_prev" in html or "no_data" in html                     # 缺指标透明标注
+    # 零外部依赖（报告工程惯例）：无外链脚本/样式/图片
+    assert "http" not in html and "<script" not in html and "<img" not in html
+    # 档位映射：中文档位出现且 unavailable 灰条标注（HK 全缺）
+    assert "unavailable" in html
+    # MD 同步
+    md = REP.macro_section_md(review)
+    assert "## ②·5 宏观流动性（引擎C · 不决策）" in md
+    assert "global_score" in md and "| 市场 | 维度 | 指标 |" in md
+    assert "不决策、不参与权重" in md
+
+
+def test_report_macro_section_degraded(tmp_path):
+    """降级演练：删数据 → unavailable 灰条，评估/报告流程照常完成。"""
+    html = REP.macro_section_html(_fake_review(_degraded_macro()))
+    assert "flag gray" in html and "不阻断评估" in html
+    assert "采集后自动回填" in html or "自动回填" in html
+    md = REP.macro_section_md(_fake_review(_degraded_macro()))
+    assert "透明降级（不阻断评估）" in md
+    # 宏观块无信号字段（grep 红线：引擎C 不决策）
+    assert "signals" not in json.dumps(_degraded_macro())
+    out = _ok_macro()
+    assert "signals" not in json.dumps(out, ensure_ascii=False)
+
+
+def test_render_full_report_embeds_macro(tmp_path):
+    """全文渲染：§2.5 位于 ② 与 ③ 之间，降级态整报告照常渲染。"""
+    ctx = _seed_provenance(tmp_path)
+    verify = {f"v{i}": f"pass(x)" for i in range(1, 7)}
+    html = REP.render_html(_fake_review(_ok_macro()), _fake_plan(), ctx,
+                           "RUN-T4", "v-test", "ds-test", verify)
+    i_25, i_2 = html.index("②·5 宏观流动性"), html.index("② 组合体检")
+    i_3 = html.index("③ 中长期因子评估")
+    assert i_2 < i_25 < i_3                                              # 嵌入位置
+    assert "长期因子评估" in html and "变更/执行/风险建议" in html          # 其余章节完好
+    # 降级态：整报告渲染不炸，§2.5 灰条
+    html2 = REP.render_html(_fake_review(_degraded_macro()), _fake_plan(), ctx,
+                            "RUN-T4", "v-test", "ds-test", verify)
+    assert "flag gray" in html2 and "③ 中长期因子评估" in html2
+    md = REP.render_md(_fake_review(_ok_macro()), _fake_plan(), "RUN-T4", "v-test", "ds-test", verify)
+    assert md.index("## ②·5 宏观流动性") > md.index("## ② 组合体检")
+    assert md.index("## ②·5 宏观流动性") < md.index("## ③ 中长期因子评估")
 
 
 def test_macro_as_of_fallback_from_indicators(tmp_path):

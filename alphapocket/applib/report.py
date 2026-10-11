@@ -1,7 +1,7 @@
 """报告生成（V4-α 真实数据版）：HTML（纸质档案风）+ Markdown（供 agent 解读）
 
-模板 cn4_review：①数据与验证 ②组合体检 ③中长期因子评估(引擎A) ④短期20日评估(引擎B)
-⑤下一交易日指引 ⑥变更/执行/风险建议 —— 全部数字来自 AKShare 真实数据，可复现。
+模板 cn4_review：①数据与验证 ②组合体检 ②·5宏观流动性(引擎C·不决策) ③中长期因子评估(引擎A)
+④短期20日评估(引擎B) ⑤下一交易日指引 ⑥变更/执行/风险建议 —— 全部数字来自 AKShare 真实数据，可复现。
 """
 from __future__ import annotations
 import json
@@ -59,6 +59,88 @@ code{font-family:var(--mono);font-size:10px;background:var(--card2);border:1px s
 """
 
 VGRADE = {"A": "gA", "B": "gB", "B+": "gB", "C": "gC", "C+": "gC", "D": "gD", "D+": "gD"}
+
+# ── 引擎C 宏观流动性 §2.5（T-C4 集成层）────────────────────
+# 温度计三态+icon 映射（复用 data_risk 视觉语言：极端档 .flag 醒目 / 中间档次级 / unavailable 灰条）
+MACRO_ICON = {2: "▲▲", 1: "▲", 0: "●", -1: "▼", -2: "▼▼"}
+
+
+def _macro_zh(lvl):
+    from .factors import MACRO_LEVEL_ZH
+    return MACRO_LEVEL_ZH.get(lvl, str(lvl)) if isinstance(lvl, int) else "unavailable"
+
+
+def _macro_chip(lvl) -> str:
+    """档位徽章：|±2| 极端醒目（seal 红）→ ±1 次级（蓝/棕）→ 0 中性 → unavailable 灰条。"""
+    if not isinstance(lvl, int):
+        return '<span class="flag gray">◇ unavailable</span>'
+    if abs(lvl) == 2:
+        return f'<span class="flag">{MACRO_ICON[lvl]} {_macro_zh(lvl)}</span>'
+    if lvl == 1:
+        return f'<span class="flag" style="color:#2C5F8A;border-color:#9CBBD6">{MACRO_ICON[lvl]} 偏松</span>'
+    if lvl == -1:
+        return f'<span class="flag" style="color:#8A6D2F;border-color:#C9AE7A">{MACRO_ICON[lvl]} 偏紧</span>'
+    return '<span class="flag gray">● 中性</span>'
+
+
+def macro_section_html(review) -> str:
+    """§2.5 宏观流动性 HTML：三市场温度计 + 全局概览 + 指标明细 + 口径注记（单文件零外部依赖）。"""
+    m = review.get("macro_liquidity") or {"status": "unavailable", "reason": "无数据"}
+    if m.get("status") == "unavailable":
+        return f"""<h2>②·5 宏观流动性<em>Engine C · Macro Liquidity</em></h2>
+<div class="card"><span class="flag gray">◇ unavailable</span>
+<div class="meta" style="padding:6px 0">透明降级（不阻断评估）：{m.get('reason', 'unavailable')}</div>
+<div class="warn"><span>◇</span><div>宏观流动性数据缺失区别于行情数据——<b>不进门禁、评估不失败</b>；
+采集入口：<code>fetch_macro_liquidity</code>（ap fetch 宏观独立采集）+ <code>ap clone</code> 后自动回填本节。</div></div></div>"""
+    lv = m["markets"]
+    grid = "".join(
+        f"<div><div class='k'>{'全局' if k == 'G' else k + ' 市场'}</div>"
+        f"<div class='v'>{'—' if k == 'G' and m['global_score'] is None else _macro_zh(lv[k]) if k != 'G' else _macro_zh(m['global'])}"
+        f"<span style='font-size:9px;color:var(--mute)'> {lv[k] if k != 'G' else m['global']}"
+        + (f" ｜score {m['global_score']}" if k == 'G' else "") + "</span></div></div>"
+        for k in ("G", "A", "HK", "US"))
+    rows = ""
+    for sid, d in sorted(m.get("detail", {}).get("indicators", {}).items(),
+                         key=lambda x: (x[1].get("market", ""), x[1].get("dim", ""), x[0])):
+        if d.get("score") is None:
+            rows += (f"<tr><td>{d.get('market')}</td><td>{d.get('dim')}</td><td><b>{sid}</b></td>"
+                     f"<td colspan='3' class='meta'>—（{d.get('path')}，透明标注）</td></tr>")
+        else:
+            rows += (f"<tr><td>{d['market']}</td><td>{d['dim']}</td><td><b>{sid}</b></td>"
+                     f"<td class='mono'>{d['pctile']:.3f}{(' ⟲' if d.get('stale') else '')}</td>"
+                     f"<td class='mono'>{_num(d['score'])}</td><td>{_macro_chip(d['level'])}</td></tr>")
+    n = m.get("notes") or {}
+    return f"""<h2>②·5 宏观流动性<em>Engine C · Macro Liquidity · 不决策</em></h2>
+<div class="card"><div class="grid" style="grid-template-columns:repeat(4,1fr)">{grid}</div>
+<table style="margin-top:10px"><tr><th>市场</th><th>维度</th><th>指标</th><th>分位(新)</th><th>score</th><th>档位</th></tr>{rows}</table>
+<div class="warn"><span>◇</span><div><b>市场条件变量</b>：不决策、不参与权重（引擎C 与引擎A 评分、引擎B 信号三线并列展示）。
+口径 {n.get('scorer_version', '—')} · as_of <code>{m.get('as_of')}</code>（与评估同日，组合 K 线口径）·
+来源 {'、'.join(n.get('institutions', ['—']))}。</div></div></div>"""
+
+
+def macro_section_md(review) -> str:
+    """§2.5 宏观流动性 MD 小节（与 HTML 同口径）。"""
+    m = review.get("macro_liquidity") or {"status": "unavailable", "reason": "无数据"}
+    if m.get("status") == "unavailable":
+        return (f"\n## ②·5 宏观流动性（引擎C）\n- 透明降级（不阻断评估）：{m.get('reason', 'unavailable')}"
+                "\n- 宏观数据缺失区别于行情数据：不进门禁、评估不失败；采集后自动回填本节\n")
+    lv = m["markets"]
+    L = [f"\n## ②·5 宏观流动性（引擎C · 不决策）",
+         f"- 全局 {_macro_zh(m['global'])}（{m['global']}）· global_score {m['global_score']} · as_of {m['as_of']}（与评估同日）",
+         f"- A {_macro_zh(lv['A'])}（{lv['A']}）｜HK {_macro_zh(lv['HK'])}｜US {_macro_zh(lv['US'])}",
+         "\n| 市场 | 维度 | 指标 | 分位(新) | score | 档位 |\n| --- | --- | --- | --- | --- | --- |"]
+    for sid, d in sorted(m.get("detail", {}).get("indicators", {}).items(),
+                         key=lambda x: (x[1].get("market", ""), x[1].get("dim", ""), x[0])):
+        if d.get("score") is None:
+            L.append(f"| {d.get('market')} | {d.get('dim')} | {sid} | — | — | —（{d.get('path')}） |")
+        else:
+            tag = "⟲" if d.get("stale") else ""
+            L.append(f"| {d['market']} | {d['dim']} | {sid} | {d['pctile']:.3f}{tag} "
+                     f"| {_num(d['score'])} | {_macro_zh(d['level'])} |")
+    n = m.get("notes") or {}
+    L.append(f"\n- 口径 {n.get('scorer_version', '—')} · 来源 {'、'.join(n.get('institutions', ['—']))}")
+    L.append("- 纪律：市场条件变量——不决策、不参与权重（引擎C 与引擎A 评分、引擎B 信号三线并列展示）\n")
+    return "\n".join(L)
 
 
 def _g(v):
@@ -202,6 +284,9 @@ def render_html(review, plan, ctx: Ctx, run_id: str, code_ver, ds_commit, verify
 </div>
 <div class="meta" style="margin-top:9px">{pm['method']} · {review['note']} · 资产分布：{mix_txt}（{fx_txt}）</div></div>""")
 
+    # ②·5 宏观流动性（引擎C，T-C4：透明降级不阻断评估）
+    h.append(macro_section_html(review))
+
     # ③ 中长期因子评估（引擎 A）
     rows = ""
     for p in review["positions"]:
@@ -319,6 +404,7 @@ def render_md(review, plan, run_id, code_ver, ds_commit, verify) -> str:
     pm = review["portfolio_metrics"]
     L.append(f"- 当日 {_pct(pm['day_ret'])} · 近20日 {_pct(pm['ret_20d'])} · 年初至今 {_pct(pm['ret_ytd'])} · 近一年 {_pct(pm['ret_1y'])} · 一年最大回撤 {_pct(pm['max_dd_1y'])}")
     L.append(f"- {pm['method']} · {review['note']}\n")
+    L.append(macro_section_md(review))          # ②·5 宏观流动性（引擎C，T-C4）
     L.append("## ③ 中长期因子评估（引擎A）\n| 标的 | PE-TTM(分位) | PB(分位) | 股息率 | ROE-TTM | 营收同比 | 净利同比 | 动量12-1 | 年化波动 | 五维 | 综合 |")
     L.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for p in review["positions"]:
