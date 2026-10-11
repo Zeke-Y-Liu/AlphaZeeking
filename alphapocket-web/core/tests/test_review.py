@@ -179,7 +179,7 @@ def _wait_job(api_client: TestClient, job_id: str, timeout: float = 15.0) -> dic
 # ── 用例 ────────────────────────────────────────────────────────
 
 
-# 引擎C regime 块（T-C2 冻结契约五键 + status，模拟 applib 真实输出——core 消费不实现）
+# 引擎C 冻结契约（T-C6）：_macro_summary 纯函数产出五键子集（status/detail/notes 不进 summary）
 MACRO_OK = {
     "status": "ok", "state": "neutral", "global": 0,
     "markets": {"A": -1, "HK": "unavailable", "US": 0}, "global_score": -0.149,
@@ -187,6 +187,13 @@ MACRO_OK = {
     "detail": {"indicators": {}}, "notes": {"scorer_version": "v1 (T-C2)", "decision_free": True},
 }
 MACRO_DOWN = {"status": "unavailable", "reason": "macro_liquidity.json 不存在（未采集，不阻断评估）"}
+# 冻结五键（API.md 注释同步：向后兼容只增不改）
+MACRO_FROZEN_OK = {"state": "neutral", "global": 0,
+                   "markets": {"A": -1, "HK": "unavailable", "US": 0},
+                   "global_score": -0.149, "as_of": "2026-01-06"}
+MACRO_FROZEN_NA = {"state": "unavailable", "global": "unavailable",
+                   "markets": {"A": "unavailable", "HK": "unavailable", "US": "unavailable"},
+                   "global_score": None, "as_of": None}
 
 
 def test_review_gate_failed_409_and_no_job(api_client, cleanup, monkeypatch) -> None:
@@ -286,10 +293,11 @@ def test_review_green_gate_job_succeeds(api_client, ws_root, cleanup, monkeypatc
     assert summary["position_count"] == 2
     assert summary["signal_count"] == 5
     assert summary["signal_states"] == {"above": 1, "below": 1, "neutral": 0}
-    # 引擎C regime 块透传（T-C5：消费不实现，结构 = T-C2 冻结契约）
+    # 引擎C 冻结契约（T-C6）：_macro_summary 提炼五键子集，逐字段符合冻结契约
     ml = summary["macro_liquidity"]
-    for key in ("status", "state", "global", "markets", "global_score", "as_of"):
-        assert ml[key] == MACRO_OK[key]
+    assert ml == dict(MACRO_FROZEN_OK)
+    assert set(ml) == {"state", "global", "markets", "global_score", "as_of"}   # 无扩展键
+    assert "signals" not in ml                       # 不决策 grep 红线
     assert result["artifact_keys"] == sorted(
         f"runs/{result['run_uid']}/{name}" for name in ARTIFACT_NAMES
     )
@@ -301,11 +309,9 @@ def test_review_green_gate_job_succeeds(api_client, ws_root, cleanup, monkeypatc
     assert run.as_of == date(2026, 1, 6)
     assert run.artifact_keys == result["artifact_keys"]
     assert run.summary["signal_states"] == {"above": 1, "below": 1, "neutral": 0}
-    # PG 实查 summary:macro_liquidity 结构符合冻结契约（T-C5 DoD #2 / 总验收 #5）
+    # PG 实查 summary:macro_liquidity 逐字段符合冻结契约（T-C6 DoD #2 / 总验收 #5）
     pg_ml = run.summary["macro_liquidity"]
-    assert pg_ml["status"] == "ok" and pg_ml["state"] == "neutral"
-    assert pg_ml["markets"] == {"A": -1, "HK": "unavailable", "US": 0}
-    assert pg_ml["global_score"] == pytest.approx(-0.149)
+    assert pg_ml == dict(MACRO_FROZEN_OK)              # 逐字段全等（五键冻结形态）
     assert "signals" not in pg_ml                      # 不决策 grep 红线
 
 
@@ -410,13 +416,38 @@ def test_review_macro_unavailable_passthrough(api_client, ws_root, cleanup, monk
     job = _wait_job(api_client, job_id)
     assert job["status"] == "done", job                       # 评估不失败
     ml = job["result"]["summary"]["macro_liquidity"]
-    assert ml["status"] == "unavailable" and "不阻断" in ml["reason"]
+    assert ml == dict(MACRO_FROZEN_NA)                        # 降级归一冻结形态（T-C6）
     assert "signals" not in ml
 
     with SessionLocal() as db:                                # PG 落库实查（DoD #2 降级样本）
         run = db.execute(select(Run).where(Run.job_id == job_id)).scalar_one()
-    assert run.summary["macro_liquidity"] == dict(MACRO_DOWN)
+    assert run.summary["macro_liquidity"] == dict(MACRO_FROZEN_NA)
     cleanup["run_uids"].append(run.run_uid)
+
+
+# ── T-C6 纯函数单测（测试面小、契约面最大——下游 T-C7 前端与 API.md 全部引用此结构）──
+
+
+def test_macro_summary_structure():
+    """纯函数单测 1（结构）：ok 块提炼五键全等；status/detail/notes 不进 summary。"""
+    from app.services.review import _macro_summary
+
+    out = _macro_summary(dict(MACRO_OK))
+    assert out == dict(MACRO_FROZEN_OK)
+    assert set(out) == {"state", "global", "markets", "global_score", "as_of"}
+    # 降级三输入归一同一形态：unavailable 块 / 非 dict / 缺块
+    for degraded in (dict(MACRO_DOWN), None, "junk", 42):
+        assert _macro_summary(degraded) == dict(MACRO_FROZEN_NA)
+
+
+def test_macro_summary_idempotent():
+    """纯函数单测 2（幂等）：对输出再跑一遍结果不变（f(f(x))=f(x)）。"""
+    from app.services.review import _macro_summary
+
+    once = _macro_summary(dict(MACRO_OK))
+    assert _macro_summary(once) == once == dict(MACRO_FROZEN_OK)
+    na = _macro_summary(dict(MACRO_DOWN))
+    assert _macro_summary(na) == na == dict(MACRO_FROZEN_NA)   # unavailable 形态自洽
 
 
 def test_run_review_unmaterialized_raises_not_found(tmp_path, pg_ready) -> None:

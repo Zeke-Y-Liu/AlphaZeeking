@@ -133,6 +133,13 @@
 
 > 列表/详情中的 `latest_run` 原样返回 `{run_uid, type, as_of, created_at, summary}`；
 > 列表页四指标（当日·YTD·1年·MDD）取自 `latest_run.summary.portfolio_metrics`（仅 review run 具备）。
+>
+> **引擎C `summary.macro_liquidity`（T-C6 冻结契约）**：review run 专属，字段级冻结
+> （向后兼容只增不改，改名/删字段 = 破坏性变更须走契约修订）——
+> `{"state","global","markets":{A,HK,US},"global_score","as_of"}`；
+> 降级归一 unavailable 形态（`state="unavailable"`、`global_score=null`、`as_of=null`）。
+> 边界：该字段**不进 data_risk**（不参与数据风险判定）、**不进六项验证门禁**
+> （宏观流动性数据缺失区别于行情数据——透明降级，评估照常完成）。
 > V4-β：多市场组合 `base_ccy=CNY`，各持仓 `trade_ccy` 按标的币种（A股 CNY / 港股 HKD
 > （港股通以港币报价、人民币结算）/ 美股 USD），折算口径用 workspace `market/fx.json` 汇率。
 

@@ -14,8 +14,9 @@
    失败只 ``logger.warning`` 不阻断；
 4. ``portfolio_review`` / ``portfolio_rebalance_plan``（applib 工具）→ 渲染报告 →
    上传产物（MinIO）→ 写 ``runs`` 记录 → 返回 ``{run_uid, artifact_keys, summary}``。
-   ``summary.macro_liquidity``（T-C5）为引擎C regime 块透传（消费不实现，
-   缺失/不可用归 ``{"status": "unavailable"}``，不阻断评估、不进门禁）。
+   ``summary.macro_liquidity``（T-C5/T-C6）为 ``_macro_summary`` 纯函数从引擎C
+   regime 块提炼的**冻结五键**（state/global/markets/global_score/as_of；
+   消费不实现，降级归一 unavailable 形态，不阻断评估、不进门禁、不进 data_risk）。
 
 β 阶段限制（登记，不单方面改契约）
 ---------------------------------
@@ -107,13 +108,39 @@ def _signal_states(review: dict[str, Any]) -> dict[str, int]:
     return counts
 
 
+# 引擎C 冻结契约五键（T-C6）：字段级冻结，向后兼容只增不改；
+# 改名/删字段 = 破坏性变更，须走契约修订（API.md 注释同步）
+_MACRO_SUMMARY_KEYS = ("state", "global", "markets", "global_score", "as_of")
+_MACRO_NA_MARKETS = {"A": "unavailable", "HK": "unavailable", "US": "unavailable"}
+
+
+def _macro_summary(macro: Any) -> dict[str, Any]:
+    """从 T-C2/T-C4 regime 块提炼 ``runs.summary.macro_liquidity`` 冻结字段子集（纯函数）。
+
+    冻结契约（结构定型，下游 T-C7 前端与 API.md 全部引用此结构）::
+
+        {"state": "neutral", "global": 1,
+         "markets": {"A": 1, "HK": 0, "US": 1},
+         "global_score": 0.458, "as_of": "2026-10-09"}
+
+    降级归一（透明降级语义，块内 ``status/reason/detail/notes`` 等**不进** summary）：
+    缺块/非 dict/status=unavailable → ``state="unavailable"、global_score=None、
+    as_of=None、三市场 "unavailable"``。
+    边界（T-C6 交付 3）：本字段**不进 data_risk**（不参与数据风险判定）、
+    **不进六项验证门禁**（宏观数据缺失区别于行情数据）。
+    """
+    if not isinstance(macro, dict) or macro.get("status") == "unavailable":
+        return {"state": "unavailable", "global": "unavailable",
+                "markets": dict(_MACRO_NA_MARKETS), "global_score": None, "as_of": None}
+    return {k: macro.get(k) for k in _MACRO_SUMMARY_KEYS}
+
+
 def _build_summary(review: dict[str, Any]) -> dict[str, Any]:
     """组装 ``runs.summary``（字段冻结，供 T6.4 前端直接读）。
 
-    引擎C（T-C5）：``macro_liquidity`` **消费不实现**——直接透传 applib
-    ``portfolio_review`` 产出的 regime 块（结构 = T-C2 冻结契约五键 + status；
-    detail/notes 为允许扩展键）。缺失（旧工具输出）归一为 ``{"status": "unavailable"}``
-    （透明降级：不阻断评估，不进门禁、不进 data_risk）。core 不重复计算。
+    引擎C（T-C5/T-C6）：``macro_liquidity`` **消费不实现**——``_macro_summary``
+    纯函数从 applib ``portfolio_review`` 的 regime 块提炼冻结五键（单一事实源，
+    core 不重复计算；降级归一 unavailable 形态，不阻断评估、不进门禁、不进 data_risk）。
     """
     macro = review.get("macro_liquidity")
     return {
@@ -122,7 +149,7 @@ def _build_summary(review: dict[str, Any]) -> dict[str, Any]:
         "position_count": len(review.get("positions") or []),
         "signal_count": len(review.get("signals") or []),
         "signal_states": _signal_states(review),
-        "macro_liquidity": macro if isinstance(macro, dict) else {"status": "unavailable"},
+        "macro_liquidity": _macro_summary(macro),
     }
 
 
