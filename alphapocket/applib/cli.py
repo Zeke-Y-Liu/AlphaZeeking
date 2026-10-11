@@ -22,7 +22,8 @@ def cmd_auth(args):
 def cmd_fetch(args):
     from .datasource import fetch_all
     ctx = Ctx()
-    res = fetch_all(ctx, start=args.start)
+    mode = getattr(args, "mode", None)
+    res = fetch_all(ctx, start=args.start, mode=mode)
     print(json.dumps(res, ensure_ascii=False, indent=2))
     print("→ 下一步：ap clone && ap run tasks/review_cn4.yaml")
 
@@ -401,6 +402,9 @@ def main():
 
     f = sub.add_parser("fetch", help="AKShare 真实数据 → remote/repo（含溯源+PIT规则）")
     f.add_argument("--start", default="2021-01-01", help="行情起始日（默认 2021-01-01，覆盖五年分位+250日因子）")
+    f.add_argument("--mode", default=None, choices=["bootstrap", "incremental", "refresh"],
+                   help="T-R8 三模式显式：bootstrap=全量重建 / incremental=增量合并（默认自动推导起点）"
+                        " / refresh=刷新最近5个交易日（点位修正）；缺省=按参数推导+告警（防误触覆盖）")
     f.set_defaults(fn=cmd_fetch)
 
     sub.add_parser("clone", help="远端 main → sandbox（AKShare 真实数据）").set_defaults(fn=cmd_clone)

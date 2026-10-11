@@ -765,8 +765,39 @@ def _fetch_a_statements(ak, sina: str) -> dict[str, dict]:
     return out
 
 
+REFRESH_WINDOW_DAYS = 7      # refresh 模式回看窗口（≈ 最近 5 个交易日，点位修正）
+VALID_FETCH_MODES = ("bootstrap", "incremental", "refresh")
+
+
+def _resolve_mode(mode: str | None, incremental_from) -> tuple[str, str, str | None]:
+    """T-R8 模式解析（纯函数）：显式校验 → 冲突拒绝 → 缺省推导+告警。
+
+    返回 ``(mode, mode_source, mode_warning)``；冲突/非法显式 raise（无旁路）。
+    """
+    if mode is not None and mode not in VALID_FETCH_MODES:
+        raise ValueError(
+            f"fetch_all mode 非法：{mode!r}（须 bootstrap / incremental / refresh）")
+    mode_source = "explicit" if mode else "derived"
+    mode_warning = None
+    if mode is None:
+        mode = "incremental" if incremental_from else "bootstrap"
+        mode_warning = (f"未显式指定 mode，按参数推导为 {mode!r}"
+                        "（建议显式传 mode；bootstrap 会整体重建 repo）")
+    elif mode in ("bootstrap", "refresh") and incremental_from:
+        raise ValueError(
+            f"mode={mode!r} 不接受 incremental_from（{mode} 模式窗口自定，防旁路覆盖）")
+    return mode, mode_source, mode_warning
+
+
+def _refresh_window(secids: list[str], today: str | None = None) -> dict:
+    """refresh 模式窗口推导（纯函数）：全部请求标的按最近 ≈5 交易日窗口重拉。"""
+    d = dt.date.fromisoformat(today) if today else dt.date.today()
+    win_start = (d - dt.timedelta(days=REFRESH_WINDOW_DAYS)).isoformat()
+    return {s: win_start for s in secids}
+
+
 def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
-              universe=None, incremental_from=None) -> dict:
+              universe=None, incremental_from=None, mode: str | None = None) -> dict:
     """拉取行情/财务/分红/日历 → remote/repo（云端替身）。
 
     T0.3 参数化（默认行为与历史逐字节一致）：
@@ -775,17 +806,43 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                             未匹配的 secid 跳过并在返回体 universe_missing 中登记）
     - incremental_from={secid: "YYYY-MM-DD"} → 该 secid 行情自「次日」起增量拉取；
                             未列出的 secid 仍按 start 全量
+
+    T-R8 三模式显式（红线：无旁路写库——所有 fetch 路径必经 mode）：
+    - mode="bootstrap"：全量重建（首次落地/灾后重建；rmtree + 全量拉取）
+    - mode="incremental"：增量合并（日常同步；**不 rmtree**，失败不丢旧值；
+      incremental_from 缺省时自动从库内各标的最末 dt 推导起点；走 merge_policy）
+    - mode="refresh"：合并式刷新（**替换最近 5 个交易日≈7 自然日窗口**而非整体覆盖——
+      历史修复成果的固化；union 同 dt 覆盖=点位修正，历史不动）
+    - mode=None：向后兼容推导（incremental_from → incremental，否则 bootstrap）
+      + 告警登记（防误触覆盖；建议显式 --mode）
+    冲突：mode=bootstrap/refresh 时显式传 incremental_from → ValueError（窗口自定）。
     """
     import akshare as ak
     today = dt.date.today().isoformat()
     repo = ctx.repo_dir
+
+    # ── T-R8 模式解析（纯函数 _resolve_mode：显式优先；推导告警不静默）──
+    mode, mode_source, mode_warning = _resolve_mode(mode, incremental_from)
+
     if repo.exists():
         from .writeguard import snapshot_guard
-        guard_snap = snapshot_guard(repo)   # T-R4 写保护：rmtree 前抢救用户登记面+历史K线
-        import shutil
-        shutil.rmtree(repo)               # 真实数据切换：整体重建云端 main（α）
+        guard_snap = snapshot_guard(repo)   # T-R4 写保护：重建/覆盖前抢救用户登记面+历史K线
     else:
         guard_snap = {}
+    if mode == "bootstrap" and repo.exists():
+        import shutil
+        shutil.rmtree(repo)               # 全量重建云端 main（α；首次/灾后）
+    # incremental/refresh：不 rmtree（增量语义：单数据集拉取失败 → 旧文件保留；
+    # K 线窗口覆盖写由 restore_guard 按 merge_policy 合并补回全历史）
+
+    # incremental 缺省起点：自动从库内各标的最末 dt 推导（日常同步默认）
+    incremental_auto = False
+    if mode == "incremental" and not incremental_from and guard_snap.get("market/daily_bars.json"):
+        old_bars = guard_snap["market/daily_bars.json"]
+        incremental_from = {s: rows[-1]["dt"] for s, rows in old_bars.items()
+                            if isinstance(rows, list) and rows and rows[-1].get("dt")}
+        incremental_auto = bool(incremental_from)
+
     for sub in ("market", "factors", "portfolio", "dim"):
         (repo / sub).mkdir(parents=True, exist_ok=True)
 
@@ -822,6 +879,10 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
     universe_fetched = ([u["secid"] for u in a_stocks] + [u["secid"] for u in a_funds]
                         + [u["secid"] for u in hk_stocks] + [u["secid"] for u in us_stocks])
 
+    # refresh 窗口：全部请求标的按「最近 5 个交易日 ≈ 7 自然日」重拉（同 dt 覆盖=点位修正）
+    if mode == "refresh":
+        incremental_from = _refresh_window(universe_fetched, today)
+
     # 未知标的（无内置名称）批量取实时行情补名称（尽力而为，失败回退 code）
     unnamed = [u for u in (*a_stocks, *a_funds, *hk_stocks, *us_stocks)
                if not u.get("name") or u["name"] == u["code"]]
@@ -844,6 +905,7 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
 
     prov = {"fetched_at": dt.datetime.now().isoformat(timespec="seconds"),
             "akshare_version": ak.__version__, "today": today,
+            "mode": mode, "mode_source": mode_source,     # T-R8 模式登记（可追溯）
             "universe": list(requested),
             "sources": [], "pit_rules": {
                 "financial_report_lag_days": PIT_LAG_DAYS,
@@ -1192,6 +1254,8 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
     per_secid = {s: {"bars": len(arr), "last_dt": arr[-1]["dt"] if arr else None}
                  for s, arr in bars_qfq.items()}
     return {"fetched": True, "universe": [u["secid"] for u in CN4], "start": start,
+            "mode": mode, "mode_source": mode_source, "mode_warning": mode_warning,
+            "incremental_auto": incremental_auto,
             "datasets": [s["file"] for s in prov["sources"]],
             "provenance": str(repo / "market" / "provenance.json"),
             "as_of_bars": max((r["dt"] for arr in bars_qfq.values() for r in arr), default=None),

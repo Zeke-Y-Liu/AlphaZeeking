@@ -220,3 +220,15 @@ MCP factor.macro # 工具面：读同一 payload → compute_macro_liquidity（�
   3) 对齐后重跑该评估 run，`_version_warning` 消失即为处置完成。
 - **停用**：`enabled: false` → 包装器返回 `status=disabled`（不进公式）；
   报告/工具层对该引擎输出的消费方须处理 disabled 形态（T-R11 回归面覆盖）。
+
+## 11. 数据同步三模式（T-R8 · `ap fetch --mode`）
+
+- **bootstrap**：全量重建（首次落地/灾后重建；rmtree + 全量拉取 + restore_guard 回写）。
+- **incremental**：日常同步；不 rmtree（单数据集拉取失败 → 旧文件保留）；
+  `incremental_from` 缺省时**自动从库内各标的最末 dt 推导起点**；K 线走 union_bars 合并。
+- **refresh**：合并式刷新——**替换最近 5 个交易日（7 自然日窗口）而非整体覆盖**，
+  同 dt 新值覆盖=点位修正，历史不动；用于数据源修正回填后的定点刷新。
+- **缺省（不传 --mode）**：按参数推导（有 incremental_from → incremental，否则 bootstrap）
+  并输出 `mode_warning` 告警（防误触覆盖）；建议生产路径全部显式传 mode。
+- **冲突拒绝**：`--mode bootstrap/refresh` 与显式 incremental_from 同传 → ValueError
+  （窗口自定，防旁路覆盖）。模式与起点写入 `provenance.mode/mode_source` 可追溯。
