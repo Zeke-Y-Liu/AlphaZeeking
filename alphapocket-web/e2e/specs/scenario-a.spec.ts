@@ -103,7 +103,7 @@ test.describe('剧本 A · multi5 全流', () => {
 
     /* ⑤ 数据页：六项验证全绿（A1 锚点）→ 验证明细 → 增量同步推进数据截至日 */
     await page.goto('/data');
-    await expect(page.getByTestId('universe-count')).toHaveText('9');
+    await expect(page.getByTestId('universe-count')).toHaveText('12');
     await expect(page.getByTestId('verify-summary')).toHaveText('pass');
     await expect(page.getByTestId('exempt-row')).toContainText('3');
     await expect(page.getByTestId('missing-row')).toContainText('0');
