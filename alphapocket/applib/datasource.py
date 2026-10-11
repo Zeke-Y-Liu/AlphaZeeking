@@ -779,8 +779,12 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
     today = dt.date.today().isoformat()
     repo = ctx.repo_dir
     if repo.exists():
+        from .writeguard import snapshot_guard
+        guard_snap = snapshot_guard(repo)   # T-R4 写保护：rmtree 前抢救用户登记面+历史K线
         import shutil
         shutil.rmtree(repo)               # 真实数据切换：整体重建云端 main（α）
+    else:
+        guard_snap = {}
     for sub in ("market", "factors", "portfolio", "dim"):
         (repo / sub).mkdir(parents=True, exist_ok=True)
 
@@ -1180,6 +1184,11 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
         encoding="utf-8")
 
     # ── ④ 溯源登记（自哈希最后登记）──
+    # T-R4 写保护恢复：守护面合并回写（用户字段逐项保留/orphan 标记/K线历史不丢）
+    guard_summary = {}
+    if guard_snap:
+        from .writeguard import restore_guard
+        guard_summary = restore_guard(repo, guard_snap)
     if corp_actions:
         prov["fund_corporate_actions"] = corp_actions
     (repo / "market" / "provenance.json").write_text(
@@ -1199,7 +1208,8 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
             "universe_failed": universe_failed,
             "market_cap_secids": sorted(market_cap),
             "incremental_from": dict(incremental_from) if incremental_from else {},
-            "per_secid": per_secid}
+            "per_secid": per_secid,
+            "write_guard": guard_summary}
 
 
 # ══ 引擎C · 宏观流动性数据层（T-C1）══════════════════════════════════════════
