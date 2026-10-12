@@ -1,0 +1,38 @@
+# val_div_yield —— 股息率（M2，实施计划 §5 首批 P0）
+# 口径：近 12 月已实施每股现金分红之和 / close（DPS 口径，免市值换算）
+# PIT：分红按 ex_date（除息日，现金到账事件时点）<= dt 计入窗口 [dt - 1 年, dt]；
+#      used_announce 取窗口内最近一次分红的公告日（供审计对齐），used_period 置空（无财报期）
+id: val_div_yield
+name: 股息率TTM
+family: valuation
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar, dwd_dividend]
+direction: +1            # 高股息长期正超额（红利风格）→ 打分方向为正
+hypothesis_id: null
+transform: []
+sql: |
+  WITH b AS (
+    SELECT dt, secid, close FROM dwd_daily_bar
+    WHERE ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  ),
+  win AS (
+    SELECT b.dt, b.secid, b.close,
+           SUM(d.dps) AS dps_12m,
+           MAX(d.announce) AS last_announce
+    FROM b JOIN dwd_dividend d
+      ON d.secid = b.secid
+     AND d.ex_date <= b.dt
+     AND d.ex_date >  b.dt - INTERVAL 1 YEAR
+    GROUP BY b.dt, b.secid, b.close
+  )
+  SELECT dt, secid,
+         CASE WHEN dps_12m > 0 THEN dps_12m / close END AS value,
+         CAST(NULL AS DATE) AS used_period,
+         last_announce AS used_announce
+  FROM win

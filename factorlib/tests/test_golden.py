@@ -22,7 +22,7 @@ TTM 规则（与 val_pe_ttm.yaml 逐条对应）：
 import duckdb
 import pytest
 
-from conftest import sql_from_yaml
+from conftest import DDL_BARS, DDL_FUND, sql_from_yaml
 from factorlib.engine import run_factor
 
 GDTs = ["2021-01-04", "2021-01-05", "2021-01-06", "2021-01-07"]
@@ -81,15 +81,14 @@ N_ALL_SITES = len(GDTs) * len(GCLOSES)  # 10 × 4 = 40
 @pytest.fixture()
 def golden_con():
     con = duckdb.connect(":memory:")
-    con.execute("""CREATE TABLE dwd_daily_bar (secid TEXT, dt DATE, open DOUBLE, high DOUBLE,
-                   low DOUBLE, close DOUBLE, volume BIGINT, amount DOUBLE, pct DOUBLE)""")
-    con.execute("""CREATE TABLE dwd_financial_report (secid TEXT, period DATE, announce_date DATE,
-                   eps_ytd DOUBLE, bps DOUBLE, roe DOUBLE, roe_w DOUBLE, rev_g DOUBLE,
-                   np_g DOUBLE, margin DOUBLE)""")
+    con.execute(DDL_BARS)
+    con.execute(DDL_FUND)
     con.executemany("INSERT INTO dwd_daily_bar VALUES (?,?,?,?,?,?,?,?,?)",
                     [(s, dt, c, c, c, c, 1000, 1000 * c, 0.0)
                      for s, closes in GCLOSES.items() for dt, c in zip(GDTs, closes)])
-    con.executemany("INSERT INTO dwd_financial_report VALUES (?,?,?,?,?,?,?,?,?,?)",
+    con.executemany("INSERT INTO dwd_financial_report"
+                    " (secid, period, announce_date, eps_ytd, bps, roe, roe_w,"
+                    "  rev_g, np_g, margin) VALUES (?,?,?,?,?,?,?,?,?,?)",
                     [(s, p, a, eps, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
                      for s, p, a, eps in GREPORTS])
     return con

@@ -1,0 +1,29 @@
+# flt_st —— ST 过滤（M2 配套过滤因子，不做打分）
+# 口径：证券简称前缀 ST 检测（1 = 正常可入池，0 = ST/*ST）。
+# 数据限制：dim_security 为注册时点静态快照，无 ST 历史状态表 → 摘帽/戴帽的日粒度
+# 变化不可回溯（当前 4 标的均非 ST，全 1）。上游补 ST 状态表后升级口径（CP-0004 登记）。
+id: flt_st
+name: ST过滤
+family: filter
+type: filter
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar, dim_security]
+direction: 0             # 过滤因子不打分
+hypothesis_id: null
+transform: []
+sql: |
+  WITH b AS (
+    SELECT DISTINCT dt, secid FROM dwd_daily_bar
+    WHERE ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  )
+  SELECT b.dt, b.secid,
+         CASE WHEN s.name LIKE 'ST%' OR s.name LIKE '*ST%' OR s.name LIKE 'S*ST%'
+              THEN 0 ELSE 1 END AS value,
+         CAST(NULL AS DATE) AS used_period,
+         CAST(NULL AS DATE) AS used_announce
+  FROM b JOIN dim_security s USING (secid)

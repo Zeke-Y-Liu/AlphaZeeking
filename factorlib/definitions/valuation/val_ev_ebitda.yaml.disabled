@@ -1,0 +1,47 @@
+# val_ev_ebitda —— EV/EBITDA（M2 首批 P0 · 数据缺口 blocked，暂不注册）
+#
+# 缺口（2026-10-12 核查，登记于 CP-0004）：
+#   EV    = 市值 + 有息负债 − 货币资金   ✅ 市值（dwd_mktcap_daily）✅
+#                                        ✅ 有息负债/货币资金（datasource A_STMT_COLS 已补抓）
+#   EBITDA = 营业利润 + 折旧摊销          ❌ D&A 无公开抓取源：
+#          新浪现金流量表主表无折旧摊销列（stock_financial_report_sina 实测）；
+#          stock_financial_abstract_ths / stock_financial_analysis_indicator 均无 EBITDA/D&A 列。
+# 口径纪律：不近似（总负债≠有息负债口径已被 M1 红线禁止）、不降级（EBITDA 用净利代理偏差 >30%）。
+# 启用条件：上游补 D&A（东财 F10 财务报表附注 /利润表补充项）→ 本文改名 .yaml 即入注册。
+id: val_ev_ebitda
+name: EV/EBITDA
+family: valuation
+type: alpha
+status: draft
+version: 0.1.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar, dwd_financial_report, dwd_mktcap_daily]
+direction: -1
+hypothesis_id: null
+transform: []
+sql: |
+  -- EV = mktcap*1e8 + interest_debt − cash（亿元→元）；EBITDA = ebit + da（da 缺源）
+  WITH b AS (
+    SELECT dt, secid FROM dwd_daily_bar
+    WHERE ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  ),
+  mc AS (
+    SELECT b.dt, b.secid, m.mktcap,
+           row_number() OVER (PARTITION BY b.dt, b.secid ORDER BY m.dt DESC) AS mrn
+    FROM b JOIN dwd_mktcap_daily m ON m.secid = b.secid AND m.dt <= b.dt
+  ),
+  pit AS (
+    SELECT b.dt, m.mktcap, f.period, f.announce_date,
+           row_number() OVER (PARTITION BY b.dt, b.secid
+                              ORDER BY f.announce_date DESC, f.period DESC) AS rn
+    FROM b JOIN dwd_mktcap_daily m USING (dt, secid) JOIN dwd_financial_report f
+      ON f.secid = b.secid AND f.announce_date <= b.dt
+  ),
+  ev AS (SELECT dt, mktcap * 1e8 + f.interest_debt - f.cash AS ev,
+                f.period, f.announce_date
+         FROM pit f, mc m WHERE f.rn = 1 AND m.mrn = 1 AND f.dt = m.dt)
+  -- SELECT dt, secid, ev / (ebit + da) AS value, ...   -- 待 da 科目补源后补全
+  SELECT * FROM ev

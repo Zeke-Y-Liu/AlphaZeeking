@@ -1,0 +1,59 @@
+# val_ps_ttm —— 市销率 TTM（M2，实施计划 §5 首批 P0）
+# 口径：总市值 / 营收 TTM；营收由 revenue（ytd，元）滚动（年报 = 全年；季报 = 本期 − 同期 + 上年年报）
+# 市值：dwd_mktcap_daily ASOF 对齐（百度估值抽样粒度 8~13 天一格 → 取 <= dt 最近可得，
+#       单位亿元 × 1e8 换算元）；市值 asof 由 SQL 内 m.dt <= b.dt 保证 PIT（审计覆盖面限制见 CP-0004）
+# PIT：报告期以 announce_date <= dt 对齐；rev_ttm <= 0 置空
+id: val_ps_ttm
+name: 市销率TTM
+family: valuation
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar, dwd_financial_report, dwd_mktcap_daily]
+direction: -1
+hypothesis_id: null
+transform: []
+sql: |
+  WITH b AS (
+    SELECT dt, secid, close FROM dwd_daily_bar
+    WHERE ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  ),
+  mc AS (
+    SELECT b.dt, b.secid, m.mktcap,
+           row_number() OVER (PARTITION BY b.dt, b.secid ORDER BY m.dt DESC) AS mrn
+    FROM b JOIN dwd_mktcap_daily m
+      ON m.secid = b.secid AND m.dt <= b.dt
+  ),
+  m0 AS (SELECT dt, secid, mktcap FROM mc WHERE mrn = 1),
+  pit AS (
+    SELECT b.dt, b.secid, m0.mktcap, f.period, f.announce_date, f.revenue,
+           row_number() OVER (PARTITION BY b.dt, b.secid
+                              ORDER BY f.announce_date DESC, f.period DESC) AS rn
+    FROM b JOIN m0 USING (dt, secid) JOIN dwd_financial_report f
+      ON f.secid = b.secid AND f.announce_date <= b.dt
+  ),
+  p0 AS (SELECT dt, secid, mktcap, period, announce_date, revenue FROM pit WHERE rn = 1),
+  ttm AS (
+    SELECT p0.dt, p0.secid, p0.mktcap,
+           p0.period AS used_period, p0.announce_date AS used_announce,
+           CASE
+             WHEN CAST(strftime(p0.period, '%m') AS INTEGER) = 12 THEN p0.revenue
+             ELSE p0.revenue
+                  - (SELECT f.revenue FROM dwd_financial_report f
+                     WHERE f.secid = p0.secid
+                       AND f.period = CAST(p0.period AS DATE) - INTERVAL 1 YEAR)
+                  + (SELECT f.revenue FROM dwd_financial_report f
+                     WHERE f.secid = p0.secid
+                       AND f.period = make_date(CAST(strftime(p0.period, '%Y') AS INTEGER) - 1,
+                                                12, 31))
+           END AS rev_ttm
+    FROM p0
+  )
+  SELECT dt, secid,
+         CASE WHEN rev_ttm > 0 THEN mktcap * 1e8 / rev_ttm END AS value,
+         used_period, used_announce
+  FROM ttm

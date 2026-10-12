@@ -1,0 +1,34 @@
+# qua_debt_to_asset —— 资产负债率（M2，实施计划 §5 首批 P0，负向因子）
+# 口径：total_liab / total_assets（LF）；total_assets <= 0 置空
+# 高杠杆 = 财务风险高 → direction = -1；无财报无行
+id: qua_debt_to_asset
+name: 资产负债率
+family: quality
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar, dwd_financial_report]
+direction: -1
+hypothesis_id: null
+transform: []
+sql: |
+  WITH b AS (
+    SELECT DISTINCT dt, secid FROM dwd_daily_bar
+    WHERE ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  ),
+  pit AS (
+    SELECT b.dt, f.secid, f.period, f.announce_date,
+           f.total_assets, f.total_liab,
+           row_number() OVER (PARTITION BY b.dt, f.secid
+                              ORDER BY f.announce_date DESC, f.period DESC) AS rn
+    FROM b JOIN dwd_financial_report f
+      ON f.secid = b.secid AND f.announce_date <= b.dt
+  )
+  SELECT dt, secid,
+         CASE WHEN total_assets > 0 THEN total_liab / total_assets END AS value,
+         period AS used_period, announce_date AS used_announce
+  FROM pit WHERE rn = 1

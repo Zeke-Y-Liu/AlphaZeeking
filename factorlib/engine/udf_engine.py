@@ -88,10 +88,11 @@ def resolve_udf(ref: str):
     return fn
 
 
-def run_udf(con, ref: str, start_dt: str | None = None, end_dt: str | None = None) -> list[tuple]:
+def run_udf(con, ref: str, start_dt: str | None = None, end_dt: str | None = None,
+            depends: list | None = None) -> list[tuple]:
     """执行 UDF：从 DuckDB 拉数（按 start/end 过滤）→ 函数 → 输出契约校验。"""
     from .sql_engine import require_tables, OUTPUT_COLUMNS, EngineError
-    require_tables(con)
+    require_tables(con, depends)
     fn = resolve_udf(ref)
     dt_filter = "WHERE ($s IS NULL OR dt >= CAST($s AS DATE)) AND ($e IS NULL OR dt <= CAST($e AS DATE))"
     bars: dict[str, list[dict]] = {}

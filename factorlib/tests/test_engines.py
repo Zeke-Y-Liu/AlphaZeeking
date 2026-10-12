@@ -122,7 +122,8 @@ def udf_with_global(bars, reports):
 
 def test_udf_engine_matches_sql(con):
     ref = f"{__name__}.good_pe_udf"
-    rows = {(r[0], r[1]): r[2] for r in udf_engine.run_udf(con, ref)}
+    deps = make_meta().depends
+    rows = {(r[0], r[1]): r[2] for r in udf_engine.run_udf(con, ref, depends=deps)}
     meta = make_meta(body=sql_from_yaml())
     sql_rows = {(r[0], r[1]): r[2] for r in run_factor(con, meta)}
     assert rows.keys() == sql_rows.keys()
@@ -147,16 +148,19 @@ def test_udf_engine_missing_fn():
 
 
 # ── qlib_expr 引擎 ──────────────────────────────────────
+QLIB_DEPS = ["dwd_daily_bar"]
+
+
 def test_qlib_ref(con):
-    rows = {(r[0], r[1]): r[2] for r in qlib_expr.run_expr(con, "Ref($close, 1)")}
+    rows = {(r[0], r[1]): r[2] for r in qlib_expr.run_expr(con, "Ref($close, 1)", depends=QLIB_DEPS)}
     assert rows[("2021-01-05", "S1")] == CLOSES["S1"][0]      # 前一日 close
     assert ("2021-01-04", "S1") not in rows                   # 首-1 期 → NaN 丢弃
 
 
 def test_qlib_mean_std(con):
     import statistics
-    mean_rows = {(r[0], r[1]): r[2] for r in qlib_expr.run_expr(con, "Mean($close, 3)")}
-    std_rows = {(r[0], r[1]): r[2] for r in qlib_expr.run_expr(con, "Std($close, 3)")}
+    mean_rows = {(r[0], r[1]): r[2] for r in qlib_expr.run_expr(con, "Mean($close, 3)", depends=QLIB_DEPS)}
+    std_rows = {(r[0], r[1]): r[2] for r in qlib_expr.run_expr(con, "Std($close, 3)", depends=QLIB_DEPS)}
     win = CLOSES["S1"][:3]
     assert mean_rows[("2021-01-06", "S1")] == sum(win) / 3
     assert std_rows[("2021-01-06", "S1")] == statistics.stdev(win)   # ddof=1
@@ -164,14 +168,15 @@ def test_qlib_mean_std(con):
 
 def test_qlib_combo(con):
     # ($close - Ref($close,1)) / Ref($close,1) = pct 变化（手算 S2 第 2 日）
-    rows = {(r[0], r[1]): r[2] for r in qlib_expr.run_expr(con, "($close - Ref($close,1))/Ref($close,1)")}
+    rows = {(r[0], r[1]): r[2] for r in qlib_expr.run_expr(
+        con, "($close - Ref($close,1))/Ref($close,1)", depends=QLIB_DEPS)}
     assert rows[("2021-01-05", "S2")] == (CLOSES["S2"][1] - CLOSES["S2"][0]) / CLOSES["S2"][0]
 
 
 def test_qlib_delta_and_abs(con):
-    rows = {(r[0], r[1]): r[2] for r in qlib_expr.run_expr(con, "Delta($close, 2)")}
+    rows = {(r[0], r[1]): r[2] for r in qlib_expr.run_expr(con, "Delta($close, 2)", depends=QLIB_DEPS)}
     assert rows[("2021-01-07", "S1")] == CLOSES["S1"][3] - CLOSES["S1"][1]
-    rows2 = {(r[0], r[1]): r[2] for r in qlib_expr.run_expr(con, "Abs($close - 31.5)")}
+    rows2 = {(r[0], r[1]): r[2] for r in qlib_expr.run_expr(con, "Abs($close - 31.5)", depends=QLIB_DEPS)}
     assert rows2[("2021-01-05", "S3")] == abs(CLOSES["S3"][1] - 31.5)
 
 

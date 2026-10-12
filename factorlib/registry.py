@@ -85,8 +85,10 @@ def _parse_factor(doc: dict, source: str) -> FactorMeta:
     if lookback < 0:
         raise RegistryError(f"{source}: lookback_days 不可为负")
     direction = int(doc.get("direction", 1))
-    if direction not in (1, -1):
-        raise RegistryError(f"{source}: direction 须为 ±1")
+    if direction not in (1, -1, 0):
+        raise RegistryError(f"{source}: direction 须为 ±1 或 0")
+    if direction == 0 and doc.get("type") != "filter":
+        raise RegistryError(f"{source}: direction=0（不打分）仅限过滤因子 type=filter")
     return FactorMeta(
         id=doc["id"], name=doc["name"], family=doc["family"],
         type=doc.get("type", "alpha"), status=STATUS_DRAFT,

@@ -83,15 +83,21 @@ FIN_COLS = {
 
 # A 股三表关键科目（P1.2 品质因子数据底座 D5）：{入库字段: (报表, 上游列名)}
 # 供 qua_leverage（偿债）/qua_accrual（应计质量）/qua_fcf（自由现金流率）三因子；
+# M2 估值扩展：cash（货币资金）/interest_debt（有息负债，EV 口径）。
 # 仅 A 股适用（港股/美股三表口径不一，暂缺 → 该族因子不适用，透明登记）。
 A_STMT_COLS = {
     "revenue":      ("利润表", "营业总收入"),
     "net_profit":   ("利润表", "净利润"),
     "total_assets": ("资产负债表", "资产总计"),
     "total_liab":   ("资产负债表", "负债合计"),
+    "cash":         ("资产负债表", "货币资金"),
     "ocf":          ("现金流量表", "经营活动产生的现金流量净额"),
     "capex":        ("现金流量表", "购建固定资产、无形资产和其他长期资产所支付的现金"),
 }
+
+# 有息负债组合科目（EV = 市值 + 有息负债 − 货币资金）：新浪资产负债表逐列求和，
+# 缺列按 0 计（合并不缺失，与逐科目 NULL 语义不同——组合值只有全缺才置 None）。
+A_INTEREST_DEBT_COLS = ("短期借款", "长期借款", "应付债券")
 
 # ── 多市场（A股/港股/美股）公共定义与工具 ─────────────────────────
 
@@ -762,6 +768,12 @@ def _fetch_a_statements(ak, sina: str) -> dict[str, dict]:
             for k, c in cols.items():
                 if d.get(k) is None:
                     d[k] = _num(r.get(c))
+            if sym == "资产负债表":                # 有息负债：组合科目（缺列按 0，全缺才 None）
+                parts = [_num(r.get(c)) for c in A_INTEREST_DEBT_COLS]
+                if all(v is None for v in parts):
+                    d["interest_debt"] = None
+                else:
+                    d["interest_debt"] = sum(v for v in parts if v is not None)
     return out
 
 

@@ -26,4 +26,5 @@ def run_factor(con: duckdb.DuckDBPyConnection, meta, start_dt: str | None = None
     fn = ENGINES.get(meta.engine)
     if fn is None:
         raise EngineError(f"未注册引擎：{meta.engine}")
-    return fn(con, meta.body, start_dt=start_dt, end_dt=end_dt)
+    return fn(con, meta.body, start_dt=start_dt, end_dt=end_dt,
+              depends=list(meta.depends))

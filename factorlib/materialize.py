@@ -9,7 +9,12 @@
 复现纪律：verify_reproducible 对同一 as_of 两次全量重算做 md5 逐行比对（DoD：diff=0）。
 表结构（与 applib/data.py 声明一致；ensure_tables 幂等创建，data_sync 重建后可直接物化）：
     factor_value_daily(dt DATE, secid TEXT, factor_id TEXT, value DOUBLE)
-    factor_pit_meta(dt DATE, secid TEXT, factor_id TEXT, used_period DATE, used_announce DATE)
+    factor_pit_meta(dt DATE, secid TEXT, factor_id TEXT, used_period DATE, used_announce DATE,
+                    data_staleness INTEGER)
+
+data_staleness（任务 5.3）：dt 所在季度与 used_period 所在季度相隔的报告期数
+（(y差)*4 + 季度差），衡量财务数据新鲜度；used_period 晚于 dt 所在季度（业绩预告/快报
+提前披露）→ clamp 0（最新鲜）；非财务因子（used_period NULL）→ NULL。
 """
 from __future__ import annotations
 
@@ -24,7 +29,17 @@ def ensure_tables(con: duckdb.DuckDBPyConnection) -> None:
     con.execute("""CREATE TABLE IF NOT EXISTS factor_value_daily
                    (dt DATE, secid TEXT, factor_id TEXT, value DOUBLE)""")
     con.execute("""CREATE TABLE IF NOT EXISTS factor_pit_meta
-                   (dt DATE, secid TEXT, factor_id TEXT, used_period DATE, used_announce DATE)""")
+                   (dt DATE, secid TEXT, factor_id TEXT, used_period DATE, used_announce DATE,
+                    data_staleness INTEGER)""")
+
+
+def data_staleness(dt: str, used_period: str) -> int:
+    """距最近财报季度数：dt 与 used_period 相隔的报告期个数（预告期 clamp 0）。"""
+    from datetime import date
+    d = date.fromisoformat(str(dt)[:10])
+    p = date.fromisoformat(str(used_period)[:10])
+    q = (d.year - p.year) * 4 + (d.month - 1) // 3 - (p.month - 1) // 3
+    return max(0, q)
 
 
 def _watermark(con, factor_id: str) -> str | None:
@@ -67,9 +82,12 @@ def _write(con, factor_id: str, rows: list[tuple], start_dt: str | None, end_dt:
             continue
         vals.append((dt, secid, factor_id, float(value)))
         if used_period is not None and used_announce is not None:
-            pits.append((dt, secid, factor_id, used_period, used_announce))
-    con.executemany("INSERT INTO factor_value_daily VALUES (?,?,?,?)", vals)
-    con.executemany("INSERT INTO factor_pit_meta VALUES (?,?,?,?,?)", pits)
+            pits.append((dt, secid, factor_id, used_period, used_announce,
+                         data_staleness(dt, used_period)))
+    if vals:
+        con.executemany("INSERT INTO factor_value_daily VALUES (?,?,?,?)", vals)
+    if pits:
+        con.executemany("INSERT INTO factor_pit_meta VALUES (?,?,?,?,?,?)", pits)
     return {"rows": len(vals), "pit_rows": len(pits), "null_dropped": len(rows) - len(vals)}
 
 

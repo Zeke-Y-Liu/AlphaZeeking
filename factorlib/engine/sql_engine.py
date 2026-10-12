@@ -1,13 +1,21 @@
 """SQL 引擎（DuckDB，实施计划 §4 任务 1.2：审计最友好的首选引擎）。
 
-数据面契约（冻结；schema 与 applib/data.py data_sync 逐列一致——factorlib 独立声明，
-双实现交叉锚定，applib 侧漂移时本表校验先报错）：
+数据面契约（M1 冻结 + M2 扩展；schema 与 applib/data.py data_sync 逐列一致——factorlib
+独立声明，双实现交叉锚定，applib 侧漂移时本表校验先报错）：
 
     dwd_daily_bar(secid TEXT, dt DATE, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE,
                   volume BIGINT, amount DOUBLE, pct DOUBLE)
     dwd_financial_report(secid TEXT, period DATE, announce_date DATE, eps_ytd DOUBLE,
                          bps DOUBLE, roe DOUBLE, roe_w DOUBLE, rev_g DOUBLE, np_g DOUBLE,
-                         margin DOUBLE)
+                         margin DOUBLE, revenue DOUBLE, net_profit DOUBLE,
+                         total_assets DOUBLE, total_liab DOUBLE, ocf DOUBLE, capex DOUBLE,
+                         cash DOUBLE, interest_debt DOUBLE)
+    dwd_dividend(secid TEXT, ex_date DATE, announce DATE, dps DOUBLE)
+    dwd_mktcap_daily(secid TEXT, dt DATE, mktcap DOUBLE)
+    dim_security(secid TEXT, name TEXT, ...)
+
+M2 契约修订（登记于 CP-0004）：fin 表新增 8 科目列（尾部追加，旧消费方不受影响）；
+新增分红/市值两表。市值表为百度估值抽样粒度（8~13 天一格）→ 因子侧 ASOF 对齐 + staleness。
 
 SQL 约定：
 - 模板可用命名参数 $start_dt / $end_dt（可空 DATE；物化层按模式注入）；
@@ -24,7 +32,12 @@ import duckdb
 REQUIRED_TABLES = {
     "dwd_daily_bar": {"secid", "dt", "open", "high", "low", "close", "volume", "amount", "pct"},
     "dwd_financial_report": {"secid", "period", "announce_date", "eps_ytd", "bps", "roe",
-                             "roe_w", "rev_g", "np_g", "margin"},
+                             "roe_w", "rev_g", "np_g", "margin",
+                             "revenue", "net_profit", "total_assets", "total_liab",
+                             "ocf", "capex", "cash", "interest_debt"},
+    "dwd_dividend": {"secid", "ex_date", "announce", "dps"},
+    "dwd_mktcap_daily": {"secid", "dt", "mktcap"},
+    "dim_security": {"secid", "name"},
 }
 
 OUTPUT_COLUMNS = ("dt", "secid", "value", "used_period", "used_announce")
@@ -34,8 +47,16 @@ class EngineError(ValueError):
     """引擎执行违例（表缺失 / SQL 语义错 / 输出契约不符）。"""
 
 
-def require_tables(con: duckdb.DuckDBPyConnection) -> None:
+def require_tables(con: duckdb.DuckDBPyConnection, depends: list | None = None) -> None:
+    """依赖表存在性 + 列契约校验。
+
+    depends=None → 校验全部 REQUIRED_TABLES（保守）；否则仅校验 meta.depends 声明的子集
+    （M2：flt_st 依赖 dim_security、val_ps_ttm 依赖 dwd_mktcap_daily——按需校验，
+    不强制无关表在库）。
+    """
     for t, cols in REQUIRED_TABLES.items():
+        if depends is not None and t not in depends:
+            continue
         have = {r[0] for r in con.execute(
             f"SELECT column_name FROM information_schema.columns WHERE table_name = '{t}'").fetchall()}
         if not have:
@@ -46,15 +67,16 @@ def require_tables(con: duckdb.DuckDBPyConnection) -> None:
 
 
 def run_sql(con: duckdb.DuckDBPyConnection, sql: str, start_dt: str | None = None,
-            end_dt: str | None = None) -> list[tuple]:
+            end_dt: str | None = None, depends: list | None = None) -> list[tuple]:
     """执行因子 SQL，返回 (dt, secid, value, used_period, used_announce) 行列表。
 
     start_dt/end_dt 为 None 时表示不设界（DATE 参数显式 CAST，类型可推断）；
     body 未引用的参数不传（DuckDB 禁止多余参数）。
+    depends：meta.depends 声明子集（按需校验列契约；None = 全部表保守校验）。
     输出纪律：dt/used_* 统一 'YYYY-MM-DD' 字符串；value IS NULL 的行不产出
     （缺失即无行——与 UDF continue 语义、物化层 null_dropped 三方一致）。
     """
-    require_tables(con)
+    require_tables(con, depends)
     params = {}
     if "$start_dt" in sql:
         params["start_dt"] = start_dt

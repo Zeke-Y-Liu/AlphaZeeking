@@ -182,9 +182,9 @@ def parse(expr: str):
 
 
 def run_expr(con: duckdb.DuckDBPyConnection, expr: str, start_dt: str | None = None,
-             end_dt: str | None = None) -> list[tuple]:
+             end_dt: str | None = None, depends: list | None = None) -> list[tuple]:
     """对每标的时序求值 → [(dt, secid, value, None, None), ...]（value NaN 丢弃）。"""
-    require_tables(con)
+    require_tables(con, depends)
     fn = parse(expr)                      # 解析失败 → EngineError（先于取数）
     dt_filter = "WHERE ($s IS NULL OR dt >= CAST($s AS DATE)) AND ($e IS NULL OR dt <= CAST($e AS DATE))"
     out: list[tuple] = []
