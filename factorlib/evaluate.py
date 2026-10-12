@@ -437,10 +437,20 @@ _EVAL_DDLS = (
 )
 
 
-def build_universe_db(repo_dir: str | Path) -> duckdb.DuckDBPyConnection:
-    """alphapocket repo JSON → 检验用内存库（dwd 五表；契约独立声明，双实现交叉锚定）。"""
+def build_universe_db(repo_dir: str | Path, path: str = ":memory:") -> duckdb.DuckDBPyConnection:
+    """alphapocket repo JSON → 检验用库（dwd 五表；契约独立声明，双实现交叉锚定）。
+
+    path 默认内存库；传文件路径时状态跨进程持久（M5 生命周期门禁凭据所在），
+    dwd 派生表每次全量重灌（repo JSON 为权威快照，幂等），meta_* 状态表保留。
+    """
     repo = Path(repo_dir)
-    con = duckdb.connect(":memory:")
+    con = duckdb.connect(path)
+    existing = {r[0] for r in con.execute(
+        "SELECT table_name FROM duckdb_tables()").fetchall()}
+    for ddl in _EVAL_DDLS:
+        tname = ddl.split("CREATE TABLE", 1)[1].split("(", 1)[0].strip()
+        if tname in existing:
+            con.execute(f"DROP TABLE {tname}")
     for ddl in _EVAL_DDLS:
         con.execute(ddl)
     import json as _json

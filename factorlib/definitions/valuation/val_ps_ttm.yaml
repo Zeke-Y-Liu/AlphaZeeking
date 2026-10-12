@@ -14,7 +14,7 @@ engine: sql
 lookback_days: 0
 depends: [dwd_daily_bar, dwd_financial_report, dwd_mktcap_daily]
 direction: -1
-hypothesis_id: null
+hypothesis_id: H-VAL-001   # M5 门禁强制：价值溢价假设（低 PS 属低相对估值族）
 transform: []
 sql: |
   WITH b AS (

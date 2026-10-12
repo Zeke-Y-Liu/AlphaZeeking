@@ -1,6 +1,6 @@
 {
  "chain": "本会话检查点链（编号独立起算；notes.corresponds 对应旧会话 CP-0020~0026，对齐《旧会话进度迁移报告》§4）",
- "next": 7,
+ "next": 8,
  "items": [
   {
    "cp_id": "CP-0001",
@@ -125,6 +125,30 @@
     "pit": "9 因子 0 违例（红线 0）"
    },
    "notes": "关键修复：corr_matrix 原实现直接遍历长表全部交易日截面（1386 个日频 vs 协议 69 个月末），财报类因子月内恒定 → 日内重复样本使跨族 ρ̄ 虚高污染高相关组；已限定月末截面（month_ends ∩ 双因子有值交集）+ 注入日频行回归锚。看板 ⑤ 列 reason 截断垃圾串改精炼「转替代通道」（明细节保留完整链路）。局限：4 股票截面 Spearman 秩排列仅 24 种 → ρ 粒度粗（0.6 阈值敏感）；牛熊轴基于 69 月仅 2 环境桶；walk-forward α 阶段 24/6（生产 60/12 待全量历史）；lockbox 6 月观察值：三个估值因子均 +0.367（仅报告不调参）"
+  },
+  {
+   "cp_id": "CP-0007",
+   "milestone": "M5 注册生命周期与季度巡检（批3：激活门禁 + 巡检 DAG + 版本冻结 + 降级动作 + 状态库）",
+   "corresponds": "实施计划 §8（任务 8.1 门禁 / 8.2 巡检 / 8.3 版本 / 8.4 降级）",
+   "ts": "2026-10-12",
+   "deliverables": [
+    "factorlib/lifecycle.py：8.1 激活门禁 activate（③ meta_factor_eval 1M 行按 direction 对齐 IC>0 + ④⑤ M4 治理 verdict 全过显式复核 + PIT 0 违例 + hypothesis_id 强制且在假设注册表且未证伪 + source 非空防内存手搓 + version 语义化三段；任一不过即 LifecycleError 无旁路）",
+    "8.2 季度巡检 quarterly_inspection：三探针（滚动 24 月 IC 衰减 ≥50% → weakening；recent ≤0 或全环境失效 → invalid；覆盖度漂移 ≥20pp → weakening）+「假设仍成立吗」复查步（weakening/invalid 自动带出 statement 待答项，healthy 20% 确定性抽样按 id 哈希序可复现）+ 入库 meta_factor_inspection + factor_health 查询口",
+    "8.3 版本冻结：激活即快照 def_hash（sha256 计算体规范 JSON，仅 engine/body/transform/direction/params/lookback/universe/depends 入哈希）；verify_frozen 定义漂移未 bump version = 拒绝重跑（凡能重跑必与激活时 bit 级一致）；register_ref/who_references 引用账本 + deactivate 有引用未确认影响面 = 拒",
+    "8.4 降级动作：weakening 标警 action + invalid 自动 deprecated（confirm_impact=True 自动评估）+ removed_from_pool 登记通知（合成池本体 M6 落地）；降级同步入 meta_factor_archive → 状态账本（archive 最新行 = 权威 status，sync_status 加载后对齐）",
+    "hypotheses.yaml 假设注册表（H-VAL-001 价值溢价 / H-QUA-001 质量溢价，R3 无来源不激活）；val_ps_ttm 补 hypothesis_id: H-VAL-001",
+    "CLI 四通道（python -m factorlib.lifecycle activate/inspect/freeze-verify/refs）+ 状态库 alphapocket/sandbox/factorlib.duckdb（跨进程持久，dwd 派生表幂等重灌，meta_* 状态保留）；build_universe_db 支持 path 参数",
+    "M5 DoD 三项测试 + 门禁违例矩阵 11 用例：状态机全路径、未过门禁无法 active（source/状态/version/hypothesis 三态/治理凭据/分关 sneak/PIT/③ 凭据×3）、注入衰减 IC 单次巡检即 weakening、invalid 自动摘除、healthy 20% 抽查、冻结漂移拦截 + bit 级重跑 digest 一致、引用影响面流程",
+    "真实库演练全链通：val_ps_ttm CLI 激活（def_hash bf596b00…，IC −0.206 × direction −1 = 对齐 +0.206）→ 二次激活正确拒绝 → 巡检 healthy（滚动衰减 −150% 标注「改善」，近期 IC +0.250）→ freeze-verify frozen=true → refs 空"
+   ],
+   "verify": {
+    "factorlib": "91 passed（80 M1–M4 + 11 M5：门禁违例矩阵/巡检三态/冻结拦截/影响面/假设表）",
+    "dod_1": "状态机全路径单测 ✓；未过门禁无法 active ✓（9 类违例逐一拦截）",
+    "dod_2": "注入衰减 IC（F_decay 后 15 月退化，recent 0.46 vs prior 1.0）→ 单次巡检即 weakening ✓（30 天窗口内完成，演练时点即触发）",
+    "dod_3": "版本冻结：漂移未 bump → LifecycleError 拒绝 ✓；重算 digest 逐位一致 ✓（真实库 freeze-verify frozen=true）",
+    "cli": "activate → 防重复激活 → inspect healthy → freeze-verify → refs 全链通（状态库持久）"
+   },
+   "notes": "演练发现并修复三处：③ 凭据口径（meta_factor_eval 存原始 IC，门禁原按原始 IC>0 误杀 direction=-1 因子 → 改按 direction 对齐判定）；CLI 内存库状态随进程丢失（门禁凭据/巡检历史/引用本质为持久状态 → 建 factorlib.duckdb 文件状态库 + dwd 幂等重灌 + sync_status 从 archive 账本对齐权威 status）；巡检负衰减显示歧义（-150% 实为近期优于基期 → 标注「改善」）。入口条件诚实登记：实施计划 §8 入口要求 M4 通过 ≥6/10 因子，实况仅 1 pass（val_ps_ttm）+2 alternative——M5 按设施建设推进（门禁/巡检/冻结不依赖因子数量），M6 入口条件（≥6 active）待全量历史补强后复检；巡检对 draft/deprecated 显式跳过（11 个非 active）"
   }
  ]
 }
