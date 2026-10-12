@@ -155,6 +155,9 @@
    "milestone": "M6 合成打分与回测引擎（批3：四法并列+双闸+自研撮合器+walk-forward+lockbox+三策略联调）",
    "corresponds": "实施计划 §9（任务 9.1 合成 / 9.2 回测 / 9.3 三策略 / 9.4 DSL）",
    "ts": "2026-10-12",
+   "commits": [
+    "836fc23"
+   ],
    "deliverables": [
     "factorlib/composite.py：合成四法并列（equal / ic_12m 滚动 12M IC 加权 / ic_ir / lasso 自研坐标下降 y 同步标准化）+ rank_product 双排序 + orthogonal 模式③；方向对齐 zscore；滚动权重窗口严格截至 t−1（防未来）；负 IC 权重 0（不赌反向，clamp 修复）；双闸（闸1 法间 ρ̄<0.7 过拟合告警 / 闸2 相邻期 L1 漂移≥30% freeze_review）",
     "factorlib/backtest.py：§9.2 撮合语义逐条自研落地（次日 VWAP ∈ [low,high] 校验越界回退 (H+L)/2 标注 / 成本表佣金万2.5 min¥5+印花卖5bp+过户0.1bp+滑点5bp / T+1 / 涨停不买跌停不卖 / 停牌顺延重试登记 / 100 股整手 / 先卖后买）+ 月频绩效（含/不含成本两列固定）+ 无偷价审计（fill_dt>signal_dt、raw 价 ∈ 日区间、换手与再平衡频率匹配、n_vwap_proxy 披露）+ run_backtest + run_walkforward（train 24/step 6 折内选法 → 末端 lockbox 单次验证）",
