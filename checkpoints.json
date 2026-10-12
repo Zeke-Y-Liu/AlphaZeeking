@@ -1,6 +1,6 @@
 {
  "chain": "本会话检查点链（编号独立起算；notes.corresponds 对应旧会话 CP-0020~0026，对齐《旧会话进度迁移报告》§4）",
- "next": 5,
+ "next": 6,
  "items": [
   {
    "cp_id": "CP-0001",
@@ -81,6 +81,27 @@
     "coverage_dod": "估值族 99.9%（阈值 85%）/ 质量族 100%（阈值 90%）PASS"
    },
    "notes": "修复四处：4 个 LF 类质量因子 b CTE 缺 secid 列（SELECT DISTINCT dt 漏标的维）；flt_avg_amount_20d 窗口不满 20 日未置空（补 count=20 guard）；物化层 executemany 空列表崩溃（过滤因子全行无 PIT 元数据）；coverage.py _MONTH_END 死代码残留语法错误。局限登记：flt_st 为静态快照口径（无 ST 历史状态表）；flt_listed_days 用库首日近似上市日；val_ps_ttm 依赖市值抽样 ASOF（002014/002027 首点 2021-01-13 前无行）；qua_roe_ttm 跨期可能混扣非/归母口径"
+  },
+  {
+   "cp_id": "CP-0005",
+   "milestone": "M3 单因子检验流水线（批3：检验协议+自研统计原语+报告+入库+一条命令）",
+   "corresponds": "实施计划 §6（任务 6.1 自研兜底 / 6.2 报告 / 6.3 批量 CLI / 6.4 入库）",
+   "ts": "2026-10-12",
+   "deliverables": [
+    "factorlib/evaluate.py 检验协议：月度月末截面、1/3/6 月前瞻（月末对月末、末端不完整窗口弃用不外推）、Spearman Rank IC 时序 → IC 均值 / IC_IR / Newey-West HAC t（自动 lag=floor(4·(T/100)^(2/9))，手工 lag=0/1 核对）",
+    "分层检验：quantile 分层自适应退化（min(10, 截面宽)，layer_rows.n_layers 逐月记录）+ 多头组超额（vs 510300.SH 净值代理）+ 多空价差 + 单调性（各月 Spearman(层序,层超额) 均值）+ 多头组月度换手 + 覆盖度",
+    "公告周标注（截面日前 7 日内有财报公告）+ 剔除对照 IC（ic_ex_announce）",
+    "render_md 检验报告（IC 表/分层文本比例条/收益衰减矩阵/口径与局限诚实节）+ save_eval 入库 meta_factor_eval（每 horizon 一行，report_json 含 IC 时序全量，供 M4 分段稳健与 M6 合成加权复用）",
+    "run_eval 一条命令：repo JSON → build_universe_db 内存库（DDL 契约独立声明，与 tests/conftest 双实现交叉锚定）→ 物化 → 检验 → 入库 → MD/JSON 落盘",
+    "首批检验落盘：9 alpha 因子 × 69 月末截面（2021-01..2026-09，68 个 1 月 IC）→ alphapocket/sandbox/artifacts/m3_eval_20261012/（9 因子 × md+json 18 文件）",
+    "结论（诚实口径）：val_pe_ttm 低估值方向对齐 IC +0.165（NW t=-2.28）与业界常识一致（DoD-3 ✓）；估值族同向对齐 val_pb_lf -0.20 / val_ps_ttm -0.21（最强）；质量族 qua_roe_ttm/qua_gross_margin 方向相反且 |t|>2（截面仅 4 股票，功效弱：机制成立 + 待全量历史补强，不静默放大）"
+   ],
+   "verify": {
+    "factorlib": "68 passed（55 M1/M2 + 13 M3：3 组已知相关 IC 手工一致 1.0/-1.0/0.8、NW t 手工核对、分层边界、完美/反向因子端到端、公告周剔除、入库 roundtrip、报告分节）",
+    "dod": "一条命令出报告 ✓；val_pe_ttm 结论与业界常识一致 ✓（DoD 三项全过）",
+    "honest": "IC 恒定/样本不足 → IC_IR/NW-t 诚实置 None（不除零）；库内无全量历史 → 结论限定表述"
+   },
+   "notes": "依赖纪律：纯标准库 + duckdb（沙箱无 pandas/numpy/scipy/alphalens）→ 自研统计兜底为唯一路径且不依赖库版本（任务 6.1 设计意图）；Alphalens 封装位留待依赖可用。本批修复三处：_agg 除零 TypeError（std=0 时 IR 置 None）、render_md None 格式化崩溃（IC_IR/NW/单调性显示「—」）、逐月层数退化时分层聚合越界（lmeans 按最大层宽跳缺聚合 + top/bottom 超额改逐月直接收集）。局限：4 股票截面 IC 功效弱；基准为 ETF 净值代理含跟踪误差；6 月前瞻末端 6 个月弃用（63/69 月）"
   }
  ]
 }
