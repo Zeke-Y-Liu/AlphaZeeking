@@ -143,8 +143,9 @@ def render_grid_md(rep: dict) -> str:
          "|---|---|---|---|---|---|---|---|"]
     for r in rep["grid"]:
         f = lambda x: "—" if x is None else (f"{x:.2%}" if abs(x) < 10 else f"{x:.3f}")
+        s = "—" if r["sharpe"] is None else f"{r['sharpe']:.3f}"   # Sharpe 无量纲，不加 %
         L.append(f"| {r['method']} | {r['top_n']} | {r['cost_rate']:.4f} "
-                 f"| {f(r['total_return'])} | {f(r['ann_return'])} | {f(r['sharpe'])} "
+                 f"| {f(r['total_return'])} | {f(r['ann_return'])} | {s} "
                  f"| {f(r['max_drawdown'])} | {f(r['turnover'])} |")
     L += ["", "> 快筛结论仅用于筛选精验候选（top_n × 法排序）；绩效数字不可直接作投资结论"]
     return "\n".join(L) + "\n"

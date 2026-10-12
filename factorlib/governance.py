@@ -690,8 +690,17 @@ def render_md(rep: dict) -> str:
     lines += ["", "## ⑥ 多重检验", "",
               f"- 状态：{'触发' if mt['triggered'] else '暂缓'}（同批 {mt['n']} 候选 / "
               f"门槛 {mt['min_batch']}）" + (f"；Bonferroni α* = {mt['bonferroni_alpha']:.4f}"
-                                             if mt["triggered"] else "；流程就绪"),
-              "", "## 口径与局限（诚实原则）", ""]
+                                             if mt["triggered"] else "；流程就绪")]
+    if mt["triggered"]:
+        lines += ["", "| 因子 | IC_IR | PSR | DSR 结论 |", "|---|---|---|---|"]
+        for row in mt["rows"]:
+            d = row["dsr"] or {}
+            ir, psr = row["ic_ir"], d.get("psr")
+            concl = ("✅ 通过" if d.get("pass") else "❌ 未过") if psr is not None \
+                else (d.get("note") or "—")
+            lines.append(f"| {row['id']} | {'—' if ir is None else f'{ir:.3f}'} "
+                         f"| {'—' if psr is None else f'{psr:.3f}'} | {concl} |")
+    lines += ["", "## 口径与局限（诚实原则）", ""]
     for n_ in rep["protocol_notes"]:
         lines.append(f"- {n_}")
     lines += ["- 4 股票截面功效弱：关卡结论为「机制成立 + 待全量历史补强」，不静默放大；",
