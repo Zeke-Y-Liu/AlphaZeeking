@@ -1254,6 +1254,15 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
     if guard_snap:
         from .writeguard import restore_guard
         guard_summary = restore_guard(repo, guard_snap)
+    # 守护面合并回写可能改动已登记文件（K 线历史不丢合并）→ 登记哈希对最终落盘状态重算，
+    # 否则 provenance_check 必 fail（登记的是合并前快照）
+    for s in prov["sources"]:
+        p = repo / s["file"]
+        if p.exists():
+            h = _sha256_file(p)
+            if h != s["sha256"]:
+                s["sha256"] = h
+                s["bytes"] = p.stat().st_size
     if corp_actions:
         prov["fund_corporate_actions"] = corp_actions
     (repo / "market" / "provenance.json").write_text(

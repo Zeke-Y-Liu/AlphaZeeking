@@ -67,7 +67,10 @@ def _golden_test(ctx: Ctx) -> dict:
         cmp(secid, "mom_20d", c.iloc[-1] / c.iloc[-20] - 1)
         cmp(secid, "vol_20d", c.pct_change().iloc[-20:].std(ddof=1) * math.sqrt(252))
         cmp(secid, "high20_touch", 1.0 if c.iloc[-1] >= c.iloc[-20:].max() else 0.0)
-        cmp(secid, "dist_high20", c.iloc[-1] / df["high"].iloc[-20:].max() - 1)
+        hi20 = df["high"].iloc[-20:].max()
+        if pd.isna(hi20):   # US 源无盘中 high → 与 factors.compute_beta 同口径以收盘代理
+            hi20 = c.iloc[-20:].max()
+        cmp(secid, "dist_high20", c.iloc[-1] / hi20 - 1)
         # 引擎 A（逐报告期字典法独立重算：TTM=上年FY+本年YTD−上年同期YTD）
         # 基金/指数类不在 fundamental_values 中（无财报）→ 空报告集，仅价格类因子对账
         fd = fund.get(secid, {})

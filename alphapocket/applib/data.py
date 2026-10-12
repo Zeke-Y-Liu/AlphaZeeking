@@ -43,7 +43,7 @@ def data_sync(args: dict, ctx) -> dict:
     con.execute("CREATE TABLE dim_security (secid TEXT, name TEXT, market TEXT, asset_type TEXT, industry TEXT)")
     con.execute("CREATE TABLE factor_value_daily (dt DATE, secid TEXT, factor_id TEXT, value DOUBLE)")
     con.execute("""CREATE TABLE factor_pit_meta (dt DATE, secid TEXT, factor_id TEXT,
-                   used_period DATE, used_announce DATE, data_staleness INTEGER)""")
+                   used_period DATE, used_announce DATE)""")
 
     con.executemany("INSERT INTO dwd_daily_bar VALUES (?,?,?,?,?,?,?,?,?)",
                     [(s, r["dt"], r["open"], r["high"], r["low"], r["close"], r["volume"], r["amount"], r["pct"])

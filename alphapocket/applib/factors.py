@@ -285,8 +285,9 @@ def compute_beta(secid: str, bars: list[dict], as_of: str | None = None,
     mu = sum(rets20) / len(rets20)
     vol20 = (sum((r - mu) ** 2 for r in rets20) / (len(rets20) - 1)) ** 0.5 * (252 ** 0.5)
     high20_close = max(w)
-    high20_intra = max(hist_h[-n:])
-    low20 = min(hist_l[-n:])
+    # US 源（新浪美股）不提供盘中 high/low → 以收盘价口径代理 20 日高低（数据源限制，诚实口径）
+    high20_intra = max(hist_h[-n:]) if hist_h else high20_close
+    low20 = min(hist_l[-n:]) if hist_l else min(w)
     high20_touch = 1 if close >= high20_close else 0
     dist_high20 = close / high20_intra - 1
     band_pct = f"±{band * 100:g}%"
