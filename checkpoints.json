@@ -1,6 +1,6 @@
 {
  "chain": "本会话检查点链（编号独立起算；notes.corresponds 对应旧会话 CP-0020~0026，对齐《旧会话进度迁移报告》§4）",
- "next": 4,
+ "next": 5,
  "items": [
   {
    "cp_id": "CP-0001",
