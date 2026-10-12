@@ -1,6 +1,6 @@
 {
  "chain": "本会话检查点链（编号独立起算；notes.corresponds 对应旧会话 CP-0020~0026，对齐《旧会话进度迁移报告》§4）",
- "next": 6,
+ "next": 7,
  "items": [
   {
    "cp_id": "CP-0001",
@@ -102,6 +102,29 @@
     "honest": "IC 恒定/样本不足 → IC_IR/NW-t 诚实置 None（不除零）；库内无全量历史 → 结论限定表述"
    },
    "notes": "依赖纪律：纯标准库 + duckdb（沙箱无 pandas/numpy/scipy/alphalens）→ 自研统计兜底为唯一路径且不依赖库版本（任务 6.1 设计意图）；Alphalens 封装位留待依赖可用。本批修复三处：_agg 除零 TypeError（std=0 时 IR 置 None）、render_md None 格式化崩溃（IC_IR/NW/单调性显示「—」）、逐月层数退化时分层聚合越界（lmeans 按最大层宽跳缺聚合 + top/bottom 超额改逐月直接收集）。局限：4 股票截面 IC 功效弱；基准为 ETF 净值代理含跟踪误差；6 月前瞻末端 6 个月弃用（63/69 月）"
+  },
+  {
+   "cp_id": "CP-0006",
+   "milestone": "M4 稳健性三关 + 增量价值关 + 多重检验（批3：④⑤⑥ + 一条命令 + 首批治理落盘）",
+   "corresponds": "实施计划 §7（任务 7.1 时间 / 7.2 参数 / 7.3 环境 / 7.4 增量 / 7.5 多重检验）",
+   "ts": "2026-10-12",
+   "deliverables": [
+    "factorlib/governance.py：④a 时间关（扩展窗口 walk-forward train_min/step 可配 α 阶段 24/6，门槛 = OOS 池化 IC 衰减 <50% 且单一年度贡献 ≤50%，train IC 非正诚实打回；末端 lockbox 6 月封存只报告不调参）+ ④b 参数关（winsorize 分位 ±30% 网格，门槛 = 方向不反转 + IC_IR 漂移 <40%；行业中性化属实质口径变更仅标注不参与强度关）+ ④c 环境关（牛熊分段 = 基准 6 月趋势；大小盘/成长价值轴截面不足显式降级；局部失效可解释，全环境失效才 fail）",
+    "⑤ 增量价值关：批量因子月末截面 Spearman 相关矩阵 + union-find 高相关组裁决（|ρ̄| ≥0.6 连通组内保留主窗 |IC| 最大者，并列看 |IC_IR| 再按 id 序），其余转「替代版本」对比通道",
+    "⑥ 多重检验：Bonferroni（α/n）+ Deflated Sharpe（PSR 口径，SR0 = √sr_var·E[max SR]，Acklam 逆正态近似 |ε|<1.2e-9 自研）流程就绪；同批 <20 候选显式 triggered=False 暂缓",
+    "run_governance 一条命令：repo JSON → 内存库 → 物化 → ④⑤⑥ → MD/JSON 落盘（裁决看板 + 逐因子明细 + 相关性矩阵 + 多重检验 + 口径与局限诚实节）",
+    "M4 DoD 注入测试 12/12：F_2021only（仅 2021 单边有效）→ ④ 正确打回 ✓；F_clone（F_perfect 仿制 ρ̄≈0.99）→ ⑤ 正确转替代通道 ✓；walk-forward/年度贡献/lockbox 手工锚 + 端到端合成库 4 因子全裁决",
+    "首批治理落盘：9 alpha × 69 月末（2021-01..2026-09，主窗去 lockbox 63 月）→ alphapocket/sandbox/artifacts/m4_governance_20261012/（md+json）",
+    "结论（诚实口径）：val_ps_ttm 唯一 pass（IC +0.190 / IR 0.31，三关全过 + PIT 0 违例）；val_pe_ttm/val_pb_lf 三关全过但与 val_ps_ttm ρ̄ 0.68/0.92 ≥ 0.6 → 转替代通道；5 质量因子 + val_div_yield 主窗 IC 非正 → 时间关诚实打回；高相关 7 成员组（估值三兄弟 + qua_gross_margin/qua_roe/qua_accruals/qua_ocf_to_np）为 4 股票窄截面秩粒度粗所致，已登记口径局限"
+   ],
+   "verify": {
+    "factorlib": "80 passed（68 M1/M2/M3 + 12 M4：注入 ④⑤ + walk-forward 手工锚 + 端到端 + 报告分节）",
+    "injection_4": "F_2021only → time_gate fail ✓（OOS 衰减与单年贡献双锚）",
+    "injection_5": "F_clone ρ̄≈0.992 → route=alternative ✓",
+    "multi_test": "9 < 20 → triggered=False 显式暂缓（流程就绪）",
+    "pit": "9 因子 0 违例（红线 0）"
+   },
+   "notes": "关键修复：corr_matrix 原实现直接遍历长表全部交易日截面（1386 个日频 vs 协议 69 个月末），财报类因子月内恒定 → 日内重复样本使跨族 ρ̄ 虚高污染高相关组；已限定月末截面（month_ends ∩ 双因子有值交集）+ 注入日频行回归锚。看板 ⑤ 列 reason 截断垃圾串改精炼「转替代通道」（明细节保留完整链路）。局限：4 股票截面 Spearman 秩排列仅 24 种 → ρ 粒度粗（0.6 阈值敏感）；牛熊轴基于 69 月仅 2 环境桶；walk-forward α 阶段 24/6（生产 60/12 待全量历史）；lockbox 6 月观察值：三个估值因子均 +0.367（仅报告不调参）"
   }
  ]
 }
