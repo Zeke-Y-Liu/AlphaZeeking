@@ -1,0 +1,41 @@
+# div_payout_streak —— 分红连击（M7，实施计划 §10.1 低波红利族）
+# 口径：截至截面日前一年的连续有现金分红（ex_date）年数（gap-and-island 连续年岛）；
+#       去年无分红 → 置空（连击断裂，不参与打分）；value = 岛长（年）
+# 诚实口径：近 1 年无分红即断（历史长连击当前断裂不出值），激励持续分红记录
+id: div_payout_streak
+name: 分红连击年数
+family: lowvol
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar, dwd_dividend]
+direction: +1
+hypothesis_id: H-LOW-001
+transform: []
+sql: |
+  WITH y AS (
+    SELECT DISTINCT secid, year(CAST(ex_date AS DATE)) AS y FROM dwd_dividend
+  ),
+  g AS (
+    SELECT secid, y,
+           y - row_number() OVER (PARTITION BY secid ORDER BY y) AS island
+    FROM y
+  ),
+  isl AS (
+    SELECT secid, min(y) AS lo, max(y) AS hi
+    FROM g GROUP BY secid, island
+  ),
+  b AS (
+    SELECT DISTINCT dt FROM dwd_daily_bar
+    WHERE ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  )
+  SELECT b.dt, i.secid,
+         (i.hi - i.lo + 1) AS value,
+         CAST(NULL AS DATE) AS used_period,
+         CAST(NULL AS DATE) AS used_announce
+  FROM b JOIN isl i
+    ON i.lo <= year(CAST(b.dt AS DATE)) - 1 AND i.hi >= year(CAST(b.dt AS DATE)) - 1

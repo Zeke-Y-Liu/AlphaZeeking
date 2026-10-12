@@ -1,0 +1,34 @@
+# low_vol_252d —— 52 周收益波动（M7，实施计划 §10.1 低波红利族）
+# 口径：最近 ~52 周 pct 样本 std（周频快照近似 252 交易日 lookback）
+#       复权口径同 mom 族（pct 为含除权调整真实涨跌幅）
+# direction=-1：低波动异象（H-LOW-001，低波组合风险调整后占优）
+id: low_vol_252d
+name: 52周收益波动
+family: lowvol
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar]
+direction: -1
+hypothesis_id: H-LOW-001
+transform: []
+sql: |
+  WITH r AS (
+    SELECT dt, secid, pct,
+           count(pct) OVER w52 AS n52,
+           stddev_samp(pct) OVER w52 AS sd52
+    FROM dwd_daily_bar
+    WHERE pct IS NOT NULL AND pct > -0.9999
+      AND ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+    WINDOW w52 AS (PARTITION BY secid ORDER BY dt
+                   ROWS BETWEEN 51 PRECEDING AND CURRENT ROW)
+  )
+  SELECT dt, secid,
+         CASE WHEN n52 = 52 THEN sd52 END AS value,
+         CAST(NULL AS DATE) AS used_period,
+         CAST(NULL AS DATE) AS used_announce
+  FROM r

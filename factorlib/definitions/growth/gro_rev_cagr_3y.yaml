@@ -1,0 +1,41 @@
+# gro_rev_cagr_3y —— 3 年营收 CAGR（M7，实施计划 §10.1 成长族）
+# 口径：(本期 revenue / 三年前同期 revenue)^(1/3) − 1（×100 与 rev_g 同 % 量纲）
+#       同报告期 ytd 口径对齐（period − 3 年精确匹配），两侧均为正营收
+# PIT：以本期 announce_date 对齐截面日（3 年前期早于本期披露，无前视）
+id: gro_rev_cagr_3y
+name: 营收3年CAGR
+family: growth
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar, dwd_financial_report]
+direction: +1
+hypothesis_id: H-GRO-001
+transform: []
+sql: |
+  WITH b AS (
+    SELECT dt, secid FROM dwd_daily_bar
+    WHERE ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  ),
+  pair AS (
+    SELECT f0.secid, f0.period, f0.announce_date, f0.revenue, f3.revenue AS rev_3y
+    FROM dwd_financial_report f0
+    JOIN dwd_financial_report f3
+      ON f3.secid = f0.secid AND f3.period = f0.period - INTERVAL 3 YEAR
+    WHERE f0.revenue > 0 AND f3.revenue > 0
+  ),
+  pit AS (
+    SELECT b.dt, p.secid,
+           (power(p.revenue / p.rev_3y, 1.0 / 3) - 1) * 100 AS cagr3,
+           p.period, p.announce_date,
+           row_number() OVER (PARTITION BY b.dt, p.secid
+                              ORDER BY p.announce_date DESC, p.period DESC) AS rn
+    FROM b JOIN pair p
+      ON p.secid = b.secid AND p.announce_date <= b.dt
+  )
+  SELECT dt, secid, cagr3 AS value, period AS used_period, announce_date AS used_announce
+  FROM pit WHERE rn = 1

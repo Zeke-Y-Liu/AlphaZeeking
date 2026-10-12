@@ -1,0 +1,64 @@
+# val_ev_ebitda —— EV/EBITDA（M7 补齐，实施计划 §10 任务 10.1 估值族第 5 个）
+# 口径：EV = 总市值 + 带息负债 − 现金（PIT 最新财报）；EBITDA_TTM 以 TTM OCF 近似
+#   —— 诚实标注（CP-0008 同款）：沙箱源数据无折旧摊销/所得税/利息费用明细，
+#      精确 EBITDA 不可得；OCF（间接法已加回 D&A）为可得的最近似代理，排序信息
+#      大部分保留。接入含 D&A 数据源后须 bump version 重过 §6.4。
+# 市值：dwd_mktcap_daily asof 对齐（<= dt 最近可得，单位亿元 × 1e8；PIT 见 CP-0004）
+# PIT：报告期以 announce_date <= dt 对齐；EBITDA <= 0 置空
+id: val_ev_ebitda
+name: EV/EBITDA
+family: valuation
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar, dwd_financial_report, dwd_mktcap_daily]
+direction: -1            # 低 EV/EBITDA 长期正超额 → 打分方向为负
+hypothesis_id: H-VAL-001 # 价值溢价假设（低 EV/EBITDA 属低相对估值族）
+transform: []
+sql: |
+  WITH b AS (
+    SELECT dt, secid, close FROM dwd_daily_bar
+    WHERE ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  ),
+  mc AS (
+    SELECT b.dt, b.secid, m.mktcap,
+           row_number() OVER (PARTITION BY b.dt, b.secid ORDER BY m.dt DESC) AS mrn
+    FROM b JOIN dwd_mktcap_daily m
+      ON m.secid = b.secid AND m.dt <= b.dt
+  ),
+  m0 AS (SELECT dt, secid, mktcap FROM mc WHERE mrn = 1),
+  pit AS (
+    SELECT b.dt, b.secid, m0.mktcap, f.period, f.announce_date,
+           f.ocf, f.interest_debt, f.cash,
+           row_number() OVER (PARTITION BY b.dt, b.secid
+                              ORDER BY f.announce_date DESC, f.period DESC) AS rn
+    FROM b JOIN m0 USING (dt, secid) JOIN dwd_financial_report f
+      ON f.secid = b.secid AND f.announce_date <= b.dt
+  ),
+  p0 AS (SELECT dt, secid, mktcap, period, announce_date, ocf,
+                interest_debt, cash FROM pit WHERE rn = 1),
+  ttm AS (
+    SELECT p0.dt, p0.secid,
+           p0.mktcap * 1e8 + p0.interest_debt - p0.cash AS ev,
+           p0.period AS used_period, p0.announce_date AS used_announce,
+           CASE
+             WHEN CAST(strftime(p0.period, '%m') AS INTEGER) = 12 THEN p0.ocf
+             ELSE p0.ocf
+                  - (SELECT f.ocf FROM dwd_financial_report f
+                     WHERE f.secid = p0.secid
+                       AND f.period = CAST(p0.period AS DATE) - INTERVAL 1 YEAR)
+                  + (SELECT f.ocf FROM dwd_financial_report f
+                     WHERE f.secid = p0.secid
+                       AND f.period = make_date(CAST(strftime(p0.period, '%Y') AS INTEGER) - 1,
+                                                12, 31))
+           END AS ebitda_ttm
+    FROM p0
+  )
+  SELECT dt, secid,
+         CASE WHEN ebitda_ttm > 0 AND ev > 0 THEN ev / ebitda_ttm END AS value,
+         used_period, used_announce
+  FROM ttm

@@ -18,8 +18,11 @@ VALID_TRANSITIONS = {STATUS_DRAFT: {STATUS_ACTIVE}, STATUS_ACTIVE: {STATUS_DEPRE
                      STATUS_DEPRECATED: set()}
 
 # 族前缀（id 纪律：{family 缩写}_{口径}，过滤因子 flt_ 不参与打分）
-FAMILY_PREFIX = {"valuation": "val", "quality": "qua", "growth": "gro",
-                 "momentum": "mom", "lowvol": "low", "filter": "flt"}
+# 低波红利族双前缀：low_（波动/beta）+ div_（红利记录，V3 §6.2 权威命名 div_payout_streak）
+# personal（M7 §10.4）：E3 策略克隆候选因子通道（per_），与常规候选同一门禁
+FAMILY_PREFIX = {"valuation": ("val",), "quality": ("qua",), "growth": ("gro",),
+                 "momentum": ("mom",), "lowvol": ("low", "div"), "filter": ("flt",),
+                 "personal": ("per",)}
 
 # 引擎与声明体匹配：sql→sql 字段、python_udf→fn、qlib_expr→expr
 _ENGINE_BODY = {"sql": "sql", "python_udf": "fn", "qlib_expr": "expr"}
@@ -68,9 +71,9 @@ def _parse_factor(doc: dict, source: str) -> FactorMeta:
         raise RegistryError(f"{source}: 未声明字段 {sorted(unknown)}")
     if doc["family"] not in FAMILY_PREFIX:
         raise RegistryError(f"{source}: 未知 family {doc['family']}（可选 {sorted(FAMILY_PREFIX)}）")
-    prefix = FAMILY_PREFIX[doc["family"]]
-    if not str(doc["id"]).startswith(prefix + "_"):
-        raise RegistryError(f"{source}: id 须以族前缀 {prefix}_ 开头，实得 {doc['id']}")
+    prefixes = FAMILY_PREFIX[doc["family"]]
+    if not any(str(doc["id"]).startswith(p + "_") for p in prefixes):
+        raise RegistryError(f"{source}: id 须以族前缀 {prefixes} 之一开头，实得 {doc['id']}")
     engine = doc["engine"]
     if engine not in _ENGINE_BODY:
         raise RegistryError(f"{source}: 未知引擎 {engine}（可选 {sorted(_ENGINE_BODY)}）")

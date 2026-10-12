@@ -1,0 +1,37 @@
+# mom_6_1 —— 6-1 月动量（M7，实施计划 §10.1 动量族）
+# 口径：过去 ~26 周累计复权收益剔除最近 ~4 周（周频快照近似 6 个月 lookback）
+# 其余口径同 mom_12_1（pct 复权累乘、窗口满才出值）
+id: mom_6_1
+name: 6-1月动量
+family: momentum
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar]
+direction: +1
+hypothesis_id: H-MOM-001
+transform: []
+sql: |
+  WITH r AS (
+    SELECT dt, secid, pct,
+           count(pct) OVER w26 AS n26,
+           exp(sum(ln(1 + pct)) OVER w26) AS g26,
+           count(pct) OVER w4 AS n4,
+           exp(sum(ln(1 + pct)) OVER w4) AS g4
+    FROM dwd_daily_bar
+    WHERE pct IS NOT NULL AND pct > -0.9999
+      AND ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+    WINDOW w26 AS (PARTITION BY secid ORDER BY dt
+                   ROWS BETWEEN 25 PRECEDING AND CURRENT ROW),
+             w4 AS (PARTITION BY secid ORDER BY dt
+                    ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
+  )
+  SELECT dt, secid,
+         CASE WHEN n26 = 26 AND n4 = 4 THEN g26 / g4 - 1 END AS value,
+         CAST(NULL AS DATE) AS used_period,
+         CAST(NULL AS DATE) AS used_announce
+  FROM r

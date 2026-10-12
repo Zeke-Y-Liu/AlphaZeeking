@@ -1,0 +1,39 @@
+# mom_12_1 —— 12-1 月动量（M7，实施计划 §10.1 动量族）
+# 口径：过去 ~50 周累计复权收益剔除最近 ~4 周（exp(Σln(1+pct)) 商 − 1）
+#       复权口径：pct 为含除权除息调整的真实涨跌幅（repo 快照，close/close 会含除权跳空 → 禁用）
+#       周频快照近似月度 lookback（50 周 ≈ 11.6 个月、4 周 ≈ 0.9 个月，诚实标注）
+#       窗口须满（50/4 全有 pct）否则置空；pct <= -0.9999（周跌停板外异常）剔除
+id: mom_12_1
+name: 12-1月动量
+family: momentum
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar]
+direction: +1
+hypothesis_id: H-MOM-001
+transform: []
+sql: |
+  WITH r AS (
+    SELECT dt, secid, pct,
+           count(pct) OVER w50 AS n50,
+           exp(sum(ln(1 + pct)) OVER w50) AS g50,
+           count(pct) OVER w4 AS n4,
+           exp(sum(ln(1 + pct)) OVER w4) AS g4
+    FROM dwd_daily_bar
+    WHERE pct IS NOT NULL AND pct > -0.9999
+      AND ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+    WINDOW w50 AS (PARTITION BY secid ORDER BY dt
+                   ROWS BETWEEN 49 PRECEDING AND CURRENT ROW),
+             w4 AS (PARTITION BY secid ORDER BY dt
+                    ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
+  )
+  SELECT dt, secid,
+         CASE WHEN n50 = 50 AND n4 = 4 THEN g50 / g4 - 1 END AS value,
+         CAST(NULL AS DATE) AS used_period,
+         CAST(NULL AS DATE) AS used_announce
+  FROM r
