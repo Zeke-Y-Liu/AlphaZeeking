@@ -1,6 +1,6 @@
 {
  "chain": "本会话检查点链（编号独立起算；notes.corresponds 对应旧会话 CP-0020~0026，对齐《旧会话进度迁移报告》§4）",
- "next": 8,
+ "next": 9,
  "items": [
   {
    "cp_id": "CP-0001",
@@ -149,6 +149,29 @@
     "cli": "activate → 防重复激活 → inspect healthy → freeze-verify → refs 全链通（状态库持久）"
    },
    "notes": "演练发现并修复三处：③ 凭据口径（meta_factor_eval 存原始 IC，门禁原按原始 IC>0 误杀 direction=-1 因子 → 改按 direction 对齐判定）；CLI 内存库状态随进程丢失（门禁凭据/巡检历史/引用本质为持久状态 → 建 factorlib.duckdb 文件状态库 + dwd 幂等重灌 + sync_status 从 archive 账本对齐权威 status）；巡检负衰减显示歧义（-150% 实为近期优于基期 → 标注「改善」）。入口条件诚实登记：实施计划 §8 入口要求 M4 通过 ≥6/10 因子，实况仅 1 pass（val_ps_ttm）+2 alternative——M5 按设施建设推进（门禁/巡检/冻结不依赖因子数量），M6 入口条件（≥6 active）待全量历史补强后复检；巡检对 draft/deprecated 显式跳过（11 个非 active）"
+  },
+  {
+   "cp_id": "CP-0008",
+   "milestone": "M6 合成打分与回测引擎（批3：四法并列+双闸+自研撮合器+walk-forward+lockbox+三策略联调）",
+   "corresponds": "实施计划 §9（任务 9.1 合成 / 9.2 回测 / 9.3 三策略 / 9.4 DSL）",
+   "ts": "2026-10-12",
+   "deliverables": [
+    "factorlib/composite.py：合成四法并列（equal / ic_12m 滚动 12M IC 加权 / ic_ir / lasso 自研坐标下降 y 同步标准化）+ rank_product 双排序 + orthogonal 模式③；方向对齐 zscore；滚动权重窗口严格截至 t−1（防未来）；负 IC 权重 0（不赌反向，clamp 修复）；双闸（闸1 法间 ρ̄<0.7 过拟合告警 / 闸2 相邻期 L1 漂移≥30% freeze_review）",
+    "factorlib/backtest.py：§9.2 撮合语义逐条自研落地（次日 VWAP ∈ [low,high] 校验越界回退 (H+L)/2 标注 / 成本表佣金万2.5 min¥5+印花卖5bp+过户0.1bp+滑点5bp / T+1 / 涨停不买跌停不卖 / 停牌顺延重试登记 / 100 股整手 / 先卖后买）+ 月频绩效（含/不含成本两列固定）+ 无偷价审计（fill_dt>signal_dt、raw 价 ∈ 日区间、换手与再平衡频率匹配、n_vwap_proxy 披露）+ run_backtest + run_walkforward（train 24/step 6 折内选法 → 末端 lockbox 单次验证）",
+    "strategies/ 三策略 DSL（一个策略一个 YAML）：val_single_v1（模式① active 锚）/ pe_roe_v1（rank_product）/ multi_resonance_v1（四法并列+双闸演示）；draft/alternative 联调口径诚实标注",
+    "M6 一条命令 run_all + CLI：repo JSON → 物化策略因子 → 三策略全窗回测 + walk-forward → MD/JSON 落盘；报告渲染（四法并列两列 + 双闸 + 审计 + lockbox 节）",
+    "真实库演练归档 alphapocket/sandbox/artifacts/m6_backtest_20261012/（9 文件 + 汇总报告）：三策略 6 折 walk-forward + lockbox（2026-03..08 单次验证 −1.63%/−5.38%/−1.63% 诚实呈现）+ 审计全过",
+    "单测 21 用例：composite 10（四法锚点/防未来/负IC clamp/双闸逻辑）+ backtest 12（DoD1 撮合手工推演逐位对账/DoD2 成本敏感单调+排序稳定/DoD4 审计+注入违例矩阵/walk-forward 折结构）"
+   ],
+   "verify": {
+    "factorlib": "112 passed（91 M1–M5 + 21 M6）",
+    "dod_1": "撮合手工推演：49,900/24,900 股、成本 ¥129.80/129.54、nav 逐位一致 ✓",
+    "dod_2": "滑点 0/5bp/10bp 收益严格单调、排序不翻转，s=0 锚 +9.8743% ✓",
+    "dod_3": "三策略 walk-forward 6 折 + lockbox 单次验证归档 ✓",
+    "dod_4": "三策略全窗+折+lockbox 审计 0 违例；注入（当日成交/价出区间）正确捕获 ✓",
+    "dod_5": "四法并列输出 + 双闸告警逻辑单测 ✓"
+   },
+   "notes": "关键修复三处：(1) repo 源数据 43%（5407/12534）bar 的 amount/volume 越界（>high，VWAP 数学上必在日内区间）→ 撮合器防御性回退 (H+L)/2 标注 vwap_proxy_hl + 审计 n_vwap_proxy 披露（本批 100% 成交为代理价），数据源修复待 M0 管道；(2) _normalize_pos 未 clamp 负 IC/IR → 负权重致闸2漂移498>理论上限2 → 修复后不赌反向语义落地；(3) lasso y 未标准化 → lam 阈值相对收益量级失真全 0 回退 → y 同步标准化后稀疏性生效。诚实口径：backtrader 沙箱无依赖自研撮合兜底（三引擎交叉核对位留 M7）；lockbox 全负与 M4 窄截面功效弱结论一致；M6 入口条件（≥6 active）未满足按设施建设推进（M5 同口径）；闸2 freeze_review 在 4 股票截面上触发属预期诚实告警"
   }
  ]
 }

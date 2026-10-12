@@ -1,0 +1,12 @@
+# PE-ROE 双排序（§9.3 近似版联调；gro_np_yoy 待 M7 成长族补位）
+id: pe_roe_v1
+mode: composite
+universe: CN_EQUITY_NONST
+factors:
+  - {id: val_pe_ttm, weight: equal}
+  - {id: qua_roe_ttm, weight: equal}
+top_n: 3
+methods: [rank_product]
+rebalance_freq: monthly
+exec: next_day_vwap
+notes: "PE-ROE 双排序（ROE 分位 × PE 分位 rank_product）；val_pe_ttm / qua_roe_ttm 为 draft 联调口径（M4 结论——val_pe alternative、qua_roe fail），不注册合成池"
