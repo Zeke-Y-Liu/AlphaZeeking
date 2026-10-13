@@ -187,6 +187,7 @@ def _calendar_check(ctx: Ctx) -> dict:
     bad = []
     lasts_by_mkt: dict[str, set] = {}
     susp_n = 0
+    lag_n = 0
     for secid, arr in bars.items():
         mkt = classify_secid(secid) or "A"
         mcal = cal_by_mkt.get(mkt) or cal
@@ -207,18 +208,30 @@ def _calendar_check(ctx: Ctx) -> dict:
                 bad.append(f"{secid} 缺交易日{len(real_missing)}根（腾讯有而新浪缺）{real_missing[:3]}")
             susp_n += len(missing) - len(real_missing)
         lasts_by_mkt.setdefault(mkt, set()).add(dts[-1] if dts else None)
-    # 末根校验：各市场内所有标的末根一致，且 = 本市场最近交易日
+    # 末根校验：各市场内所有标的末根一致，且 = 本市场最近交易日。
+    # 当日滞后豁免：缺失日即今日 → 上游当日未发布（新浪基金源日线晚间批量更新、
+    # 腾讯交叉源即时可达，个股/基金发布时效不同导致同市场末根参差），属时效性而非
+    # 数据质量问题 → 透明计数豁免；存在超前（非交易日K线）或滞后于历史交易日 → FAIL。
     for mkt, lasts in lasts_by_mkt.items():
         mcal = cal_by_mkt.get(mkt) or cal
         last_td = max((d for d in mcal if d <= today), default=None)
-        if lasts != {last_td}:
-            bad.append(f"{mkt} 末根K线{sorted(lasts)} ≠ 最近交易日{last_td}")
+        if lasts == {last_td}:
+            continue
+        if last_td is not None and all(x is not None and x <= last_td for x in lasts) \
+                and last_td == today:
+            lag_n += sum(
+                1 for s, arr in bars.items()
+                if (classify_secid(s) or "A") == mkt and arr and arr[-1]["dt"] < last_td
+            )
+            continue
+        bad.append(f"{mkt} 末根K线{sorted(lasts)} ≠ 最近交易日{last_td}")
     susp_note = f"·无行情豁免{susp_n}日(停牌/份额折算)" if susp_n else ""
+    lag_note = f"·末根滞后豁免{lag_n}只(上游当日未发布)" if lag_n else ""
     cal_total = sum(len(cal_by_mkt.get(m) or cal) for m in lasts_by_mkt)
     mkt_note = "·" + "+".join(f"{m}:{len(c)}日" for m, c in sorted(cal_by_mkt.items()))
     last_note = "{" + ", ".join(
         f"{m}:{max(x for x in v if x)}" for m, v in sorted(lasts_by_mkt.items())) + "}"
-    msg = f"pass(末根={last_note}·日历{cal_total}日{mkt_note}{susp_note})" if not bad \
+    msg = f"pass(末根={last_note}·日历{cal_total}日{mkt_note}{susp_note}{lag_note})" if not bad \
         else f"FAIL({'; '.join(bad[:4])})"
     return {"calendar_check": msg}
 
