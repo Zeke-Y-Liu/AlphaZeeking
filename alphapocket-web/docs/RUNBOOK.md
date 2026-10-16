@@ -283,3 +283,101 @@ jobs/runs/verify_results 行数零变化。
 - **宏观指标无横截面回放**：`ap metric test --tool walkforward` 仅适用引擎A/B；
   对 macro 引擎明确报错（引擎C 为市场级条件变量，无个股横截面可回放）。
 - 无券商/交易外发请求（代码评审 + 网络白名单确认）。
+
+## 9. 引擎C 宏观流动性（运行口径 · T-C8 收尾）
+
+> 纪律：市场条件变量——**不决策、不参与权重**；不进 data_risk、不进六项验证门禁
+> （缺失 → unavailable 透明降级，评估照常完成）。
+
+### 9.1 采集与查看（双入口同一内核）
+
+```
+ap fetch 宏观    # fetch_macro_liquidity：12 指标设计（实测 11 命中，HK 三指标 unavailable 降级）
+                 # → sandbox/repo/market/macro_liquidity.json
+ap macro         # CLI：冻结五键 JSON 头 + 三市场逐指标 dim/score/分位表 + 口径注记
+MCP factor.macro # 工具面：读同一 payload → compute_macro_liquidity（与 CLI 逐字段一致）
+```
+
+`ap clone` 后评估自动回填报告 §2.5 与前端引擎C 卡片；payload 缺失 → 降级灰条（不失败）。
+
+### 9.2 三层聚合口径（T-C2，scorer 版本 `v1`）
+
+1. **单指标 scorer**：历史窗口分位点 × 方向 → 阈值触发（±2）/ 跳平带（|s|<0.2 → 0）/
+   前值站位（carried_prev，滞后标注）/ 回退（样本不足 → `insufficient` 档 0，聚合排除不折损）。
+   分位窗：日度 250 日、月度 12 期（新旧双期排位）。
+2. **维度等权**：D1 货币（M2/社融/信贷脉冲）· D2 信用社融 · D3 利率（Shibor/LPR/FR007…）·
+   D4 跨境利差（中美 10Y / FRA-OIS…）→ 维内均值 → 跨维均值；缺维度/缺市场不折损已知维度。
+3. **状态机**：全局五档 ±2…+2 → `state ∈ {tight, neutral, loose}`（+unavailable）；
+   市场级按 A/HK/US 独立聚合，HK 三指标资产缺失 → 市场级 `"unavailable"`。
+
+### 9.3 增量防丢口径（T-C1，红线 4）
+
+- 失败/空窗口 → **旧数据零丢失**：`carried_old` 合并，逐指标落 provenance；
+  成功 → union 合并、同 dt 新值覆盖、**永不物理删除**历史点。
+- 月度指标（M2/社融等）按 **12 个月滚动窗**拉取；PIT 防前视：月度指标 as_of 当月站位点
+  不可用（用上月值站位），日度严格 `dt<=as_of`（T-C2）。
+
+### 9.4 已知边界（诚实登记）
+
+- **HK 三指标（H-0006 资产缺失）**：`hk_rates.json` 无法登记 → 港股市场级持续 unavailable
+  （不折损 A/US 聚合），待数据资产补齐。
+- **engines 配置注入**：引擎C 不经 engines 配置注入版本不符由组件化 T-R3 收编（本版本内联）。
+- **扩展位**：D2/D3 补 `dr007` / `repo_tier_007` / `m1_m2_gap`（macro 12→16 指标）→ M7。
+- e2e 夹具就位但 chromium 实跑受阻（T-C7 登记），单测已覆盖同一渲染分支。
+
+## 10. 引擎配置注入与版本绑定（T-R3 · 处置口径）
+
+- **配置位置**：`sandbox/repo/config/engines.json`（或进程内 dict），形态
+  `{engine_id: {params, enabled, registry_version}}`；缺文件/缺条目 → 走函数签名
+  默认并输出 `_config_warnings`（不静默）。
+- **注入顺序**：显式入参 > `config.params` > compute_x 函数签名默认；注入经包装层
+  `__call__(args, config=...)`，不得绕过 T-R1/T-R2 契约（校验/位范围/provenance 全程生效）。
+- **版本绑定**：配置 `registry_version` 与 `ENGINE_REGISTRY_VERSION`（engines/base.py，
+  当前 `v1`）核对。**不符 → `_version_warning` 显式登记：结果照常产出、不静默、不阻断**
+  （已知遗留观察「版本不符、结果正确产出」即此口径，与引擎C 00-总览 §8 双向引用）。
+- **处置**：版本不符出现后 → 1) 核对配置文件的 registry_version 是否过期；
+  2) 若为引擎集/契约变更 → bump base.py 常量（M1 注册中心建立后改由 registry 提供）；
+  3) 对齐后重跑该评估 run，`_version_warning` 消失即为处置完成。
+- **停用**：`enabled: false` → 包装器返回 `status=disabled`（不进公式）；
+  报告/工具层对该引擎输出的消费方须处理 disabled 形态（T-R11 回归面覆盖）。
+
+## 11. 数据同步三模式（T-R8 · `ap fetch --mode`）
+
+- **bootstrap**：全量重建（首次落地/灾后重建；rmtree + 全量拉取 + restore_guard 回写）。
+- **incremental**：日常同步；不 rmtree（单数据集拉取失败 → 旧文件保留）；
+  `incremental_from` 缺省时**自动从库内各标的最末 dt 推导起点**；K 线走 union_bars 合并。
+- **refresh**：合并式刷新——**替换最近 5 个交易日（7 自然日窗口）而非整体覆盖**，
+  同 dt 新值覆盖=点位修正，历史不动；用于数据源修正回填后的定点刷新。
+- **缺省（不传 --mode）**：按参数推导（有 incremental_from → incremental，否则 bootstrap）
+  并输出 `mode_warning` 告警（防误触覆盖）；建议生产路径全部显式传 mode。
+- **冲突拒绝**：`--mode bootstrap/refresh` 与显式 incremental_from 同传 → ValueError
+  （窗口自定，防旁路覆盖）。模式与起点写入 `provenance.mode/mode_source` 可追溯。
+
+## 12. registry 写保护与 orphan 处置（T-R4/T-R7 · 三语义）
+
+- **三语义**：① 覆盖→merge（机器拉取不再整文件覆盖用户登记）；② 用户改动优先
+  （条目字段冲突保用户值；`MACHINE_FIELDS = {version, universe, type, horizon_days}`
+  为机器字段新胜——边界见 [writeguard.py](../../alphapocket/applib/writeguard.py)）；
+  ③ orphan 标记不物理删（消失条目加 `orphan: true` + `orphaned_at`，可审计可恢复）。
+- **守护面**（GUARDED_RELS，快照-恢复守护）：`factors/registry.json`、
+  `portfolio/cn4.json`、`portfolio/multi5.json`、`market/daily_bars.json`、
+  `market/daily_bars_raw.json`、`market/cross_check_tx.json`；财务/分红/日历/市值/宏观
+  为上游全量重拉（覆盖=修正），不入守护面。
+- **orphan 处置**：orphan 条目默认保留在文件内（不参与计算但可查询）；
+  人工确认废弃后可物理删除（删前建议 `ap` 外部留档）；恢复 = 下一轮拉取重现即自动去 orphan。
+- **合并策略单点**：merge 逻辑一律委托 [datasets](../../alphapocket/applib/datasets/__init__.py)
+  的 MERGE_POLICY_FN 注册表（overwrite / union_bars / registry_merge / portfolio_merge /
+  carry_old），restore_guard 落盘格式由 MERGE_POLICY_FORMAT 声明；新增策略只注册表，不得私造第二实现。
+
+## 13. data_missing 检测（T-R10 · 提示不阻断，与门禁失败语义的显式区别）
+
+- **入口**：MCP 工具 `data.missing`（stale_days 可调，缺省 7）→
+  [check_data_missing](../../alphapocket/applib/datasets/__init__.py) 单点检测。
+- **驱动源**：DatasetSpec.validation 声明（`required_keys` / `min_rows` / `as_of_field`）；
+  新增数据集在 registry.json 写声明即自动接入检测（零代码）。
+- **severity**：missing(4) > invalid(3) > incomplete(2) > stale(1) > ok(0)，
+  单数据集只返回最严重 status 与 reason。
+- **红线（透明降级）**：检测结果只产提示、**不抛异常、不阻断评估流程、不进门禁**——
+  web 黄条 / 引擎C unavailable 灰条同语义消费。与行情门禁 data_risk 的失败语义
+  （可阻断、可 FAIL）显式区别：数据缺失 → 提示可见 + 结果标注 unavailable/降级，流程继续。
+- **全量缺失也安全**：空仓/全缺场景返回结构化结果（summary 计数 + semantics 自描述），不失败。

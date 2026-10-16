@@ -1,0 +1,31 @@
+# gro_rev_yoy —— 营收同比增速（M7，实施计划 §10.1 成长族）
+# 口径：最新已披露报告期的营收同比增速（源字段 rev_g，ytd 同比 %）
+# PIT：announce_date <= dt 对齐（row_number 取最新披露）；rev_g 空的报告期不参与
+id: gro_rev_yoy
+name: 营收同比增速
+family: growth
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar, dwd_financial_report]
+direction: +1
+hypothesis_id: H-GRO-001
+transform: []
+sql: |
+  WITH b AS (
+    SELECT dt, secid FROM dwd_daily_bar
+    WHERE ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  ),
+  pit AS (
+    SELECT b.dt, b.secid, f.rev_g, f.period, f.announce_date,
+           row_number() OVER (PARTITION BY b.dt, b.secid
+                              ORDER BY f.announce_date DESC, f.period DESC) AS rn
+    FROM b JOIN dwd_financial_report f
+      ON f.secid = b.secid AND f.announce_date <= b.dt AND f.rev_g IS NOT NULL
+  )
+  SELECT dt, secid, rev_g AS value, period AS used_period, announce_date AS used_announce
+  FROM pit WHERE rn = 1

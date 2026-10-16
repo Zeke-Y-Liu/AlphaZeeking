@@ -1,0 +1,36 @@
+# per_e3_clone —— E3 策略克隆候选（M7 §10.4 个人化因子通道，自动生成）
+# 归纳来源：用户满意交易 3 笔（区间 2023-06-30..2025-06-30）；
+# 共性特征 = 方向秩分位中位数 ≥ 0.7 的因子：gro_earnings_surprise, gro_np_yoy, gro_rev_cagr_3y, gro_rev_yoy, val_ev_ebitda, val_pb_lf, val_pe_ttm, val_ps_ttm
+# 口径：成分因子截面 zscore 方向调整后等权平均；高分 = 打法偏好
+# 门禁纪律：与常规候选同一流水线（③④⑤⑥），不豁免任何关卡；
+# PIT：读已过 PIT 审计的 factor_value_daily，无独立公告日口径 → 审计面外（诚实登记）
+id: per_e3_clone
+name: E3策略克隆（个人打法复现）
+family: personal
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [factor_value_daily]
+direction: 1
+hypothesis_id: H-E3-001
+transform: []
+sql: |
+  WITH z AS (
+    SELECT dt, secid, factor_id,
+           (value - avg(value) OVER (PARTITION BY dt, factor_id))
+             / nullif(stddev_samp(value) OVER (PARTITION BY dt, factor_id), 0) AS zv
+    FROM factor_value_daily
+    WHERE factor_id IN ('gro_earnings_surprise', 'gro_np_yoy', 'gro_rev_cagr_3y', 'gro_rev_yoy', 'val_ev_ebitda', 'val_pb_lf', 'val_pe_ttm', 'val_ps_ttm')
+      AND ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  ),
+  zd AS (
+    SELECT dt, secid, CASE factor_id WHEN 'gro_earnings_surprise' THEN zv * (1) WHEN 'gro_np_yoy' THEN zv * (1) WHEN 'gro_rev_cagr_3y' THEN zv * (1) WHEN 'gro_rev_yoy' THEN zv * (1) WHEN 'val_ev_ebitda' THEN zv * (-1) WHEN 'val_pb_lf' THEN zv * (-1) WHEN 'val_pe_ttm' THEN zv * (-1) WHEN 'val_ps_ttm' THEN zv * (-1) END AS z
+    FROM z WHERE zv IS NOT NULL
+  )
+  SELECT dt, secid, avg(z) AS value,
+         CAST(NULL AS DATE) AS used_period, CAST(NULL AS DATE) AS used_announce
+  FROM zd GROUP BY dt, secid

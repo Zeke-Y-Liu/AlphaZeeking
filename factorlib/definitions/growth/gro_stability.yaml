@@ -1,0 +1,43 @@
+# gro_stability —— 盈利增长稳定性（M7，实施计划 §10.1 成长族）
+# 口径：最近 8 个报告期 np_g 的样本 std 取负（−sd，×1 保持 % 量纲；窗口须满 8 期）
+#       稳定增长（低增速波动）→ 值大（0 附近或正）；剧烈波动 → 值小；direction=+1
+# 序列窗口在报告期序列上滚动（per secid ORDER BY period），PIT 后按截面日取最新披露
+id: gro_stability
+name: 盈利增长稳定性
+family: growth
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar, dwd_financial_report]
+direction: +1
+hypothesis_id: H-GRO-001
+transform: []
+sql: |
+  WITH b AS (
+    SELECT dt, secid FROM dwd_daily_bar
+    WHERE ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  ),
+  seq AS (
+    SELECT secid, period, announce_date, np_g,
+           count(np_g) OVER w8 AS n8,
+           stddev_samp(np_g) OVER w8 AS sd8
+    FROM dwd_financial_report
+    WHERE np_g IS NOT NULL
+    WINDOW w8 AS (PARTITION BY secid ORDER BY period
+                  ROWS BETWEEN 7 PRECEDING AND CURRENT ROW)
+  ),
+  pit AS (
+    SELECT b.dt, s.secid, s.sd8, s.n8, s.period, s.announce_date,
+           row_number() OVER (PARTITION BY b.dt, s.secid
+                              ORDER BY s.announce_date DESC, s.period DESC) AS rn
+    FROM b JOIN seq s
+      ON s.secid = b.secid AND s.announce_date <= b.dt
+  )
+  SELECT dt, secid,
+         CASE WHEN rn = 1 AND n8 = 8 THEN -sd8 END AS value,
+         period AS used_period, announce_date AS used_announce
+  FROM pit WHERE rn = 1

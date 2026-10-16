@@ -174,7 +174,7 @@ def _install_fake_fetch_all(
 ):
     """确定性假 fetch_all：记录入参，写 fake repo 文件（不联网）。"""
 
-    def fake(ctx, start="2021-01-01", fin_start_year="2019", universe=None, incremental_from=None):
+    def fake(ctx, start="2021-01-01", fin_start_year="2019", universe=None, incremental_from=None, allow_rebuild=False):
         captured["start"] = start
         captured["universe"] = list(universe) if universe is not None else None
         captured["incremental_from"] = (
@@ -350,7 +350,7 @@ def test_sync_pipeline_materializes_duckdb(ws_root, seeded, monkeypatch) -> None
 
     bars = json.loads((ALPHA_SNAPSHOT / "market" / "daily_bars.json").read_text(encoding="utf-8"))
 
-    def fake(ctx, start="2021-01-01", fin_start_year="2019", universe=None, incremental_from=None):
+    def fake(ctx, start="2021-01-01", fin_start_year="2019", universe=None, incremental_from=None, allow_rebuild=False):
         shutil.copytree(ALPHA_SNAPSHOT, ctx.repo_dir, dirs_exist_ok=True)
         per = {
             s: {"bars": len(arr), "last_dt": arr[-1]["dt"] if arr else None}
@@ -424,7 +424,7 @@ def test_runs_row_recorded(ws_root, seeded, monkeypatch, tracked) -> None:
 def test_universe_missing_recorded_not_failed(ws_root, seeded, monkeypatch) -> None:
     """universe_missing 透明记录、不判失败（既有设计限制，登记）。"""
 
-    def fake(ctx, start="2021-01-01", fin_start_year="2019", universe=None, incremental_from=None):
+    def fake(ctx, start="2021-01-01", fin_start_year="2019", universe=None, incremental_from=None, allow_rebuild=False):
         repo = ctx.repo_dir
         (repo / "market").mkdir(parents=True, exist_ok=True)
         (repo / "market" / "daily_bars.json").write_text(json.dumps({}))

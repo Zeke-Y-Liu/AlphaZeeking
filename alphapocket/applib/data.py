@@ -25,8 +25,8 @@ def data_sync(args: dict, ctx) -> dict:
     con = duckdb.connect(str(ctx.db_path))
     for t in ("dwd_daily_bar", "dwd_daily_bar_raw", "cross_check_tx", "dwd_trade_calendar",
               "dwd_trade_calendar_hk", "dwd_trade_calendar_us",
-              "dwd_financial_report", "dwd_dividend", "dim_security", "factor_value_daily",
-              "factor_pit_meta"):
+              "dwd_financial_report", "dwd_dividend", "dwd_mktcap_daily", "dim_security",
+              "factor_value_daily", "factor_pit_meta"):
         con.execute(f"DROP TABLE IF EXISTS {t}")
     con.execute("""CREATE TABLE dwd_daily_bar (secid TEXT, dt DATE, open DOUBLE, high DOUBLE,
                    low DOUBLE, close DOUBLE, volume BIGINT, amount DOUBLE, pct DOUBLE)""")
@@ -35,11 +35,15 @@ def data_sync(args: dict, ctx) -> dict:
     con.execute("CREATE TABLE dwd_trade_calendar (dt DATE)")
     con.execute("""CREATE TABLE dwd_financial_report (secid TEXT, period DATE, announce_date DATE,
                    eps_ytd DOUBLE, bps DOUBLE, roe DOUBLE, roe_w DOUBLE,
-                   rev_g DOUBLE, np_g DOUBLE, margin DOUBLE)""")
+                   rev_g DOUBLE, np_g DOUBLE, margin DOUBLE,
+                   revenue DOUBLE, net_profit DOUBLE, total_assets DOUBLE, total_liab DOUBLE,
+                   ocf DOUBLE, capex DOUBLE, cash DOUBLE, interest_debt DOUBLE)""")
     con.execute("CREATE TABLE dwd_dividend (secid TEXT, ex_date DATE, announce DATE, dps DOUBLE)")
+    con.execute("CREATE TABLE dwd_mktcap_daily (secid TEXT, dt DATE, mktcap DOUBLE)")
     con.execute("CREATE TABLE dim_security (secid TEXT, name TEXT, market TEXT, asset_type TEXT, industry TEXT)")
     con.execute("CREATE TABLE factor_value_daily (dt DATE, secid TEXT, factor_id TEXT, value DOUBLE)")
-    con.execute("CREATE TABLE factor_pit_meta (dt DATE, secid TEXT, factor_id TEXT, used_period DATE, used_announce DATE)")
+    con.execute("""CREATE TABLE factor_pit_meta (dt DATE, secid TEXT, factor_id TEXT,
+                   used_period DATE, used_announce DATE)""")
 
     con.executemany("INSERT INTO dwd_daily_bar VALUES (?,?,?,?,?,?,?,?,?)",
                     [(s, r["dt"], r["open"], r["high"], r["low"], r["close"], r["volume"], r["amount"], r["pct"])
@@ -66,20 +70,32 @@ def data_sync(args: dict, ctx) -> dict:
         synced_extra[t] = len(mcal)
     con.executemany("INSERT INTO dim_security VALUES (?,?,?,?,?)",
                     [(d["secid"], d["name"], d["market"], d["asset_type"], d["industry"]) for d in dims])
+    # M2：总市值日度（dim/market_cap.json，百度估值抽样粒度 8~13 天一格 → 因子侧 asof 对齐）
+    mcap_path = ctx.local_repo / "dim" / "market_cap.json"
+    n_mcap = 0
+    if mcap_path.exists():
+        mcap = _load_json(mcap_path)
+        mrows = [(s, dt_, float(mv)) for s, arr in mcap.items() for dt_, mv in arr]
+        con.executemany("INSERT INTO dwd_mktcap_daily VALUES (?,?,?)", mrows)
+        n_mcap = len(mrows)
     frep, fdiv = [], []
     for s, v in fund.items():
         for r in v["reports"]:
             frep.append((s, r["period"], r["announce_date"], r["eps_ytd"], r["bps"], r["roe"],
-                         r["roe_w"], r["rev_g"], r["np_g"], r["margin"]))
+                         r["roe_w"], r["rev_g"], r["np_g"], r["margin"],
+                         r.get("revenue"), r.get("net_profit"), r.get("total_assets"),
+                         r.get("total_liab"), r.get("ocf"), r.get("capex"),
+                         r.get("cash"), r.get("interest_debt")))
         for d in v["dividends"]:
             fdiv.append((s, d["ex_date"], d["announce"], d["dps"]))
-    con.executemany("INSERT INTO dwd_financial_report VALUES (?,?,?,?,?,?,?,?,?,?)", frep)
+    con.executemany("INSERT INTO dwd_financial_report VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", frep)
     con.executemany("INSERT INTO dwd_dividend VALUES (?,?,?,?)", fdiv)
     con.close()
     as_of = max(r["dt"] for arr in bars.values() for r in arr)
     return {"synced": {"dwd_daily_bar": sum(len(a) for a in bars.values()),
                        "dwd_daily_bar_raw": sum(len(a) for a in raws.values()),
                        "dwd_financial_report": len(frep), "dwd_dividend": len(fdiv),
+                       "dwd_mktcap_daily": n_mcap,
                        "dwd_trade_calendar": len(cal), "dim_security": len(dims), **synced_extra},
             "as_of": as_of, "source": "AKShare(新浪/腾讯) → remote/repo → duckdb",
             "provenance": str(ctx.local_repo / "market" / "provenance.json")}

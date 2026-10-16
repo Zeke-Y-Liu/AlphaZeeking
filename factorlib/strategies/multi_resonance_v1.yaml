@@ -1,0 +1,13 @@
+# 多因子共振近似版（§9.3；估值三兄弟，五族全量待 M7）
+id: multi_resonance_v1
+mode: composite
+universe: CN_EQUITY_NONST
+factors:
+  - {id: val_ps_ttm, weight: auto_ic_12m}
+  - {id: val_pe_ttm, weight: auto_ic_12m}
+  - {id: val_pb_lf, weight: auto_ic_12m}
+top_n: 3
+methods: [equal, ic_12m, ic_ir, lasso]
+rebalance_freq: monthly
+exec: next_day_vwap
+notes: "多因子共振近似版（估值三兄弟；五族全量待 M7）——三因子 rho 0.68-0.92，闸 1 一致性预计告警（预期行为演示）；val_pe / val_pb 为 alternative / draft 联调口径"

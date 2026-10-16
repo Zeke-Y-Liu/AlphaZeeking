@@ -1,0 +1,33 @@
+# flt_avg_amount_20d —— 20 日均成交额过滤（M2 配套过滤因子，不做打分）
+# 口径：amount 20 日滚动均值（元），lookback=19（M1 resolve_start 依赖）；不足 20 日置空。
+# >5000 万的流动性入池判断由消费端执行。
+id: flt_avg_amount_20d
+name: 均额20日
+family: filter
+type: filter
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 19
+depends: [dwd_daily_bar]
+direction: 0
+hypothesis_id: null
+transform: []
+sql: |
+  WITH w AS (
+    SELECT dt, secid, amount,
+           count(*) OVER (PARTITION BY secid ORDER BY dt
+                          ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS cnt,
+           avg(amount) OVER (PARTITION BY secid ORDER BY dt
+                             ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS avg20
+    FROM dwd_daily_bar
+    WHERE amount IS NOT NULL
+      AND ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  )
+  SELECT dt, secid,
+         CASE WHEN cnt = 20 THEN avg20 END AS value,
+         CAST(NULL AS DATE) AS used_period,
+         CAST(NULL AS DATE) AS used_announce
+  FROM w

@@ -199,3 +199,91 @@ def test_run_p1_eval_end_to_end():
     assert set(rep["dod"]) == {"incremental", "ab_gate", "ok"}
     assert rep["incremental"]["base"] == "mom_12_1"
     assert FE.render_md(rep) and FE.render_html(rep)
+
+
+# ── M1 动态权重通道：rule_fn（与 ab_gate 互斥） ──────────
+def test_rule_fn_identity_matches_equal_weight_anchor():
+    """恒等 rule_fn（返回等权）→ 与默认等权回测逐位一致（主循环/成本语义零偏移）。"""
+    bars, pf = _two_stock_ctx()
+    base = BT.run_backtest(bars, pf, rebalance="monthly")
+    secids = [p["secid"] for p in pf["positions"]]
+    ruled = BT.run_backtest(bars, pf, rebalance="monthly",
+                            rule_fn=lambda d: {s: 1.0 / len(secids) for s in secids})
+    assert ruled["rule_fn"] is True and ruled["rule"]["n_rebalances"] == base["n_rebalances"] + 1
+    assert ruled["series"] == base["series"]                       # 逐日 NAV 逐位一致
+    assert ruled["strategy_metrics"] == base["strategy_metrics"]
+    assert ruled["cost"] == base["cost"]
+
+
+def test_rule_fn_daily_rotation_manual_nav():
+    """daily 再平衡 + 零成本 → NAV = ∏(1+Σw_d·r_d) 手工逐位推演（A 前半全仓 → B 后半全仓）。"""
+    bars = {"A.XX": _bars(20, drift=0.002), "B.XX": _bars(20, drift=-0.001)}
+    pf = {"id": "ROT", "name": "轮动", "positions": [
+        {"secid": "A.XX", "name": "A"}, {"secid": "B.XX", "name": "B"}]}
+    dates = sorted({r["dt"] for r in bars["A.XX"]})
+    half = dates[len(dates) // 2]
+
+    def rule(d):
+        return {"A.XX": 1.0, "B.XX": 0.0} if d < half else {"A.XX": 0.0, "B.XX": 1.0}
+
+    res = BT.run_backtest(bars, pf, rebalance="daily", cost_bps=0, rule_fn=rule,
+                          benchmark_secid=None)
+    rmap = {s: {r["dt"]: r["pct"] for r in arr} for s, arr in bars.items()}
+    nav, want = 1.0, []
+    w = rule(dates[0])                    # 期初建仓：当日生效
+    for d in dates:                       # 手工推演：当日收益用昨日收盘再平衡后的权重
+        pr = sum(w[s] * (rmap[s].get(d) or 0.0) for s in w)
+        nav *= 1 + pr
+        want.append((d, nav))
+        w = rule(d)                       # 收盘再平衡 → 次日生效（收盘价执行口径）
+    assert res["series"] == want          # 逐位一致（零成本 + 每日回目标 → 无漂移）
+    assert all(e["invested_ratio"] == 1.0 for e in res["rule"]["events"])
+
+
+def test_rule_fn_cash_remaining():
+    """Σw < 1 留现金语义：invested_ratio 登记 0.5，pr = 0.5·rA 手工逐位一致。"""
+    bars = {"A.XX": _bars(10, drift=0.003), "B.XX": _bars(10, drift=0.0)}
+    pf = {"id": "CSH", "name": "半仓", "positions": [
+        {"secid": "A.XX", "name": "A"}, {"secid": "B.XX", "name": "B"}]}
+    dates = sorted({r["dt"] for r in bars["A.XX"]})
+    res = BT.run_backtest(bars, pf, rebalance="daily", cost_bps=0,
+                          rule_fn=lambda d: {"A.XX": 0.5}, benchmark_secid=None)
+    rmap = {s: {r["dt"]: r["pct"] for r in arr} for s, arr in bars.items()}
+    nav, want = 1.0, []
+    for d in dates:                       # 权重恒定 → 无时序歧义：pr = 0.5·rA
+        nav *= 1 + 0.5 * (rmap["A.XX"].get(d) or 0.0)
+        want.append((d, nav))
+    assert res["series"] == want
+    assert res["rule"]["avg_invested_ratio"] == 0.5
+
+
+def test_rule_fn_validation_rejects():
+    """契约校验：负权重 / 杠杆 / 零持仓 / 非 dict / 未声明标的 → 显式报错不静默修正。"""
+    bars, pf = _two_stock_ctx()
+    cases = [
+        (lambda d: {"A.XX": -0.5, "B.XX": 1.0}, "负权重"),
+        (lambda d: {"A.XX": 1.2, "B.XX": 0.3}, "杠杆"),
+        (lambda d: {"A.XX": 0.0, "B.XX": 0.0}, "无有效持仓"),
+        (lambda d: [("A.XX", 0.5)], "须返回"),
+        (lambda d: {"A.XX": 0.5, "X.XX": 0.5}, "未声明标的"),
+        (lambda d: {"A.XX": True, "B.XX": 0.5}, "非数值"),
+    ]
+    for fn, kw in cases:
+        with pytest.raises(ValueError, match=kw):
+            BT.run_backtest(bars, pf, rebalance="daily", rule_fn=fn)
+
+
+def test_rule_fn_mutually_exclusive():
+    bars, pf = _two_stock_ctx()
+    with pytest.raises(ValueError, match="互斥"):
+        BT.run_backtest(bars, pf, rule_fn=lambda d: {"A.XX": 0.5, "B.XX": 0.5}, ab_gate=True)
+    with pytest.raises(ValueError, match="互斥"):
+        BT.run_backtest(bars, pf, rule_fn=lambda d: {"A.XX": 0.5, "B.XX": 0.5},
+                        risk_limits={"max_single": 0.4})
+
+
+def test_rule_fn_default_off():
+    """默认不传 rule_fn → 通道关闭，产物结构不含 rule 事件（锚点不受影响）。"""
+    bars, pf = _two_stock_ctx()
+    res = BT.run_backtest(bars, pf, rebalance="monthly")
+    assert res["rule_fn"] is False and res["rule"] is None

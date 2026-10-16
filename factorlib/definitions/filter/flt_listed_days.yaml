@@ -1,0 +1,31 @@
+# flt_listed_days —— 上市天数过滤（M2 配套过滤因子，不做打分）
+# 口径：dt − 库内首个交易日（上市日期近似——次新过滤目的达成：库首日前的历史未入库，
+#       2016 前上市标的全部 >365 天；真实上市日需 dim_security 补 list_date，CP-0004 登记）。
+# 输出上市天数（数值），>365 的入池判断由消费端执行。
+id: flt_listed_days
+name: 上市天数
+family: filter
+type: filter
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar]
+direction: 0
+hypothesis_id: null
+transform: []
+sql: |
+  WITH b AS (
+    SELECT DISTINCT dt, secid FROM dwd_daily_bar
+    WHERE ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  ),
+  first_day AS (
+    SELECT secid, min(dt) AS listed FROM dwd_daily_bar GROUP BY secid
+  )
+  SELECT b.dt, b.secid,
+         CAST(date_diff('day', f.listed, b.dt) AS DOUBLE) AS value,
+         CAST(NULL AS DATE) AS used_period,
+         CAST(NULL AS DATE) AS used_announce
+  FROM b JOIN first_day f USING (secid)

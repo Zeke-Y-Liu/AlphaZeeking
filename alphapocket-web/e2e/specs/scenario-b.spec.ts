@@ -20,6 +20,12 @@ test.describe('剧本 B · seed cn4 回归', () => {
     await expect(page.getByTestId('beta-card')).toHaveCount(4);
     await expect(page.getByTestId('next-trade-date')).toHaveText('2026-10-08');
 
+    /* 引擎C 卡片（T-C7）：cn4 夹具为降级态——灰条可见且评估内容照常（透明降级语义） */
+    await expect(page.getByTestId('macro-unavailable')).toBeVisible();
+    await expect(page.getByTestId('macro-unavailable')).toContainText('宏观数据缺失，评估继续');
+    await expect(page.getByTestId('macro-card')).toHaveCount(0);
+    await expect(page.getByTestId('metric-day')).toBeVisible();   // 评估内容未被阻断
+
     /* 组合列表：最近评估四指标来自最新 run（此时最新为 review）的 summary.portfolio_metrics */
     await page.goto('/portfolios');
     const card = page.locator('[data-test="pf-card"]', { hasText: 'cn4' });

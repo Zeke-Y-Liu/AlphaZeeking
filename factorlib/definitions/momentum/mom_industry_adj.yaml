@@ -1,0 +1,49 @@
+# mom_industry_adj —— 行业相对动量（M7，实施计划 §10.1 动量族）
+# 口径：mom_12_1 − 同日同行业均值（申万行业口径常识标注，dim_security.industry）
+# 诚实退化：本库 4 股票各占一个行业 → 行业截面 < 2 时保留原始动量（notes 已声明），
+#          待全市场数据补强后行业调整自动生效（SQL 条件内置，无需改因子）
+id: mom_industry_adj
+name: 行业相对动量
+family: momentum
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar, dim_security]
+direction: +1
+hypothesis_id: H-MOM-001
+transform: []
+sql: |
+  WITH r AS (
+    SELECT dt, secid, pct,
+           count(pct) OVER w50 AS n50,
+           exp(sum(ln(1 + pct)) OVER w50) AS g50,
+           count(pct) OVER w4 AS n4,
+           exp(sum(ln(1 + pct)) OVER w4) AS g4
+    FROM dwd_daily_bar
+    WHERE pct IS NOT NULL AND pct > -0.9999
+      AND ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+    WINDOW w50 AS (PARTITION BY secid ORDER BY dt
+                   ROWS BETWEEN 49 PRECEDING AND CURRENT ROW),
+             w4 AS (PARTITION BY secid ORDER BY dt
+                    ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
+  ),
+  raw AS (
+    SELECT dt, secid, CASE WHEN n50 = 50 AND n4 = 4 THEN g50 / g4 - 1 END AS mom
+    FROM r
+  ),
+  ij AS (
+    SELECT raw.dt, raw.secid, raw.mom,
+           count(raw.mom) OVER (PARTITION BY raw.dt, s.industry) AS ind_n,
+           avg(raw.mom) OVER (PARTITION BY raw.dt, s.industry) AS ind_avg
+    FROM raw JOIN dim_security s USING (secid)
+  )
+  SELECT dt, secid,
+         CASE WHEN mom IS NOT NULL AND ind_n >= 2 THEN mom - ind_avg
+              WHEN mom IS NOT NULL THEN mom END AS value,
+         CAST(NULL AS DATE) AS used_period,
+         CAST(NULL AS DATE) AS used_announce
+  FROM ij

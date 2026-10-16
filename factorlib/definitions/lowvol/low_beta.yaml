@@ -1,0 +1,42 @@
+# low_beta —— 低 beta（M7，实施计划 §10.1 低波红利族）
+# 口径：52 周个股周收益对基准（510300.SH 沪深300ETF）周收益的 beta
+#       = covar_samp(r_i, r_b) / var_samp(r_b)；var=0 或窗口不满 52 周置空
+# direction=-1：低 beta 异象（Betting-Against-Beta，H-LOW-001）
+id: low_beta
+name: 低beta
+family: lowvol
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_daily_bar]
+direction: -1
+hypothesis_id: H-LOW-001
+transform: []
+sql: |
+  WITH i AS (
+    SELECT dt, secid, pct AS ri FROM dwd_daily_bar
+    WHERE pct IS NOT NULL AND pct > -0.9999 AND secid <> '510300.SH'
+      AND ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+      AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))
+  ),
+  b AS (
+    SELECT dt, pct AS rb FROM dwd_daily_bar
+    WHERE secid = '510300.SH' AND pct IS NOT NULL AND pct > -0.9999
+  ),
+  j AS (
+    SELECT i.dt, i.secid, i.ri, b.rb,
+           count(*) OVER w52 AS n,
+           covar_samp(i.ri, b.rb) OVER w52 AS cov,
+           var_samp(b.rb) OVER w52 AS var
+    FROM i JOIN b USING (dt)
+    WINDOW w52 AS (PARTITION BY i.secid ORDER BY i.dt
+                   ROWS BETWEEN 51 PRECEDING AND CURRENT ROW)
+  )
+  SELECT dt, secid,
+         CASE WHEN n = 52 AND var > 0 THEN cov / var END AS value,
+         CAST(NULL AS DATE) AS used_period,
+         CAST(NULL AS DATE) AS used_announce
+  FROM j

@@ -1,0 +1,12 @@
+# 策略 DSL（§9.4；M6 近似版联调口径）
+# 模式①：单因子顶层（唯一合规注册口径——仅 active 因子可单因子顶层）
+id: val_single_v1
+mode: single
+universe: CN_EQUITY_NONST
+factors:
+  - {id: val_ps_ttm, weight: equal}
+top_n: 3
+methods: [equal]
+rebalance_freq: monthly
+exec: next_day_vwap
+notes: "模式①锚定策略——val_ps_ttm 为 M4 唯一 pass（active），单因子打分即排序"

@@ -1,0 +1,180 @@
+{
+ "chain": "本会话检查点链（编号独立起算；notes.corresponds 对应旧会话 CP-0020~0026，对齐《旧会话进度迁移报告》§4）",
+ "next": 9,
+ "items": [
+  {
+   "cp_id": "CP-0001",
+   "milestone": "引擎C 宏观流动性全链收口（批1，T-C1~T-C8 8/8）",
+   "corresponds": "旧会话 CP-0020 之引擎C 部分",
+   "ts": "2026-10-11",
+   "commits": [
+    "886f566..009624d"
+   ],
+   "deliverables": [
+    "fetch_macro_liquidity（18 探 12 中，12 指标）+ compute_macro_liquidity 三层聚合状态机",
+    "factor.macro MCP 工具 + ap macro CLI（只读双入口）",
+    "portfolio_review regime 块 + 报告 §2.5 三市场温度计（_macro_summary 五键冻结契约）",
+    "PortfolioDetailView 引擎C 三态卡片 + e2e 夹具",
+    "API.md/RUNBOOK.md 口径登记，总验收 9 项复核"
+   ],
+   "verify": {
+    "tests": "pass",
+    "alpha_suite": "全绿（引擎C 后基线）"
+   }
+  },
+  {
+   "cp_id": "CP-0002",
+   "milestone": "组件化重构收口（批2，T-R1~T-R12 12/12）",
+   "corresponds": "旧会话 CP-0020",
+   "ts": "2026-10-12",
+   "commits": [
+    "efaae8c..6fe65a7"
+   ],
+   "deliverables": [
+    "engines/ 包装层（契约五条冻结）+ EngineSpec + T-R3 配置注入",
+    "registry 写保护三语义（覆盖→merge/用户优先/orphan 标记）",
+    "DatasetSpec 声明式数据集（15 项单点声明，_MACRO_ 派生收编）",
+    "fetch_all(mode=) 三模式 + MCP engine.metrics 四工具 + data_missing 单点",
+    "T-R11 五面回归全绿：α149 / core186+6s / web99 / bff39 / e2e7；T-R12 总验收 8/8 留证"
+   ],
+   "verify": {
+    "tests": "pass",
+    "five_face_regression": "全绿"
+   }
+  },
+  {
+   "cp_id": "CP-0003",
+   "milestone": "M1 因子仓库单仓地基（批3：注册中心+三引擎+物化+PIT 审计+rule_fn）",
+   "corresponds": "旧会话 CP-0021（factorlib 重建，旧实现未入库）",
+   "ts": "2026-10-12",
+   "deliverables": [
+    "factorlib 单仓（registry/ 三引擎 sql·python_udf·qlib_expr / preprocess / materialize 三模式 / pit_audit），仅依赖 duckdb·pyyaml，表契约 dwd_daily_bar·dwd_financial_report 独立声明",
+    "val_pe_ttm YAML 端到端：注册→SQL 计算→物化→查询→审计（真实 repo 9 标的物化 5572 行，公告日切换正确）",
+    "M1 DoD 四项测试锚定：黄金样例 10 标的×4 时点手工推演逐位误差=0；复现性两次重算 digest 一致（含反向篡改锚）；篡改 announce_date→period 对齐被 PIT 审计捕获",
+    "引擎输出契约收敛：缺失即无行（NULL 值不产出）+ dt/used_* 统一 YYYY-MM-DD 字符串 + body 未引用参数不传",
+    "run_backtest 增 rule_fn 动态权重通道（与 ab_gate/risk_limits 互斥）：收盘再平衡时序锚定、留现金语义 invested_ratio 登记、违例显式报错"
+   ],
+   "verify": {
+    "factorlib": "39 passed",
+    "alpha_suite": "155 passed（149 基线 + 6 rule_fn）",
+    "pit_audit": "0 violations"
+   },
+   "notes": "局限：core/web/bff/e2e 五面回归待环境重建后复跑（本沙箱缺 core/.venv 与 PG16）；本批变更面不触及（backtest.py 仅新增可选参数、factorlib 为无反向依赖新包，OpenAPI schema 未变）"
+  },
+  {
+   "cp_id": "CP-0004",
+   "milestone": "M2 首批因子落地（批3：估值+质量 8 alpha + 3 过滤 + 覆盖度日报 + data_staleness）",
+   "corresponds": "实施计划 §5（首批 P0 清单）",
+   "ts": "2026-10-12",
+   "deliverables": [
+    "11 个新因子定义：估值族 val_pb_lf/val_ps_ttm/val_div_yield + 质量族 qua_roe_ttm(扣非优先)/qua_gross_margin/qua_accruals/qua_ocf_to_np/qua_debt_to_asset + 过滤族 flt_st/flt_listed_days/flt_avg_amount_20d；val_ev_ebitda blocked（D&A 公开抓取源缺失，不近似不降级）",
+    "数据底座：datasource A 股三表扩展（cash/interest_debt 组合列，4 标的增量补齐）、applib/data.py 契约扩展（dwd_mktcap_daily + fin 表 8 科目 + data_staleness 列）、factorlib REQUIRED_TABLES 同步（按需 depends 校验 + dim_security）",
+    "coverage.py 覆盖度日报（月度截面覆盖率 + 缺失分布 + staleness 统计，诚实口径：分母=库内标的全集）+ materialize data_staleness（距最近财报季度数，预告期 clamp 0）",
+    "M2 黄金样例测试：G2 合成库（24 连续日×10 标的）11 因子手工推演逐位误差=0（TTM 链/LF/TTM 滚动/分红 12 月窗衰减/ex 当日计入/满 20 窗/负分母置空/COALESCE 兜底/公告切换全覆盖）",
+    "e2e 扩展：12 注册因子真实 repo 全量物化→PIT 审计 0 违例→两次重算 diff=0→公告日切换与前后 5 日无抢跑抽检（002014.SZ 真实案例）",
+    "交付物：因子覆盖度日报-M2.md（股票池口径 DoD：估值族 99.9% ≥85%、质量族 100% ≥90% PASS）"
+   ],
+   "verify": {
+    "factorlib": "55 passed（39 M1 + 13 M2 黄金 + 3 M2 e2e）",
+    "pit_audit": "44560 checked / 0 violations（红线 0）",
+    "reproducible": "12 因子两次全量重算逐行 diff=0",
+    "coverage_dod": "估值族 99.9%（阈值 85%）/ 质量族 100%（阈值 90%）PASS"
+   },
+   "notes": "修复四处：4 个 LF 类质量因子 b CTE 缺 secid 列（SELECT DISTINCT dt 漏标的维）；flt_avg_amount_20d 窗口不满 20 日未置空（补 count=20 guard）；物化层 executemany 空列表崩溃（过滤因子全行无 PIT 元数据）；coverage.py _MONTH_END 死代码残留语法错误。局限登记：flt_st 为静态快照口径（无 ST 历史状态表）；flt_listed_days 用库首日近似上市日；val_ps_ttm 依赖市值抽样 ASOF（002014/002027 首点 2021-01-13 前无行）；qua_roe_ttm 跨期可能混扣非/归母口径"
+  },
+  {
+   "cp_id": "CP-0005",
+   "milestone": "M3 单因子检验流水线（批3：检验协议+自研统计原语+报告+入库+一条命令）",
+   "corresponds": "实施计划 §6（任务 6.1 自研兜底 / 6.2 报告 / 6.3 批量 CLI / 6.4 入库）",
+   "ts": "2026-10-12",
+   "deliverables": [
+    "factorlib/evaluate.py 检验协议：月度月末截面、1/3/6 月前瞻（月末对月末、末端不完整窗口弃用不外推）、Spearman Rank IC 时序 → IC 均值 / IC_IR / Newey-West HAC t（自动 lag=floor(4·(T/100)^(2/9))，手工 lag=0/1 核对）",
+    "分层检验：quantile 分层自适应退化（min(10, 截面宽)，layer_rows.n_layers 逐月记录）+ 多头组超额（vs 510300.SH 净值代理）+ 多空价差 + 单调性（各月 Spearman(层序,层超额) 均值）+ 多头组月度换手 + 覆盖度",
+    "公告周标注（截面日前 7 日内有财报公告）+ 剔除对照 IC（ic_ex_announce）",
+    "render_md 检验报告（IC 表/分层文本比例条/收益衰减矩阵/口径与局限诚实节）+ save_eval 入库 meta_factor_eval（每 horizon 一行，report_json 含 IC 时序全量，供 M4 分段稳健与 M6 合成加权复用）",
+    "run_eval 一条命令：repo JSON → build_universe_db 内存库（DDL 契约独立声明，与 tests/conftest 双实现交叉锚定）→ 物化 → 检验 → 入库 → MD/JSON 落盘",
+    "首批检验落盘：9 alpha 因子 × 69 月末截面（2021-01..2026-09，68 个 1 月 IC）→ alphapocket/sandbox/artifacts/m3_eval_20261012/（9 因子 × md+json 18 文件）",
+    "结论（诚实口径）：val_pe_ttm 低估值方向对齐 IC +0.165（NW t=-2.28）与业界常识一致（DoD-3 ✓）；估值族同向对齐 val_pb_lf -0.20 / val_ps_ttm -0.21（最强）；质量族 qua_roe_ttm/qua_gross_margin 方向相反且 |t|>2（截面仅 4 股票，功效弱：机制成立 + 待全量历史补强，不静默放大）"
+   ],
+   "verify": {
+    "factorlib": "68 passed（55 M1/M2 + 13 M3：3 组已知相关 IC 手工一致 1.0/-1.0/0.8、NW t 手工核对、分层边界、完美/反向因子端到端、公告周剔除、入库 roundtrip、报告分节）",
+    "dod": "一条命令出报告 ✓；val_pe_ttm 结论与业界常识一致 ✓（DoD 三项全过）",
+    "honest": "IC 恒定/样本不足 → IC_IR/NW-t 诚实置 None（不除零）；库内无全量历史 → 结论限定表述"
+   },
+   "notes": "依赖纪律：纯标准库 + duckdb（沙箱无 pandas/numpy/scipy/alphalens）→ 自研统计兜底为唯一路径且不依赖库版本（任务 6.1 设计意图）；Alphalens 封装位留待依赖可用。本批修复三处：_agg 除零 TypeError（std=0 时 IR 置 None）、render_md None 格式化崩溃（IC_IR/NW/单调性显示「—」）、逐月层数退化时分层聚合越界（lmeans 按最大层宽跳缺聚合 + top/bottom 超额改逐月直接收集）。局限：4 股票截面 IC 功效弱；基准为 ETF 净值代理含跟踪误差；6 月前瞻末端 6 个月弃用（63/69 月）"
+  },
+  {
+   "cp_id": "CP-0006",
+   "milestone": "M4 稳健性三关 + 增量价值关 + 多重检验（批3：④⑤⑥ + 一条命令 + 首批治理落盘）",
+   "corresponds": "实施计划 §7（任务 7.1 时间 / 7.2 参数 / 7.3 环境 / 7.4 增量 / 7.5 多重检验）",
+   "ts": "2026-10-12",
+   "deliverables": [
+    "factorlib/governance.py：④a 时间关（扩展窗口 walk-forward train_min/step 可配 α 阶段 24/6，门槛 = OOS 池化 IC 衰减 <50% 且单一年度贡献 ≤50%，train IC 非正诚实打回；末端 lockbox 6 月封存只报告不调参）+ ④b 参数关（winsorize 分位 ±30% 网格，门槛 = 方向不反转 + IC_IR 漂移 <40%；行业中性化属实质口径变更仅标注不参与强度关）+ ④c 环境关（牛熊分段 = 基准 6 月趋势；大小盘/成长价值轴截面不足显式降级；局部失效可解释，全环境失效才 fail）",
+    "⑤ 增量价值关：批量因子月末截面 Spearman 相关矩阵 + union-find 高相关组裁决（|ρ̄| ≥0.6 连通组内保留主窗 |IC| 最大者，并列看 |IC_IR| 再按 id 序），其余转「替代版本」对比通道",
+    "⑥ 多重检验：Bonferroni（α/n）+ Deflated Sharpe（PSR 口径，SR0 = √sr_var·E[max SR]，Acklam 逆正态近似 |ε|<1.2e-9 自研）流程就绪；同批 <20 候选显式 triggered=False 暂缓",
+    "run_governance 一条命令：repo JSON → 内存库 → 物化 → ④⑤⑥ → MD/JSON 落盘（裁决看板 + 逐因子明细 + 相关性矩阵 + 多重检验 + 口径与局限诚实节）",
+    "M4 DoD 注入测试 12/12：F_2021only（仅 2021 单边有效）→ ④ 正确打回 ✓；F_clone（F_perfect 仿制 ρ̄≈0.99）→ ⑤ 正确转替代通道 ✓；walk-forward/年度贡献/lockbox 手工锚 + 端到端合成库 4 因子全裁决",
+    "首批治理落盘：9 alpha × 69 月末（2021-01..2026-09，主窗去 lockbox 63 月）→ alphapocket/sandbox/artifacts/m4_governance_20261012/（md+json）",
+    "结论（诚实口径）：val_ps_ttm 唯一 pass（IC +0.190 / IR 0.31，三关全过 + PIT 0 违例）；val_pe_ttm/val_pb_lf 三关全过但与 val_ps_ttm ρ̄ 0.68/0.92 ≥ 0.6 → 转替代通道；5 质量因子 + val_div_yield 主窗 IC 非正 → 时间关诚实打回；高相关 7 成员组（估值三兄弟 + qua_gross_margin/qua_roe/qua_accruals/qua_ocf_to_np）为 4 股票窄截面秩粒度粗所致，已登记口径局限"
+   ],
+   "verify": {
+    "factorlib": "80 passed（68 M1/M2/M3 + 12 M4：注入 ④⑤ + walk-forward 手工锚 + 端到端 + 报告分节）",
+    "injection_4": "F_2021only → time_gate fail ✓（OOS 衰减与单年贡献双锚）",
+    "injection_5": "F_clone ρ̄≈0.992 → route=alternative ✓",
+    "multi_test": "9 < 20 → triggered=False 显式暂缓（流程就绪）",
+    "pit": "9 因子 0 违例（红线 0）"
+   },
+   "notes": "关键修复：corr_matrix 原实现直接遍历长表全部交易日截面（1386 个日频 vs 协议 69 个月末），财报类因子月内恒定 → 日内重复样本使跨族 ρ̄ 虚高污染高相关组；已限定月末截面（month_ends ∩ 双因子有值交集）+ 注入日频行回归锚。看板 ⑤ 列 reason 截断垃圾串改精炼「转替代通道」（明细节保留完整链路）。局限：4 股票截面 Spearman 秩排列仅 24 种 → ρ 粒度粗（0.6 阈值敏感）；牛熊轴基于 69 月仅 2 环境桶；walk-forward α 阶段 24/6（生产 60/12 待全量历史）；lockbox 6 月观察值：三个估值因子均 +0.367（仅报告不调参）"
+  },
+  {
+   "cp_id": "CP-0007",
+   "milestone": "M5 注册生命周期与季度巡检（批3：激活门禁 + 巡检 DAG + 版本冻结 + 降级动作 + 状态库）",
+   "corresponds": "实施计划 §8（任务 8.1 门禁 / 8.2 巡检 / 8.3 版本 / 8.4 降级）",
+   "ts": "2026-10-12",
+   "deliverables": [
+    "factorlib/lifecycle.py：8.1 激活门禁 activate（③ meta_factor_eval 1M 行按 direction 对齐 IC>0 + ④⑤ M4 治理 verdict 全过显式复核 + PIT 0 违例 + hypothesis_id 强制且在假设注册表且未证伪 + source 非空防内存手搓 + version 语义化三段；任一不过即 LifecycleError 无旁路）",
+    "8.2 季度巡检 quarterly_inspection：三探针（滚动 24 月 IC 衰减 ≥50% → weakening；recent ≤0 或全环境失效 → invalid；覆盖度漂移 ≥20pp → weakening）+「假设仍成立吗」复查步（weakening/invalid 自动带出 statement 待答项，healthy 20% 确定性抽样按 id 哈希序可复现）+ 入库 meta_factor_inspection + factor_health 查询口",
+    "8.3 版本冻结：激活即快照 def_hash（sha256 计算体规范 JSON，仅 engine/body/transform/direction/params/lookback/universe/depends 入哈希）；verify_frozen 定义漂移未 bump version = 拒绝重跑（凡能重跑必与激活时 bit 级一致）；register_ref/who_references 引用账本 + deactivate 有引用未确认影响面 = 拒",
+    "8.4 降级动作：weakening 标警 action + invalid 自动 deprecated（confirm_impact=True 自动评估）+ removed_from_pool 登记通知（合成池本体 M6 落地）；降级同步入 meta_factor_archive → 状态账本（archive 最新行 = 权威 status，sync_status 加载后对齐）",
+    "hypotheses.yaml 假设注册表（H-VAL-001 价值溢价 / H-QUA-001 质量溢价，R3 无来源不激活）；val_ps_ttm 补 hypothesis_id: H-VAL-001",
+    "CLI 四通道（python -m factorlib.lifecycle activate/inspect/freeze-verify/refs）+ 状态库 alphapocket/sandbox/factorlib.duckdb（跨进程持久，dwd 派生表幂等重灌，meta_* 状态保留）；build_universe_db 支持 path 参数",
+    "M5 DoD 三项测试 + 门禁违例矩阵 11 用例：状态机全路径、未过门禁无法 active（source/状态/version/hypothesis 三态/治理凭据/分关 sneak/PIT/③ 凭据×3）、注入衰减 IC 单次巡检即 weakening、invalid 自动摘除、healthy 20% 抽查、冻结漂移拦截 + bit 级重跑 digest 一致、引用影响面流程",
+    "真实库演练全链通：val_ps_ttm CLI 激活（def_hash bf596b00…，IC −0.206 × direction −1 = 对齐 +0.206）→ 二次激活正确拒绝 → 巡检 healthy（滚动衰减 −150% 标注「改善」，近期 IC +0.250）→ freeze-verify frozen=true → refs 空"
+   ],
+   "verify": {
+    "factorlib": "91 passed（80 M1–M4 + 11 M5：门禁违例矩阵/巡检三态/冻结拦截/影响面/假设表）",
+    "dod_1": "状态机全路径单测 ✓；未过门禁无法 active ✓（9 类违例逐一拦截）",
+    "dod_2": "注入衰减 IC（F_decay 后 15 月退化，recent 0.46 vs prior 1.0）→ 单次巡检即 weakening ✓（30 天窗口内完成，演练时点即触发）",
+    "dod_3": "版本冻结：漂移未 bump → LifecycleError 拒绝 ✓；重算 digest 逐位一致 ✓（真实库 freeze-verify frozen=true）",
+    "cli": "activate → 防重复激活 → inspect healthy → freeze-verify → refs 全链通（状态库持久）"
+   },
+   "notes": "演练发现并修复三处：③ 凭据口径（meta_factor_eval 存原始 IC，门禁原按原始 IC>0 误杀 direction=-1 因子 → 改按 direction 对齐判定）；CLI 内存库状态随进程丢失（门禁凭据/巡检历史/引用本质为持久状态 → 建 factorlib.duckdb 文件状态库 + dwd 幂等重灌 + sync_status 从 archive 账本对齐权威 status）；巡检负衰减显示歧义（-150% 实为近期优于基期 → 标注「改善」）。入口条件诚实登记：实施计划 §8 入口要求 M4 通过 ≥6/10 因子，实况仅 1 pass（val_ps_ttm）+2 alternative——M5 按设施建设推进（门禁/巡检/冻结不依赖因子数量），M6 入口条件（≥6 active）待全量历史补强后复检；巡检对 draft/deprecated 显式跳过（11 个非 active）"
+  },
+  {
+   "cp_id": "CP-0008",
+   "milestone": "M6 合成打分与回测引擎（批3：四法并列+双闸+自研撮合器+walk-forward+lockbox+三策略联调）",
+   "corresponds": "实施计划 §9（任务 9.1 合成 / 9.2 回测 / 9.3 三策略 / 9.4 DSL）",
+   "ts": "2026-10-12",
+   "commits": [
+    "836fc23"
+   ],
+   "deliverables": [
+    "factorlib/composite.py：合成四法并列（equal / ic_12m 滚动 12M IC 加权 / ic_ir / lasso 自研坐标下降 y 同步标准化）+ rank_product 双排序 + orthogonal 模式③；方向对齐 zscore；滚动权重窗口严格截至 t−1（防未来）；负 IC 权重 0（不赌反向，clamp 修复）；双闸（闸1 法间 ρ̄<0.7 过拟合告警 / 闸2 相邻期 L1 漂移≥30% freeze_review）",
+    "factorlib/backtest.py：§9.2 撮合语义逐条自研落地（次日 VWAP ∈ [low,high] 校验越界回退 (H+L)/2 标注 / 成本表佣金万2.5 min¥5+印花卖5bp+过户0.1bp+滑点5bp / T+1 / 涨停不买跌停不卖 / 停牌顺延重试登记 / 100 股整手 / 先卖后买）+ 月频绩效（含/不含成本两列固定）+ 无偷价审计（fill_dt>signal_dt、raw 价 ∈ 日区间、换手与再平衡频率匹配、n_vwap_proxy 披露）+ run_backtest + run_walkforward（train 24/step 6 折内选法 → 末端 lockbox 单次验证）",
+    "strategies/ 三策略 DSL（一个策略一个 YAML）：val_single_v1（模式① active 锚）/ pe_roe_v1（rank_product）/ multi_resonance_v1（四法并列+双闸演示）；draft/alternative 联调口径诚实标注",
+    "M6 一条命令 run_all + CLI：repo JSON → 物化策略因子 → 三策略全窗回测 + walk-forward → MD/JSON 落盘；报告渲染（四法并列两列 + 双闸 + 审计 + lockbox 节）",
+    "真实库演练归档 alphapocket/sandbox/artifacts/m6_backtest_20261012/（9 文件 + 汇总报告）：三策略 6 折 walk-forward + lockbox（2026-03..08 单次验证 −1.63%/−5.38%/−1.63% 诚实呈现）+ 审计全过",
+    "单测 21 用例：composite 10（四法锚点/防未来/负IC clamp/双闸逻辑）+ backtest 12（DoD1 撮合手工推演逐位对账/DoD2 成本敏感单调+排序稳定/DoD4 审计+注入违例矩阵/walk-forward 折结构）"
+   ],
+   "verify": {
+    "factorlib": "112 passed（91 M1–M5 + 21 M6）",
+    "dod_1": "撮合手工推演：49,900/24,900 股、成本 ¥129.80/129.54、nav 逐位一致 ✓",
+    "dod_2": "滑点 0/5bp/10bp 收益严格单调、排序不翻转，s=0 锚 +9.8743% ✓",
+    "dod_3": "三策略 walk-forward 6 折 + lockbox 单次验证归档 ✓",
+    "dod_4": "三策略全窗+折+lockbox 审计 0 违例；注入（当日成交/价出区间）正确捕获 ✓",
+    "dod_5": "四法并列输出 + 双闸告警逻辑单测 ✓"
+   },
+   "notes": "关键修复三处：(1) repo 源数据 43%（5407/12534）bar 的 amount/volume 越界（>high，VWAP 数学上必在日内区间）→ 撮合器防御性回退 (H+L)/2 标注 vwap_proxy_hl + 审计 n_vwap_proxy 披露（本批 100% 成交为代理价），数据源修复待 M0 管道；(2) _normalize_pos 未 clamp 负 IC/IR → 负权重致闸2漂移498>理论上限2 → 修复后不赌反向语义落地；(3) lasso y 未标准化 → lam 阈值相对收益量级失真全 0 回退 → y 同步标准化后稀疏性生效。诚实口径：backtrader 沙箱无依赖自研撮合兜底（三引擎交叉核对位留 M7）；lockbox 全负与 M4 窄截面功效弱结论一致；M6 入口条件（≥6 active）未满足按设施建设推进（M5 同口径）；闸2 freeze_review 在 4 股票截面上触发属预期诚实告警"
+  }
+ ]
+}

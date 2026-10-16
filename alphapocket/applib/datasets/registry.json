@@ -1,0 +1,164 @@
+{
+  "dwd_trade_calendar": {
+    "path": "market/trade_calendar.json",
+    "merge_policy": "overwrite",
+    "sources": [{"interface": "ak.tool_trade_date_hist_sina()", "upstream": "新浪财经", "role": "primary"}],
+    "fetch_params": {},
+    "validation": {"min_rows": 200}
+  },
+  "dwd_daily_bar": {
+    "path": "market/daily_bars.json",
+    "merge_policy": "union_bars",
+    "sources": [{"interface": "ak.stock_zh_a_daily/stock_hk_daily(qfq) + 腾讯usK线(raw口径) + ak.fund_etf_hist_sina",
+                 "upstream": "新浪财经/腾讯证券", "role": "primary"}],
+    "fetch_params": {"note": "A股/港股 qfq 前复权；美股 腾讯序列（raw 口径，新浪美股qfq部分标的存在噪声，弃用）；ETF/LOF 无复权接口（raw）"},
+    "validation": {"min_rows": 100, "as_of_field": "dt"}
+  },
+  "dwd_daily_bar_raw": {
+    "path": "market/daily_bars_raw.json",
+    "merge_policy": "union_bars",
+    "sources": [{"interface": "ak.stock_zh_a_daily/stock_hk_daily/stock_us_daily(adjust='')",
+                 "upstream": "新浪财经", "role": "primary"}],
+    "fetch_params": {"note": "A股/港股/美股股票 raw（基金无复权对，由 cross_source 双源覆盖）；美股 raw 兼作腾讯主序列的独立对账源"},
+    "validation": {"min_rows": 100, "as_of_field": "dt"}
+  },
+  "cross_check_tx": {
+    "path": "market/cross_check_tx.json",
+    "merge_policy": "union_bars",
+    "sources": [{"interface": "ak.stock_zh_a_hist_tx() + web.ifzq.gtimg.cn(hk/us)",
+                 "upstream": "腾讯证券", "role": "crosscheck"}],
+    "fetch_params": {"window_days": 120, "note": "A股（股票与基金）走 stock_zh_a_hist_tx；港股 hk{code}、美股 us{TICKER}.OQ/.N/.A 走腾讯K线接口"},
+    "validation": {"min_rows": 10, "as_of_field": "dt"}
+  },
+  "adjust_ex_dates": {
+    "path": "market/adjust_ex_dates.json",
+    "merge_policy": "overwrite",
+    "sources": [{"interface": "web.ifzq.gtimg.cn(hk/us, qfq 事件元数据)", "upstream": "腾讯证券", "role": "primary"}],
+    "fetch_params": {"note": "港股/美股除权除息日（分红/送转/拆股），供 adjust_check 豁免"},
+    "validation": {}
+  },
+  "dwd_financial_report": {
+    "path": "factors/fundamental_values.json",
+    "merge_policy": "overwrite",
+    "sources": [{"interface": "ak.stock_financial_analysis_indicator(A股) + stock_financial_hk_analysis_indicator_em(港股) + stock_financial_us_analysis_indicator_em(美股) + stock_financial_report_sina(A股三表：利润表/资产负债表/现金流量表)",
+                 "upstream": "新浪财经/东方财富", "role": "primary"}],
+    "fetch_params": {"note": "A股 eps_ytd 累计口径（引擎按 YTD 递推 TTM）；港股/美股附带 eps_ttm 上游直出 TTM，港股财务原币经即期汇率折 HKD、美股折 USD 对齐各自报价币种；港股分红 stock_hk_dividend_payout_em，美股无公开分红接口（dividends 为空）；A股三表科目（D5/P1.2）：revenue/net_profit/total_assets/total_liab/ocf/capex 按报告期并入，PIT 同 report 时点（报告期+披露窗口），供品质族 qua_leverage/qua_accrual/qua_fcf"},
+    "validation": {"min_rows": 4, "as_of_field": "period"}
+  },
+  "dim_ggt_components": {
+    "path": "market/ggt_components.json",
+    "merge_policy": "overwrite",
+    "sources": [{"interface": "雪球港股通筛选 market=HK&type=ggt（降级 ggt_static 快照）",
+                 "upstream": "雪球/静态快照", "role": "primary"}],
+    "fetch_params": {},
+    "validation": {"min_rows": 1}
+  },
+  "dim_market_cap": {
+    "path": "dim/market_cap.json",
+    "merge_policy": "overwrite",
+    "sources": [{"interface": "ak.stock_zh_valuation_baidu(indicator='总市值', period='全部')",
+                 "upstream": "百度股市通", "role": "primary"}],
+    "fetch_params": {"unit": "亿元", "note": "总市值历史序列（P0.3 敞口报告规模维度）；仅 A 股股票适用；供月末再平衡时点取用（按最近可用点前向取值）"},
+    "validation": {"min_rows": 10, "as_of_field": "dt"}
+  },
+  "dwd_trade_calendar_mkt": {
+    "path": "market/trade_calendar_{mkt}.json",
+    "merge_policy": "overwrite",
+    "sources": [{"interface": "K线日期并集推导（{mkt} 市场）", "upstream": "新浪财经", "role": "primary"}],
+    "fetch_params": {"note": "由本市场全部标的 K 线日期并集推导，供日历校验按市场分组"},
+    "validation": {"min_rows": 50},
+    "template": true
+  },
+  "dim_security": {
+    "path": "dim/security.json",
+    "merge_policy": "overwrite",
+    "sources": [{"interface": "universe 定义推导（fetch_all/seed 同构）", "upstream": "组合定义", "role": "primary"}],
+    "fetch_params": {},
+    "validation": {"min_rows": 4, "as_of_field": "secid"}
+  },
+  "portfolio_cn4": {
+    "path": "portfolio/cn4.json",
+    "merge_policy": "portfolio_merge",
+    "sources": [{"interface": "CN4 内置组合定义", "upstream": "组合定义", "role": "primary"}],
+    "fetch_params": {},
+    "validation": {"required_keys": ["id", "positions"]}
+  },
+  "portfolio_multi5": {
+    "path": "portfolio/multi5.json",
+    "merge_policy": "portfolio_merge",
+    "sources": [{"interface": "MULTI5 内置组合定义", "upstream": "组合定义", "role": "primary"}],
+    "fetch_params": {},
+    "validation": {"required_keys": ["id", "positions"]}
+  },
+  "factor_registry": {
+    "path": "factors/registry.json",
+    "merge_policy": "registry_merge",
+    "sources": [{"interface": "内置因子注册表（引擎A/B 静态定义）", "upstream": "内置", "role": "primary"}],
+    "fetch_params": {},
+    "validation": {"required_keys": ["factors"]}
+  },
+  "market_fx": {
+    "path": "market/fx.json",
+    "merge_policy": "overwrite",
+    "sources": [{"interface": "fetch_fx()（即期汇率）", "upstream": "公开汇率源", "role": "primary"}],
+    "fetch_params": {"note": "V4-β 多市场组合需要：港元/美元持仓按 HKD_CNY/USD_CNY 折算人民币口径；港股通标的实际以港币报价、人民币结算（存在汇率与结算价差）"},
+    "validation": {}
+  },
+  "macro_liquidity": {
+    "path": "market/macro_liquidity.json",
+    "merge_policy": "carry_old",
+    "sources": [{"interface": "AKShare 宏观接口族（见 indicators 逐指标）", "upstream": "逐指标机构名（provenance）", "role": "primary"}],
+    "fetch_params": {"start": "2015-01-01"},
+    "validation": {"required_keys": ["indicators", "blacklist"], "as_of_field": "as_of"},
+    "note": "旧会话基准：18 探 12 中（AKShare 1.19.1）；本会话实测 11 指标命中，港股 3 件套依赖 H-0006 资产（hk_rates.json 缺失 → requires 标记，恒 unavailable）",
+    "indicators": [
+      {"id": "cn_m2_yoy", "market": "A", "dim": "D2", "name": "M2 同比", "unit": "%",
+       "institution": "中国人民银行", "interface": "macro_china_money_supply", "params": {},
+       "date": {"col": "月份", "format": "cn_month"},
+       "value": {"col": "货币和准货币(M2)-同比增长"}},
+      {"id": "cn_srzg", "market": "A", "dim": "D2", "name": "社融规模增量(当月)", "unit": "亿元",
+       "institution": "中国人民银行", "interface": "macro_china_shrzgm", "params": {},
+       "date": {"col": "月份", "format": "yyyymm"},
+       "value": {"col": "社会融资规模增量"}},
+      {"id": "shibor_1w", "market": "A", "dim": "D3", "name": "Shibor 1周", "unit": "%",
+       "institution": "全国银行间同业拆借中心", "interface": "macro_china_shibor_all", "params": {},
+       "date": {"col": "日期", "format": "date"}, "value": {"col": "1W-定价"}},
+      {"id": "lpr_1y", "market": "A", "dim": "D3", "name": "LPR 1年", "unit": "%",
+       "institution": "全国银行间同业拆借中心", "interface": "macro_china_lpr", "params": {},
+       "date": {"col": "TRADE_DATE", "format": "date"}, "value": {"col": "LPR1Y"}},
+      {"id": "fr007", "market": "A", "dim": "D3", "name": "FR007 质押式回购定盘利率", "unit": "%",
+       "institution": "全国银行间同业拆借中心", "interface": "repo_rate_hist",
+       "params": {"window_days": 240},
+       "date": {"col": "date", "format": "date"}, "value": {"col": "FR007"}, "paged": true},
+      {"id": "cn_us_spread_10y", "market": "A", "dim": "D4", "name": "中美 10Y 国债利差",
+       "unit": "pct", "institution": "中国债券信息网/美国财政部（东方财富汇总）",
+       "interface": "bond_zh_us_rate", "params": {},
+       "date": {"col": "日期", "format": "date"},
+       "value": {"cols_sub": ["中国国债收益率10年", "美国国债收益率10年"]},
+       "note": "利差=中债10Y−美债10Y；美方点位滞后于中方 → 序列截至美方最后可用点"},
+      {"id": "us_fed_rate", "market": "US", "dim": "D1", "name": "美联储联邦基金利率", "unit": "%",
+       "institution": "美联储（金十数据汇总）", "interface": "macro_bank_usa_interest_rate", "params": {},
+       "date": {"col": "日期", "format": "date"}, "value": {"col": "今值", "dropna": true},
+       "note": "未来议息会议行今值为空（dropna 跳过）"},
+      {"id": "us_10y_2y", "market": "US", "dim": "D3", "name": "美债 10Y-2Y 利差", "unit": "pct",
+       "institution": "美国财政部（东方财富汇总）", "interface": "bond_zh_us_rate", "params": {},
+       "date": {"col": "日期", "format": "date"},
+       "value": {"col": "美国国债收益率10年-2年", "dropna": true}},
+      {"id": "us_cpi_yoy", "market": "US", "dim": "D1", "name": "美国 CPI 同比", "unit": "%",
+       "institution": "美国劳工统计局（金十数据汇总）", "interface": "macro_usa_cpi_yoy", "params": {},
+       "date": {"col": "时间", "format": "date"}, "value": {"col": "现值", "dropna": true}},
+      {"id": "us_nonfarm", "market": "US", "dim": "D1", "name": "美国非农就业人数变动", "unit": "万人",
+       "institution": "美国劳工统计局（金十数据汇总）", "interface": "macro_usa_non_farm", "params": {},
+       "date": {"col": "日期", "format": "date"}, "value": {"col": "今值", "dropna": true}},
+      {"id": "us_gdp", "market": "US", "dim": "D1", "name": "美国 GDP 年化季环比", "unit": "%",
+       "institution": "美国经济分析局（金十数据汇总）", "interface": "macro_usa_gdp_monthly", "params": {},
+       "date": {"col": "日期", "format": "date"}, "value": {"col": "今值", "dropna": true}},
+      {"id": "hk_hibor_1m", "market": "HK", "dim": "D3", "name": "HIBOR 1月", "unit": "%",
+       "institution": "香港银行公会", "interface": "hk_rates_file", "requires": "H-0006"},
+      {"id": "hk_hibor_3m", "market": "HK", "dim": "D3", "name": "HIBOR 3月", "unit": "%",
+       "institution": "香港银行公会", "interface": "hk_rates_file", "requires": "H-0006"},
+      {"id": "hk_usdcnh", "market": "HK", "dim": "D4", "name": "港汇 USD/CNH", "unit": "pct",
+       "institution": "香港金管局/财资市场公会", "interface": "hk_rates_file", "requires": "H-0006"}
+    ]
+  }
+}

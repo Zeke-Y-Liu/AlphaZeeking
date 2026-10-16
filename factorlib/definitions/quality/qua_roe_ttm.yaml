@@ -1,0 +1,54 @@
+# qua_roe_ttm —— ROE TTM，扣非优先（M2，实施计划 §5 首批 P0）
+# 口径：TTM_ROE（%）。扣非 roe_w 优先，缺扣非用归母 roe（COALESCE 在每份报告行级取用）
+# TTM 滚动（同 PE 链规则）：年报 = 全年 ytd；季报 = 本期 − 同期 + 上年年报；链缺任一期置空
+# 注意：TTM 滚动中扣非/归母逐期各自 COALESCE，跨期可能混口径（扣非可得性变化）——
+#       混口径风险登记（CP-0004）；roe 值为 ytd 百分数，TTM 后保持百分数
+# 负值保留（质量因子可负，方向 +1）；无财报无行
+id: qua_roe_ttm
+name: ROE_TTM扣非优先
+family: quality
+type: alpha
+status: draft
+version: 1.0.0
+universe: [CN]
+engine: sql
+lookback_days: 0
+depends: [dwd_financial_report]
+direction: +1            # 高盈利质量长期正超额
+hypothesis_id: null
+transform: []
+sql: |
+  WITH p0 AS (
+    SELECT secid, f.period, f.announce_date,
+           COALESCE(f.roe_w, f.roe) AS roe_y
+    FROM dwd_financial_report f
+    WHERE f.announce_date IS NOT NULL
+  ),
+  pick AS (
+    SELECT b.dt, f.secid, f.period, f.announce_date, f.roe_y,
+           row_number() OVER (PARTITION BY b.dt, f.secid
+                              ORDER BY f.announce_date DESC, f.period DESC) AS rn
+    FROM (SELECT DISTINCT dt FROM dwd_daily_bar
+          WHERE ($start_dt IS NULL OR dt >= CAST($start_dt AS DATE))
+            AND ($end_dt IS NULL OR dt <= CAST($end_dt AS DATE))) b
+    JOIN p0 f ON f.announce_date <= b.dt
+  ),
+  t0 AS (SELECT dt, secid, period, announce_date, roe_y FROM pick WHERE rn = 1),
+  ttm AS (
+    SELECT t0.dt, t0.secid,
+           t0.period AS used_period, t0.announce_date AS used_announce,
+           CASE
+             WHEN CAST(strftime(t0.period, '%m') AS INTEGER) = 12 THEN t0.roe_y
+             ELSE t0.roe_y
+                  - (SELECT COALESCE(f.roe_w, f.roe) FROM dwd_financial_report f
+                     WHERE f.secid = t0.secid
+                       AND f.period = CAST(t0.period AS DATE) - INTERVAL 1 YEAR)
+                  + (SELECT COALESCE(f.roe_w, f.roe) FROM dwd_financial_report f
+                     WHERE f.secid = t0.secid
+                       AND f.period = make_date(CAST(strftime(t0.period, '%Y') AS INTEGER) - 1,
+                                                12, 31))
+           END AS roe_ttm
+    FROM t0
+  )
+  SELECT dt, secid, roe_ttm AS value, used_period, used_announce
+  FROM ttm
