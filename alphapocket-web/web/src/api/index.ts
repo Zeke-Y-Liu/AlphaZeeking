@@ -12,11 +12,19 @@ import type {
   CreatePortfolioRequest,
   DataStatus,
   DataSyncRequest,
+  EngineDescribe,
+  EngineMetricAddRequest,
+  EngineMetricUpdateRequest,
+  EngineMetricsResponse,
+  EngineDatasetsResponse,
   ExecOrder,
   ExecOrderFill,
   ExecOrderSummary,
   Job,
   JobAccepted,
+  MetricAddResponse,
+  MetricRemoveResponse,
+  MetricUpdateResponse,
   Portfolio,
   QuotesResponse,
   RebalancePlan,
@@ -60,6 +68,11 @@ export const API_PATHS = {
   runs: '/v1/runs',
   runArtifacts: (uid: string, file: string) => `/v1/runs/${uid}/artifacts/${file}`,
   job: (id: string) => `/v1/jobs/${id}`,
+  // 引擎板块（指标注册表 CRUD + 数据集联动）
+  enginesMetrics: '/v1/engines/metrics',
+  engineMetric: (mid: string) => `/v1/engines/metrics/${mid}`,
+  enginesDescribe: '/v1/engines/describe',
+  enginesDatasets: '/v1/engines/datasets',
 } as const;
 
 /* ── 已实现 ─────────────────────────────────────── */
@@ -189,8 +202,9 @@ export async function deletePortfolio(id: number | string): Promise<void> {
 
 /* ── 评估 / 回测 / 调仓（T2.3 / T3.2 / T4.x） ──────── */
 /**
- * POST /v1/portfolios/{id}/review：异步评估（202 → {job_id, poll}）。
- * 门禁未全绿 → 409 VERIFY_GATE_FAILED；workspace 计算互斥 → 409 JOB_LOCKED。
+ * POST /v1/portfolios/{id}/review：异步评估（202 → {job_id, poll, data_risk}）。
+ * 数据门禁不阻断评估：未全绿时 data_risk 提示数据风险（全绿为 null）；
+ * workspace 计算互斥 → 409 JOB_LOCKED。
  */
 export async function reviewPortfolio(id: number | string): Promise<JobAccepted> {
   const { data } = await apiClient.post<JobAccepted>(API_PATHS.portfolioReview(id));
@@ -330,5 +344,53 @@ export async function fetchRunArtifact<T = unknown>(
   responseType: 'text' | 'json' | 'blob',
 ): Promise<T> {
   const { data } = await apiClient.get<T>(API_PATHS.runArtifacts(runUid, file), { responseType });
+  return data;
+}
+
+/* ── 引擎板块（指标注册表 CRUD + 数据集联动） ────── */
+/** GET /v1/engines/metrics?engine=&status=：指标清单（含 changelog 计数）。 */
+export async function listEngineMetrics(params?: {
+  engine?: string;
+  status?: string;
+}): Promise<EngineMetricsResponse> {
+  const { data } = await apiClient.get<EngineMetricsResponse>(API_PATHS.enginesMetrics, { params });
+  return data;
+}
+
+/** GET /v1/engines/describe：三引擎自描述。 */
+export async function describeEngines(): Promise<{ engines: EngineDescribe[] }> {
+  const { data } = await apiClient.get<{ engines: EngineDescribe[] }>(API_PATHS.enginesDescribe);
+  return data;
+}
+
+/** GET /v1/engines/datasets：指标引用数据集清单 + 落盘状态（数据板块共用）。 */
+export async function listEngineDatasets(): Promise<EngineDatasetsResponse> {
+  const { data } = await apiClient.get<EngineDatasetsResponse>(API_PATHS.enginesDatasets);
+  return data;
+}
+
+/** POST /v1/engines/metrics：新增指标（hypothesis_id 必填；数据缺失不阻断附提示）。 */
+export async function addEngineMetric(body: EngineMetricAddRequest): Promise<MetricAddResponse> {
+  const { data } = await apiClient.post<MetricAddResponse>(API_PATHS.enginesMetrics, body);
+  return data;
+}
+
+/** PATCH /v1/engines/metrics/{mid}：修改（深合并；启停需 hypothesis_id）。 */
+export async function updateEngineMetric(
+  mid: string,
+  body: EngineMetricUpdateRequest,
+): Promise<MetricUpdateResponse> {
+  const { data } = await apiClient.patch<MetricUpdateResponse>(API_PATHS.engineMetric(mid), body);
+  return data;
+}
+
+/** DELETE /v1/engines/metrics/{mid}：软删（status=inactive；hypothesis_id 必填）。 */
+export async function removeEngineMetric(
+  mid: string,
+  body: { hypothesis_id: string; reason?: string; engine?: string | null },
+): Promise<MetricRemoveResponse> {
+  const { data } = await apiClient.delete<MetricRemoveResponse>(API_PATHS.engineMetric(mid), {
+    data: body,
+  });
   return data;
 }

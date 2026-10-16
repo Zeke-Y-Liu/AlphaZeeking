@@ -62,6 +62,12 @@
 {"job_id": "job_<ts>_<rand>", "poll": "/api/v1/jobs/job_<ts>_<rand>"}
 ```
 
+review 端点额外携带 `data_risk`（数据门禁不阻断评估；未全绿提示数据风险，全绿为 `null`）：
+
+```json
+{"job_id": "...", "poll": "...", "data_risk": {"status": "fail", "message": "数据验证未全绿，评估结果可能失真…", "failed": [{"check": "golden_test", "text": "…"}], "job_id": "job_…"}}
+```
+
 轮询 `GET /api/v1/jobs/{job_id}` 获取 `{id,type,portfolio_id,status,progress,result,error,...}`；
 终态 `status ∈ {done, failed}`，`result` 内含 `run_uid` 与产物 key 列表。前端轮询间隔 ≥1s。
 
@@ -140,7 +146,7 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/v1/portfolios/{pid}/review` | `202` job；前置数据门禁全绿，否则 `409 VERIFY_GATE_FAILED` |
+| POST | `/api/v1/portfolios/{pid}/review` | `202` job；数据门禁不阻断评估：验证未全绿时照常提交，响应与 `runs.summary.data_risk` 携带数据风险提示（全绿为 `null`） |
 | POST | `/api/v1/portfolios/{pid}/backtest` | `{start?,end?,rf?,rebalance?,benchmark_secid?}` → `202` job |
 | POST | `/api/v1/portfolios/{pid}/rebalance-plan` | `202` job；产出 plan（`status=draft`，引擎永不直接动仓位） |
 | GET | `/api/v1/plans/{plan_id}` | plan 详情 |
@@ -153,6 +159,16 @@
 | GET | `/api/v1/runs?type=&portfolio_id=&limit=` | 运行历史（最新在前） |
 | GET | `/api/v1/runs/{run_uid}/artifacts/{file}` | 产物流；`content-type` 按扩展名（`report.html` 供 iframe 嵌入） |
 | GET | `/api/v1/jobs/{job_id}` | job 状态/进度（§3.1） |
+
+> review run 的 `summary.macro_liquidity`（引擎C 宏观流动性摘要，字段冻结）：
+> 正常态 `{"markets": {"A": 1, "HK": -1, "US": 0}, "global": 0, "global_score": 0.12, "state": "neutral", "as_of": "2026-10-09"}`，
+> 降级态 `{"status": "unavailable", "error": "..."}`（无 `markets` 键）。
+> `markets` 为各市场档位（-2~+2，正=宽松；unavailable 市场不出现），`state` ∈
+> `neutral | tight_stress | easy_froth`。引擎C 为市场级条件变量，不参与权重决策、不产生信号。
+>
+> **契约冻结**：引擎组件化重构（T-R1~T-R12）未改变 `runs.summary` 任何字段——三引擎
+> 改为 `applib/engines/` 注册表驱动，变化的只是"配置从哪读"，输出逐位不变（web/core/
+> bff/e2e 全量回归全绿为证）。
 
 ### 4.7 执行单 / 审计（T4.2 / T4.3 / T4.4）
 
@@ -238,3 +254,23 @@ core 的 OpenAPI 冻结后，前端可生成类型与调用骨架（替换手写
 # 需 core 已启动
 pnpm -C web gen:api     # → web/src/api/generated/schema.d.ts
 ```
+
+## 7. 附录：α 内核 MCP 工具（引擎组件化 T-R7）
+
+core 服务不暴露指标管理端点（组合与其他组件保持现状）；指标增删改走 α 内核的
+CLI（`ap metric …`）与 MCP 工具（`alphapocket/applib/tools.py` 的 `TOOLS` 注册表），
+两者同源写 `sandbox/repo/factors/registry.json`（v2），经 merge 写保护（T-R6）与
+hypothesis 门禁生效，重启评估即生效。
+
+| MCP 工具 | 参数 | 返回 |
+| --- | --- | --- |
+| `engine.metrics.list` | `{engine?, status?}` | `{metrics: [{id, engine, dim, status, version, …}], changelog_n}` |
+| `engine.metrics.add` | `{engine, spec, hypothesis_id, reason}` | `{ok, metric, warnings}`；`formula` 须引用 builtin 内置白名单，`hypothesis_id` 必填 |
+| `engine.metrics.update` | `{id, patch, hypothesis_id?, reason?}` | `{ok, before, after}`；仅用户键可改（status/params/scorer/dim/权重/锚点），params/scorer 深合并，`version` 自增 |
+| `engine.metrics.remove` | `{id, hypothesis_id, reason}` | `{ok, metric}`；软删（`status=inactive`，条目保留），可 `update` 复活 |
+
+- CLI 等价命令：`ap metric list|show|add|update|remove`。
+- 调试闭环（T-R8）：`ap metric test <id> --tool walkforward|sensitivity`、
+  `ap metric diff <id>`，产物落 `sandbox/artifacts/`（人决策红线：调试只读引擎、
+  只写 artifacts，绝不自动改注册表）。
+- 参数契约详见任务包 `任务拆分-引擎与数据组件化/T-R7.md`。

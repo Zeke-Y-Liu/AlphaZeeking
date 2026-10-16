@@ -3,7 +3,6 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import type { RouteRecordRaw, Router } from 'vue-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiError } from '../../api/types';
 import type { Portfolio, ReviewPayload, Run } from '../../api/types';
 import PortfolioDetailView from '../PortfolioDetailView.vue';
 
@@ -15,12 +14,13 @@ vi.mock('../../api', () => ({
   reviewPortfolio: vi.fn(),
 }));
 
-import { fetchRunArtifact, getPortfolio, listRuns, reviewPortfolio } from '../../api';
+import { fetchRunArtifact, getJob, getPortfolio, listRuns, reviewPortfolio } from '../../api';
 
 const mGetPortfolio = vi.mocked(getPortfolio);
 const mListRuns = vi.mocked(listRuns);
 const mReview = vi.mocked(reviewPortfolio);
 const mArtifact = vi.mocked(fetchRunArtifact);
+const mGetJob = vi.mocked(getJob);
 
 const Stub = { template: '<div />' };
 
@@ -174,24 +174,79 @@ describe('PortfolioDetailView', () => {
     expect(mArtifact).toHaveBeenCalledWith('run-x', 'review.json', 'json');
   });
 
-  it('门禁 409 VERIFY_GATE_FAILED → 红条 + 数据页链接', async () => {
+  it('门禁未全绿 → 评估不阻断：202 data_risk → 琥珀警示条 + 数据页链接', async () => {
     mGetPortfolio.mockResolvedValue(makePortfolio());
-    mListRuns.mockResolvedValue([]);
-    mReview.mockRejectedValue(
-      new ApiError('VERIFY_GATE_FAILED', '数据验证未全绿', 409, { failed: ['golden_test'] }),
-    );
+    const dataRisk = {
+      status: 'fail' as const,
+      message: '数据验证未全绿，评估结果可能失真；建议先完成数据同步并查看验证明细',
+      failed: [{ check: 'golden_test', text: 'FAIL(510300.SH 缺失)' }],
+      job_id: 'job_sync_x',
+    };
+    // 初始加载无 run；评估完成后 load() 拉到带 data_risk 的 run（与真实后端一致）
+    mListRuns.mockResolvedValueOnce([]);
+    mReview.mockResolvedValue({ job_id: 'job-risk', poll: '/api/v1/jobs/job-risk', data_risk: dataRisk });
+    mGetJob.mockResolvedValue({ status: 'done', progress: 100 } as never);
+    const riskyRun = makeRun();
+    riskyRun.summary = { data_risk: dataRisk };
+    mListRuns.mockResolvedValue([riskyRun]);
 
     const { wrapper } = await mountDetail();
     await wrapper.find('[data-test="evaluate-btn"]').trigger('click');
     await flushPromises();
 
-    const bar = wrapper.find('[data-test="gate-bar"]');
+    const bar = wrapper.find('[data-test="risk-bar"]');
     expect(bar.exists()).toBe(true);
     expect(bar.text()).toContain('golden_test');
+    expect(bar.text()).toContain('评估结果可能失真');
 
-    const link = wrapper.find('[data-test="gate-link"]');
+    const link = wrapper.find('[data-test="risk-link"]');
     expect(link.exists()).toBe(true);
     expect(link.text()).toContain('数据');
+  });
+
+  it('runs.summary.data_risk 持久化 → 刷新后仍显示警示条', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    mReview.mockResolvedValue({
+      job_id: 'job-x',
+      poll: '/api/v1/jobs/job-x',
+    } as never);
+    mArtifact.mockResolvedValue(makeReview());
+    const riskyRun = makeRun();
+    riskyRun.summary = {
+      data_risk: {
+        status: 'unknown',
+        message: '尚未完成数据同步与验证，评估结果可能基于不完整数据',
+        failed: [],
+        job_id: null,
+      },
+    };
+    mListRuns.mockResolvedValue([riskyRun]);
+
+    const { wrapper } = await mountDetail();
+
+    const bar = wrapper.find('[data-test="risk-bar"]');
+    expect(bar.exists()).toBe(true);
+    expect(bar.text()).toContain('不完整数据');
+    // unknown（从未验证）≠ fail（有未通过项），无明细时兜底文案需区分
+    expect(bar.text()).toContain('验证状态未知');
+  });
+
+  it('data_risk.status=fail 且无明细项 → 兜底文案「存在未通过项」', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    const riskyRun = makeRun();
+    riskyRun.summary = {
+      data_risk: {
+        status: 'fail',
+        message: '部分数据检查未通过，评估结果可能基于不完整数据',
+        failed: [],
+        job_id: null,
+      },
+    };
+    mListRuns.mockResolvedValue([riskyRun]);
+
+    const { wrapper } = await mountDetail();
+
+    expect(wrapper.find('[data-test="risk-bar"]').text()).toContain('存在未通过项');
   });
 
   it('无 review run → 空态与「先运行评估」按钮', async () => {
@@ -202,5 +257,73 @@ describe('PortfolioDetailView', () => {
 
     expect(wrapper.find('[data-test="empty-state"]').exists()).toBe(true);
     expect(wrapper.find('[data-test="empty-evaluate"]').text()).toContain('先运行评估');
+  });
+
+  // ── T-C7：引擎C 宏观流动性卡片（runs.summary.macro_liquidity）──
+  it('引擎C 卡片渲染三市场徽章与全局指数', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    const run = makeRun();
+    run.summary = {
+      macro_liquidity: {
+        markets: { A: 1, HK: -1, US: 0 },
+        global: 0,
+        global_score: 0.12,
+        state: 'neutral',
+        as_of: '2024-06-28',
+      },
+    };
+    mListRuns.mockResolvedValue([run]);
+    mArtifact.mockResolvedValue(makeReview());
+
+    const { wrapper } = await mountDetail();
+
+    const badgeA = wrapper.find('[data-test="macro-badge-A"]');
+    expect(badgeA.exists()).toBe(true);
+    expect(badgeA.text()).toContain('偏松');            // 正档位 → 偏松（tone=success）
+    expect(wrapper.find('[data-test="macro-badge-HK"]').text()).toContain('偏紧');
+    expect(wrapper.find('[data-test="macro-badge-US"]').text()).toContain('中性');
+    const g = wrapper.find('[data-test="macro-global"]');
+    expect(g.exists()).toBe(true);
+    expect(g.text()).toContain('全局');
+    expect(g.text()).toContain('+0.12');
+    expect(wrapper.find('[data-test="macro-warn"]').exists()).toBe(false); // 中性态无警示
+  });
+
+  it('极端态提示：tight_stress → macro-warn 可见且含「紧缩」', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    const run = makeRun();
+    run.summary = {
+      macro_liquidity: {
+        markets: { A: -2 },
+        global: -2,
+        global_score: -0.71,
+        state: 'tight_stress',
+        as_of: '2024-06-28',
+      },
+    };
+    mListRuns.mockResolvedValue([run]);
+    mArtifact.mockResolvedValue(makeReview());
+
+    const { wrapper } = await mountDetail();
+
+    const warn = wrapper.find('[data-test="macro-warn"]');
+    expect(warn.exists()).toBe(true);
+    expect(warn.text()).toContain('紧缩');
+    expect(wrapper.find('[data-test="macro-badge-A"]').text()).toContain('深度紧缩');
+  });
+
+  it('unavailable 降级：macro-unavailable 可见、无徽章', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    const run = makeRun();
+    run.summary = { macro_liquidity: { status: 'unavailable', error: '宏观流动性序列为空' } };
+    mListRuns.mockResolvedValue([run]);
+    mArtifact.mockResolvedValue(makeReview());
+
+    const { wrapper } = await mountDetail();
+
+    expect(wrapper.find('[data-test="macro-unavailable"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="macro-unavailable"]').text()).toContain('不影响其余评估');
+    expect(wrapper.find('[data-test="macro-badge-A"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="macro-global"]').exists()).toBe(false);
   });
 });

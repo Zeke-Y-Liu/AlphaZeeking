@@ -386,10 +386,140 @@ export interface DataStatus {
   } | null;
 }
 
-/** 异步 Job 提交响应（§6.1）。 */
+/** 数据风险提示（评估不阻断门禁：非全绿时随响应 / runs.summary 下发）。 */
+export interface DataRisk {
+  /** fail：六项验证有未通过项；unknown：尚未完成同步验证 */
+  status: 'fail' | 'unknown';
+  message: string;
+  failed: { check: string; text?: string | null }[];
+  job_id?: string | null;
+}
+
+/** 引擎C 宏观流动性摘要（runs.summary.macro_liquidity，字段冻结）。 */
+export interface MacroLiquiditySummary {
+  status?: 'unavailable';
+  error?: string;
+  /** 市场档位（-2~+2，正=宽松）：{"A":1,"HK":-1,"US":0}；unavailable 市场不出现 */
+  markets?: Record<string, number>;
+  global?: number | null;
+  global_score?: number | null;
+  state?: 'neutral' | 'tight_stress' | 'easy_froth' | null;
+  as_of?: string | null;
+}
+
+/* ── 引擎板块（指标注册表 v2：因子增删改查 + 数据集联动） ── */
+
+/** 单条引擎指标声明（alpha/beta/macro 三引擎同构）。 */
+export interface EngineMetric {
+  id: string;
+  engine: 'alpha' | 'beta' | 'macro' | string;
+  formula: string;
+  dim: string | null;
+  market: string | null;
+  dataset: string | null;
+  scorer: Record<string, unknown> | null;
+  params: Record<string, unknown>;
+  status: 'active' | 'inactive' | 'experimental' | string;
+  version: number;
+  hypothesis_id: string | null;
+  note: string;
+}
+
+/** GET /v1/engines/metrics 响应。 */
+export interface EngineMetricsResponse {
+  metrics: EngineMetric[];
+  changelog_n: number;
+}
+
+/** 三引擎自描述（GET /v1/engines/describe）。 */
+export interface EngineDescribe {
+  id: string;
+  name: string;
+  kind: string;
+  metric_count: number;
+  active_count: number;
+  dim_weights?: Record<string, number> | null;
+}
+
+/** 指标引用数据集的落盘状态（GET /v1/engines/datasets；数据板块卡片共用）。 */
+export interface EngineDataset {
+  dataset: string;
+  synced: boolean;
+  as_of: string | null;
+  series: number;
+  metrics: string[];
+  /** 未同步时附引导提示 */
+  hint?: string;
+}
+
+export interface EngineDatasetsResponse {
+  datasets: EngineDataset[];
+  missing: number;
+}
+
+/** 新增/修改指标时数据集缺失提示（不阻断，引导前往数据页同步）。 */
+export interface MetricDataMissing {
+  dataset: string;
+  synced: boolean;
+  as_of: null;
+  series: number;
+  hint: string;
+}
+
+/** POST /v1/engines/metrics 响应（data_missing 仅在声明数据集未落盘时出现）。 */
+export interface MetricAddResponse {
+  ok: boolean;
+  metric: EngineMetric;
+  warnings?: string[];
+  data_missing?: MetricDataMissing[];
+}
+
+/** PATCH /v1/engines/metrics/{mid} 响应。 */
+export interface MetricUpdateResponse {
+  ok: boolean;
+  before: EngineMetric;
+  after: EngineMetric;
+  data_missing?: MetricDataMissing[];
+}
+
+/** DELETE（软删）响应。 */
+export interface MetricRemoveResponse {
+  ok: boolean;
+  metric: EngineMetric;
+  warnings?: string[];
+}
+
+/** POST /v1/engines/metrics 入参（spec 与门禁字段）。 */
+export interface EngineMetricAddRequest {
+  engine: string;
+  spec: {
+    id: string;
+    formula: string;
+    dim?: string | null;
+    market?: string | null;
+    dataset?: string | null;
+    scorer?: Record<string, unknown> | null;
+    params?: Record<string, unknown>;
+    status?: string;
+    note?: string;
+  };
+  hypothesis_id: string;
+  reason?: string;
+}
+
+/** PATCH /v1/engines/metrics/{mid} 入参。 */
+export interface EngineMetricUpdateRequest {
+  patch: Record<string, unknown>;
+  hypothesis_id?: string | null;
+  reason?: string;
+  engine?: string | null;
+}
+
+/** 异步 Job 提交响应（§6.1）。review 端点额外携带 data_risk（全绿为 null）。 */
 export interface JobAccepted {
   job_id: string;
   poll: string;
+  data_risk?: DataRisk | null;
 }
 
 /* ── 认证（T5.2 · BFF 契约，冻结） ─────────────────── */

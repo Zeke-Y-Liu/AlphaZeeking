@@ -26,7 +26,8 @@ applib 实读的 ``<ws>/sandbox/repo/portfolio/`` 不一致；本任务**以 san
 - ``bootstrap``：universe=PG securities 全集，``start="2021-01-01"``，全量；
 - ``incremental``：universe=PG securities 全集，``incremental_from={secid: 最后 bar 日期}``
   （缺则不带该键 → 全量 start）；
-- ``refresh``：universe=[secid]，强制重拉最近 N(=5) 日（``start=today-5d``）。
+- ``refresh``：universe=[secid]，强制重拉最近 N(=5) 日（``start=today-5d``），
+  经 ``incremental_from`` 走合并语义（替换最近 N 日，保留历史）。
 
 限频熔断（§4.2）
 --------------
@@ -170,11 +171,28 @@ def _clone_to_sandbox(ctx: Ctx) -> int:
     等价 ``applib.repo.repo_clone`` 的文件级镜像，但不触发其内部 ``seed_remote``
     （provenance 缺失时会注入模拟种子）与版本面（refs/objects）写入，保持同步链
     确定性；语义差异登记见模块 docstring。
+
+    因子注册表写保护（T-R6/T-R12 语义，对齐 RUNBOOK）：clone 会整体替换 sandbox/repo，
+    而用户经引擎 API 的注册表改动只落在 sandbox——故 clone 前**先快照 sandbox 注册表**，
+    clone 后按 ``merge_registry(sandbox快照, remote注册表)`` 回写：用户改动（含门禁
+    新增因子）在每次同步后完整保留；sandbox 无注册表（首次）→ 保持 remote 原样。
     """
+    from applib.engines.base import export_registry_v2, load_registry_raw, merge_registry
+
     ctx.ensure_sandbox()
+    pre_local_registry = load_registry_raw(ctx.local_repo)
     if ctx.local_repo.exists():
         shutil.rmtree(ctx.local_repo, ignore_errors=True)
     shutil.copytree(ctx.repo_dir, ctx.local_repo)
+    if isinstance(pre_local_registry, dict) and pre_local_registry:
+        reg_path = ctx.local_repo / "factors" / "registry.json"
+        defaults = load_registry_raw(ctx.repo_dir)
+        merged = merge_registry(
+            pre_local_registry, defaults if isinstance(defaults, dict) and defaults
+            else export_registry_v2())
+        reg_path.parent.mkdir(parents=True, exist_ok=True)
+        reg_path.write_text(json.dumps(merged, ensure_ascii=False, indent=2),
+                            encoding="utf-8")
     return sum(1 for p in ctx.local_repo.rglob("*") if p.is_file())
 
 
@@ -351,13 +369,19 @@ def sync_workspace(
         incremental_from = {s: last[s] for s in universe if last.get(s)}
     else:  # refresh
         universe = [secid]  # type: ignore[list-item]
-        start = (today - timedelta(days=REFRESH_DAYS)).isoformat()
-        incremental_from = None
+        refresh_start = today - timedelta(days=REFRESH_DAYS)
+        start = refresh_start.isoformat()
+        # T-fix：refresh 也走增量合并（incremental_from=窗口前一日 → 自窗口首日重拉并
+        # 按日合并），替换最近 N 日而非整体覆盖——旧行为 rmtree 后仅写 5 日窗口会丢历史
+        incremental_from = {secid: (refresh_start - timedelta(days=1)).isoformat()}
 
     _report(progress, 15, f"fetch_all（{mode}）")
     try:
         fetched = datasource.fetch_all(
-            ctx, start=start, universe=universe, incremental_from=incremental_from
+            ctx, start=start, universe=universe, incremental_from=incremental_from,
+            # bootstrap = 以 PG securities 全集重建（权威全集，含 applib 内置清单外的
+            # HK/US 标的）→ 显式授权放行破坏性重写守卫（详见 applib.fetch_all docstring）。
+            allow_rebuild=(mode == "bootstrap"),
         )
     except Exception:
         record_upstream_failure()

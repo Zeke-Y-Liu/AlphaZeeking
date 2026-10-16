@@ -1,5 +1,5 @@
 /**
- * 分支用例：门禁 409 VERIFY_GATE_FAILED、互斥 409 JOB_LOCKED、限流 429 ACCOUNT_LOCKED、401。
+ * 分支用例：门禁（评估不阻断仅提示 / 回测 409）、互斥 409 JOB_LOCKED、限流 429 ACCOUNT_LOCKED、401。
  */
 import { createStore, installApiMocks } from '../fixtures/api-mock';
 import { expect, test } from '../fixtures/test';
@@ -7,7 +7,7 @@ import { expect, test } from '../fixtures/test';
 import { bootstrap } from './helpers';
 
 test.describe('分支 · 门禁 / 互斥 / 限流', () => {
-  test('409 VERIFY_GATE_FAILED：评估被门禁拦截并显示红条', async ({ page }) => {
+  test('数据验证未全绿：评估不被阻断，完成并显示数据风险警示条', async ({ page }) => {
     const store = await bootstrap(page, 'cn4');
     await page.goto('/portfolios/cn4');
     await expect(page.getByTestId('empty-state')).toBeVisible();
@@ -15,9 +15,11 @@ test.describe('分支 · 门禁 / 互斥 / 限流', () => {
     store.gateFail = true;
     await page.getByTestId('evaluate-btn').click();
 
-    await expect(page.getByTestId('gate-bar')).toBeVisible();
-    await expect(page.getByTestId('gate-bar')).toContainText('golden_test');
-    await expect(page.getByTestId('gate-link')).toBeVisible();
+    // 评估照常完成（不 409 拦截），并展示琥珀警示条 + 未通过项 + 数据页链接
+    await expect(page.getByTestId('risk-bar')).toBeVisible();
+    await expect(page.getByTestId('risk-bar')).toContainText('golden_test');
+    await expect(page.getByTestId('risk-bar')).toContainText('评估结果可能失真');
+    await expect(page.getByTestId('risk-link')).toBeVisible();
   });
 
   test('409 VERIFY_GATE_FAILED：回测被门禁拦截', async ({ page }) => {

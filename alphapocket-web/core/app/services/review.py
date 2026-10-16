@@ -42,7 +42,7 @@ from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode
 from app.db.session import session_scope
 from app.models import Portfolio, Run
-from app.services import artifacts
+from app.services import artifacts, verification
 
 logger = logging.getLogger("app.review")
 
@@ -105,14 +105,41 @@ def _signal_states(review: dict[str, Any]) -> dict[str, int]:
     return counts
 
 
+def _macro_summary(review: dict[str, Any]) -> dict[str, Any]:
+    """引擎C 精简摘要（字段冻结）：三市场档位 + 全局 + state；unavailable 原样。
+
+    冻结字段：``status?`` / ``markets`` / ``global`` / ``global_score`` / ``state`` /
+    ``as_of`` / ``error?``。引擎C 为市场级条件变量，不参与权重决策与门禁。
+    """
+    ml = review.get("macro_liquidity") or {}
+    if not ml or ml.get("status") == "unavailable":    # 缺失/降级 → unavailable 原样
+        return {"status": "unavailable", "error": ml.get("error")}
+    markets = {}
+    for mkt, m in (ml.get("markets") or {}).items():
+        if isinstance(m, dict) and "level" in m:
+            markets[mkt] = m["level"]
+    g = ml.get("global") or {}
+    return {
+        "markets": markets,                        # {"A": 1, "HK": -1, "US": 0}
+        "global": g.get("level"),                  # int | None
+        "global_score": g.get("score"),            # float | None（保留两位由前端格式化）
+        "state": g.get("state"),                   # neutral | tight_stress | easy_froth
+        "as_of": ml.get("as_of"),
+    }
+
+
 def _build_summary(review: dict[str, Any]) -> dict[str, Any]:
-    """组装 ``runs.summary``（字段冻结，供 T6.4 前端直接读）。"""
+    """组装 ``runs.summary``（字段冻结，供 T6.4 前端直接读）。
+
+    ``data_risk`` 由 ``run_review`` 在落库前按当时验证状态补充（全绿为 ``None``）。
+    """
     return {
         "as_of": review.get("as_of"),
         "portfolio_metrics": review.get("portfolio_metrics"),
         "position_count": len(review.get("positions") or []),
         "signal_count": len(review.get("signals") or []),
         "signal_states": _signal_states(review),
+        "macro_liquidity": _macro_summary(review),
     }
 
 
@@ -164,12 +191,15 @@ def run_review(
     files = {p.name: p for p in sorted(art_dir.glob("*")) if p.is_file()}
     keys = artifacts.put_run_artifacts(run_uid, files)
 
-    # 8) summary（字段冻结）
+    # 8) summary（字段冻结；data_risk 按评估时点验证状态补充，全绿为 None）
     summary = _build_summary(review)
 
     # 9) 写 runs
     as_of = date.fromisoformat(review["as_of"]) if review.get("as_of") else None
     with session_scope() as db:
+        summary["data_risk"] = verification.data_risk_of(
+            verification.latest_verify_summary(db)
+        )
         portfolio = db.execute(
             select(Portfolio).where(Portfolio.pid == pid)
         ).scalar_one_or_none()

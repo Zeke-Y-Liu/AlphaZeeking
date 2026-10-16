@@ -9,7 +9,7 @@ let seq = 0;
 const DEFAULT_DURATION = 3000;
 
 /**
- * 轻量 Toast 组合式：show/success/error/info，返回 id 与移除方法。
+ * 轻量 Toast 组合式：show/success/error/info/warn，返回 id 与移除方法。
  * 需在应用根挂载一次 <ApToast /> 容器。
  */
 export function useToast() {
@@ -39,5 +39,6 @@ export function useToast() {
     success: (message: string, duration?: number) => show('success', message, duration),
     error: (message: string, duration?: number) => show('error', message, duration),
     info: (message: string, duration?: number) => show('info', message, duration),
+    warn: (message: string, duration?: number) => show('warn', message, duration),
   };
 }

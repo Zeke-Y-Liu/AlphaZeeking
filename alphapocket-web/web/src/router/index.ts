@@ -51,6 +51,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '调仓' },
   },
   {
+    path: '/engines',
+    name: 'engines',
+    component: () => import('../views/EnginesView.vue'),
+    meta: { title: '引擎' },
+  },
+  {
     path: '/data',
     name: 'data',
     component: () => import('../views/DataView.vue'),

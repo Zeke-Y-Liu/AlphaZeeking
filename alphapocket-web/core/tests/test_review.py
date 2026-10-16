@@ -1,5 +1,8 @@
 """T2.3 评估 run 测试（``POST /portfolios/{id}/review`` + ``GET /runs``）。
 
+门禁语义（本用例集冻结）：评估**不被数据门禁阻断**——非全绿照常 202 + job，
+但响应与 ``runs.summary.data_risk`` 携带数据风险提示；全绿时 ``data_risk=None``。
+
 - 不修改 ``conftest.py``（并行任务在改它），本文件自带 fixture；
 - 用真实 PG + ``tmp_path`` 造 workspace；**MinIO 不可达 → 上传必须 mock**；
 - 不依赖外网；PG 不可达时整体 ``pytest.skip``；
@@ -18,13 +21,12 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, select, text
 
 from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode
 from app.db.session import SessionLocal, session_scope
 from app.models import Job, Portfolio, Position, Run, Security, VerifyResult
-from app.services.jobs import JobRunner
 from app.services.review import run_review
 from app.services.verification import CHECKS
 
@@ -176,36 +178,64 @@ def _wait_job(api_client: TestClient, job_id: str, timeout: float = 15.0) -> dic
 # ── 用例 ────────────────────────────────────────────────────────
 
 
-def test_review_gate_failed_409_and_no_job(api_client, cleanup, monkeypatch) -> None:
-    """用例 1：数据门禁非全绿 → 409 VERIFY_GATE_FAILED，且不提交 job。"""
+def test_review_gate_failed_not_blocked_but_warns(api_client, ws_root, cleanup, monkeypatch) -> None:
+    """用例 1：数据门禁非全绿 → 不阻断评估；202 响应与 runs.summary 均提示 data_risk。"""
     pid = _rand("test_rv_gate")
     pf_id, _ = _make_portfolio(cleanup, pid, n=1)
 
+    fake_summary = {
+        "status": "fail",
+        "job_id": "job_gate_fail_x",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "checks": [],
+        "failed": [{"check": "golden_test", "text": "FAIL(510300.SH 缺失)"}],
+    }
     monkeypatch.setattr(
-        "app.services.verification.latest_verify_summary",
-        lambda db: {"status": "unknown", "job_id": None, "created_at": None,
-                    "checks": [], "failed": []},
+        "app.services.verification.latest_verify_summary", lambda db: fake_summary
     )
-    called = {"n": 0}
+    monkeypatch.setattr("app.services.review._ensure_gap", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "app.services.review.tools.portfolio_review",
+        lambda a, c: {"as_of": "2026-01-06", "portfolio_metrics": {}, "positions": [], "signals": []},
+    )
+    monkeypatch.setattr(
+        "app.services.review.tools.portfolio_rebalance_plan", lambda a, c: {}
+    )
 
-    def _boom(self, *args, **kwargs):
-        called["n"] += 1
-        raise AssertionError("门禁失败时不应提交 job")
+    def fake_render_all(review, plan, ctx, run_id, art_dir, verify=None):
+        art_dir = Path(art_dir)
+        for name in ARTIFACT_NAMES:
+            (art_dir / name).write_text(name, encoding="utf-8")
+        return {"html": str(art_dir / "report.html"), "md": str(art_dir / "report.md")}
 
-    monkeypatch.setattr(JobRunner, "submit", _boom)
+    monkeypatch.setattr("app.services.review.report.render_all", fake_render_all)
+    monkeypatch.setattr(
+        "app.services.review.artifacts.put_run_artifacts",
+        lambda run_uid, files: sorted(f"runs/{run_uid}/{n}" for n in files),
+    )
 
     resp = api_client.post(f"/api/v1/portfolios/{pid}/review")
-    assert resp.status_code == 409, resp.text
-    assert resp.json()["code"] == ErrorCode.VERIFY_GATE_FAILED.value
-    assert called["n"] == 0
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    job_id = body["job_id"]
+    cleanup["job_ids"].append(job_id)
+    # 门禁失败不拦截：job 照常提交，响应携带数据风险提示
+    assert body["data_risk"]["status"] == "fail"
+    assert body["data_risk"]["message"]
+    assert [f["check"] for f in body["data_risk"]["failed"]] == ["golden_test"]
+
+    job = _wait_job(api_client, job_id)
+    assert job["status"] == "done", job
+    summary = job["result"]["summary"]
+    cleanup["run_uids"].append(job["result"]["run_uid"])
+    # 落库的 runs.summary 同样携带 data_risk（供前端历史回看）
+    assert summary["data_risk"]["status"] == "fail"
+    assert [f["check"] for f in summary["data_risk"]["failed"]] == ["golden_test"]
 
     with SessionLocal() as db:
-        n = db.execute(
-            select(func.count()).select_from(Job).where(
-                Job.type == "review", Job.portfolio_id == pf_id
-            )
-        ).scalar_one()
-    assert n == 0
+        run = db.execute(select(Run).where(Run.job_id == job_id)).scalar_one()
+        assert run.portfolio_id == pf_id
+        assert run.summary["data_risk"]["failed"][0]["check"] == "golden_test"
 
 
 def test_review_green_gate_job_succeeds(api_client, ws_root, cleanup, monkeypatch) -> None:
@@ -257,6 +287,8 @@ def test_review_green_gate_job_succeeds(api_client, ws_root, cleanup, monkeypatc
     job_id = body["job_id"]
     cleanup["job_ids"].append(job_id)
     assert body["poll"] == f"/api/v1/jobs/{job_id}"
+    # 门禁全绿：无数据风险提示
+    assert body["data_risk"] is None
 
     job = _wait_job(api_client, job_id)
     assert job["status"] == "done", job
@@ -272,6 +304,7 @@ def test_review_green_gate_job_succeeds(api_client, ws_root, cleanup, monkeypatc
     assert summary["position_count"] == 2
     assert summary["signal_count"] == 5
     assert summary["signal_states"] == {"above": 1, "below": 1, "neutral": 0}
+    assert summary["data_risk"] is None
     assert result["artifact_keys"] == sorted(
         f"runs/{result['run_uid']}/{name}" for name in ARTIFACT_NAMES
     )
@@ -351,3 +384,37 @@ def test_run_review_unmaterialized_raises_not_found(tmp_path, pg_ready) -> None:
             lambda p, n=None: None,
         )
     assert excinfo.value.code == ErrorCode.NOT_FOUND.value
+
+
+# ── T-C6：runs.summary.macro_liquidity 冻结字段（纯函数单测，不触 PG）──
+from app.services.review import _build_summary, _macro_summary  # noqa: E402
+
+
+def test_build_summary_macro_fields() -> None:
+    """含正常 macro_liquidity 的 review → summary.macro_liquidity 三市场档位 + 全局。"""
+    review = {
+        "as_of": "2026-09-13",
+        "portfolio_metrics": {"nav": 1.05},
+        "positions": [{"beta": {"state": "above"}}],
+        "signals": [],
+        "macro_liquidity": {
+            "as_of": "2026-09-10",
+            "markets": {"A": {"score": 0.62, "level": 1, "dims": {}},
+                        "HK": {"status": "unavailable"},
+                        "US": {"score": 0.1, "level": 0, "dims": {}}},
+            "global": {"score": 0.4583, "level": 1, "state": "neutral"},
+            "indicators": {}, "notes": [],
+        },
+    }
+    ms = _build_summary(review)["macro_liquidity"]
+    assert ms == {"markets": {"A": 1, "US": 0}, "global": 1, "global_score": 0.4583,
+                  "state": "neutral", "as_of": "2026-09-10"}   # HK unavailable → 不进 markets
+    assert _macro_summary(review) == ms
+
+
+def test_build_summary_macro_unavailable() -> None:
+    """unavailable 原样透传（无 markets 键）；缺 macro_liquidity 键 → unavailable 兜底。"""
+    bad = _macro_summary({"macro_liquidity": {"status": "unavailable", "error": "x"}})
+    assert bad == {"status": "unavailable", "error": "x"}
+    assert "markets" not in bad
+    assert _macro_summary({}) == {"status": "unavailable", "error": None}

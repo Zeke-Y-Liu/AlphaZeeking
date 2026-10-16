@@ -1,13 +1,21 @@
 <script setup lang="ts">
 // 组合详情（T6.4）：Tab 概览（体检卡五指标 / 引擎A 因子表 / 引擎B 信号卡 / 下一交易日指引
-// / 数据截至徽章 + 门禁红条）+ Tab 报告入口。数据源为最近一次 review run 的 review.json 产物。
+// / 数据截至徽章 + 数据风险警示条）+ Tab 报告入口。数据源为最近一次 review run 的 review.json 产物。
+// 门禁语义：评估不被数据门禁阻断，非全绿时以 data_risk 提示（琥珀警示条 + toast.warn）。
 import { computed, onMounted, ref } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
 import { fetchRunArtifact, getJob, getPortfolio, listRuns, reviewPortfolio } from '../api';
 import { ApMarketBadge } from '../components/ui';
 import { ApiError } from '../api/types';
-import type { Portfolio, ReviewPayload, ReviewPosition, Run } from '../api/types';
+import type {
+  DataRisk,
+  MacroLiquiditySummary,
+  Portfolio,
+  ReviewPayload,
+  ReviewPosition,
+  Run,
+} from '../api/types';
 import { ApBadge, ApButton, ApCard, ApTable, ApTabs, useToast } from '../components/ui';
 import type { ApTableColumn, ApTabItem, BadgeTone } from '../components/ui';
 import { useBreakpoint } from '../composables/useBreakpoint';
@@ -32,8 +40,8 @@ const loading = ref(false);
 const error = ref('');
 const evaluating = ref(false);
 const progress = ref(0);
-/** 门禁失败项（409 VERIFY_GATE_FAILED 的 detail.failed）；非空即渲染红条。 */
-const gateFailed = ref<string[] | null>(null);
+/** 数据风险提示（评估不阻断门禁：非全绿时由 202 响应 / run.summary 下发）。 */
+const dataRisk = ref<DataRisk | null>(null);
 const queued = ref(false);
 
 const positions = computed<ReviewPosition[]>(() => review.value?.positions ?? []);
@@ -129,6 +137,38 @@ function hasCooldown(secid: string): boolean {
   return (review.value?.signals ?? []).some((s) => s.secid === secid && Boolean(s.cooldown));
 }
 
+/* ── 引擎C 宏观流动性（市场级条件变量，不构成买卖信号） ── */
+const macro = computed<MacroLiquiditySummary | null>(
+  () =>
+    (run.value?.summary as { macro_liquidity?: MacroLiquiditySummary } | null | undefined)
+      ?.macro_liquidity ?? null,
+);
+const macroUnavailable = computed(() => macro.value?.status === 'unavailable');
+
+const MACRO_LEVEL_TEXT: Record<number, string> = {
+  2: '宽松',
+  1: '偏松',
+  0: '中性',
+  [-1]: '偏紧',
+  [-2]: '深度紧缩',
+};
+
+function macroLevelText(lv: number | null | undefined): string {
+  return MACRO_LEVEL_TEXT[lv ?? 0] ?? '—';
+}
+
+function macroTone(lv: number | null | undefined): BadgeTone {
+  if (lv == null) return 'default';
+  if (lv >= 1) return 'success';
+  if (lv <= -1) return 'warn';
+  return 'info';
+}
+
+function fmtSigned(v?: number | null): string {
+  if (v == null || !Number.isFinite(v)) return DASH;
+  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
+}
+
 /* ── 下一交易日指引 ────────────────────────────── */
 const actions = computed<string[]>(() => {
   const set = new Set<string>();
@@ -169,6 +209,9 @@ async function load(): Promise<void> {
     }
     run.value = runs[0] ?? null;
     review.value = null;
+    // 数据风险随 run 持久化（runs.summary.data_risk），刷新后仍可见
+    const summary = run.value?.summary as { data_risk?: DataRisk | null } | null | undefined;
+    dataRisk.value = summary?.data_risk ?? null;
     if (run.value) {
       try {
         review.value = await fetchRunArtifact<ReviewPayload>(run.value.run_uid, 'review.json', 'json');
@@ -184,23 +227,15 @@ async function load(): Promise<void> {
 }
 
 /* ── 评估 + 轮询 ───────────────────────────────── */
-function extractFailed(detail: unknown): string[] {
-  if (!detail || typeof detail !== 'object') return [];
-  const d = detail as Record<string, unknown>;
-  const f = d.failed ?? d.failures;
-  if (Array.isArray(f)) {
-    return f.map((x) => {
-      if (typeof x === 'string') return x;
-      if (x && typeof x === 'object') {
-        const o = x as Record<string, unknown>;
-        return String(o.check ?? o.name ?? o.code ?? JSON.stringify(x));
-      }
-      return String(x);
-    });
-  }
-  if (typeof f === 'string' && f) return [f];
-  return [];
-}
+/** 数据风险提示条未通过项文案（无明细时兜底）。 */
+const riskFailedText = computed(() => {
+  const risk = dataRisk.value;
+  const failed = risk?.failed ?? [];
+  const names = failed.map((f) => f.check).filter(Boolean);
+  if (names.length) return names.join('、');
+  // unknown（从未验证）与 fail（有检查未通过）语义不同，回退文案需区分
+  return risk?.status === 'unknown' ? '验证状态未知' : '存在未通过项';
+});
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -221,11 +256,6 @@ async function pollUntilDone(jobId: string): Promise<void> {
 
 function handleEvalError(err: unknown): void {
   if (err instanceof ApiError) {
-    if (err.code === 'VERIFY_GATE_FAILED') {
-      gateFailed.value = extractFailed(err.detail);
-      toast.error('数据验证未全绿，评估被门禁拦截');
-      return;
-    }
     if (err.code === 'JOB_LOCKED') {
       queued.value = true;
       toast.info('同 workspace 有计算任务进行中，评估已排队，请稍后重试');
@@ -240,11 +270,16 @@ function handleEvalError(err: unknown): void {
 async function evaluate(): Promise<void> {
   if (evaluating.value) return;
   evaluating.value = true;
-  gateFailed.value = null;
+  dataRisk.value = null;
   queued.value = false;
   progress.value = 0;
   try {
-    const { job_id } = await reviewPortfolio(pfId.value);
+    const { job_id, data_risk } = await reviewPortfolio(pfId.value);
+    // 门禁不阻断评估：非全绿仅提示数据风险
+    if (data_risk) {
+      dataRisk.value = data_risk;
+      toast.warn(data_risk.message);
+    }
     await pollUntilDone(job_id);
     await load();
     toast.success('评估完成');
@@ -278,11 +313,11 @@ onMounted(load);
       </div>
     </div>
 
-    <div v-if="gateFailed" class="pd-gate" role="alert" data-test="gate-bar">
-      <span class="pd-gate__txt">
-        数据验证未全绿，评估被门禁拦截：{{ gateFailed.length ? gateFailed.join('、') : '存在未通过项' }}
+    <div v-if="dataRisk" class="pd-risk" role="alert" data-test="risk-bar">
+      <span class="pd-risk__txt" data-test="risk-text">
+        {{ dataRisk.message }}（{{ riskFailedText }}）
       </span>
-      <RouterLink class="pd-gate__link" to="/data" data-test="gate-link">前往数据页查看明细</RouterLink>
+      <RouterLink class="pd-risk__link" to="/data" data-test="risk-link">前往数据页查看明细</RouterLink>
     </div>
     <p v-if="queued" class="ap-muted pd-note" data-test="queued-hint">
       同 workspace 有计算任务进行中，评估已排队，请稍后重试。
@@ -386,6 +421,36 @@ onMounted(load);
               <p v-else class="ap-muted">暂无持仓信号。</p>
             </ApCard>
 
+            <ApCard title="引擎C · 宏观流动性">
+              <p v-if="macroUnavailable" class="ap-muted" data-test="macro-unavailable">
+                宏观流动性数据未同步（不影响其余评估）
+              </p>
+              <template v-else-if="macro">
+                <div class="ap-row macro-head">
+                  <ApBadge
+                    v-for="(lv, mkt) in macro.markets"
+                    :key="mkt"
+                    :tone="macroTone(lv)"
+                    :data-test="`macro-badge-${mkt}`"
+                  >
+                    {{ mkt }}市场 {{ macroLevelText(lv) }} ({{ lv > 0 ? '+' : '' }}{{ lv }})
+                  </ApBadge>
+                  <span class="ap-mono" data-test="macro-global">
+                    全局 {{ macroLevelText(macro.global ?? 0) }} {{ fmtSigned(macro.global_score) }}
+                  </span>
+                  <span class="ap-muted">截至 {{ fmtDate(macro.as_of) }}</span>
+                </div>
+                <p v-if="macro.state === 'tight_stress'" class="macro-warn" data-test="macro-warn">
+                  流动性紧缩，风险资产承压概率升高
+                </p>
+                <p v-else-if="macro.state === 'easy_froth'" class="macro-warn" data-test="macro-warn">
+                  流动性充裕，注意拥挤度与退出风险
+                </p>
+                <p class="ap-muted macro-note">市场级条件变量，不构成买卖信号</p>
+              </template>
+              <p v-else class="ap-muted">暂无宏观数据</p>
+            </ApCard>
+
             <ApCard title="下一交易日指引">
               <div class="ap-row nt-head">
                 <span class="ap-kicker">下一交易日</span>
@@ -421,7 +486,7 @@ onMounted(load);
 .pd-meta {
   flex-wrap: wrap;
 }
-.pd-gate {
+.pd-risk {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -429,16 +494,33 @@ onMounted(load);
   flex-wrap: wrap;
   margin-bottom: var(--ap-sp-4);
   padding: 10px 13px;
-  border: 1px solid var(--ap-seal-line);
-  background: var(--ap-seal-soft);
+  border: 1px solid rgba(176, 140, 60, 0.45);
+  background: rgba(176, 140, 60, 0.08);
   border-radius: var(--ap-radius);
-  color: var(--ap-danger);
+  color: var(--ap-warn);
   font-size: var(--ap-fs-sm);
 }
-.pd-gate__link {
-  color: var(--ap-seal);
+.pd-risk__link {
+  color: var(--ap-warn);
   font-weight: 600;
   text-decoration: underline;
+}
+/* 引擎C 极端态提示：复用 .pd-risk 琥珀配色（单行缩简） */
+.macro-warn {
+  margin-top: var(--ap-sp-2);
+  padding: 6px 10px;
+  border: 1px solid rgba(176, 140, 60, 0.45);
+  background: rgba(176, 140, 60, 0.08);
+  border-radius: var(--ap-radius);
+  color: var(--ap-warn);
+  font-size: var(--ap-fs-sm);
+}
+.macro-head {
+  flex-wrap: wrap;
+  gap: var(--ap-sp-2);
+}
+.macro-note {
+  margin-top: var(--ap-sp-2);
 }
 .pd-note {
   margin-bottom: var(--ap-sp-3);

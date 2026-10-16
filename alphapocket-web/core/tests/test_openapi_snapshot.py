@@ -49,6 +49,11 @@ IMPLEMENTED_PATHS = {
     # V4-β 多市场：实时行情 + 港股通名单
     "/api/v1/market/quotes",
     "/api/v1/market/ggt",
+    # 引擎板块：指标注册表 CRUD + 数据集联动
+    "/api/v1/engines/metrics",
+    "/api/v1/engines/metrics/{mid}",
+    "/api/v1/engines/describe",
+    "/api/v1/engines/datasets",
 }
 
 

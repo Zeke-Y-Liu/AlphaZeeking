@@ -28,6 +28,6 @@ export interface ApStepItem {
 /** ApToast 提示条目。 */
 export interface ApToastItem {
   id: number;
-  type: 'success' | 'error' | 'info';
+  type: 'success' | 'error' | 'info' | 'warn';
   message: string;
 }

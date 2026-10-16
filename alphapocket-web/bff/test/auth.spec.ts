@@ -192,4 +192,22 @@ describe('Auth (e2e, mock core)', () => {
     expect(res.headers['access-control-allow-origin']).toBe('http://localhost:5173');
     expect(res.headers['access-control-allow-headers']).toContain('Authorization');
   });
+
+  it('CORS 内网 IP 源（内网部署直访）→ 放行', async () => {
+    const res = await request(app.getHttpServer())
+      .options('/api/auth/login')
+      .set('Origin', 'http://10.21.147.200:5173')
+      .set('Access-Control-Request-Method', 'POST');
+
+    expect(res.headers['access-control-allow-origin']).toBe('http://10.21.147.200:5173');
+  });
+
+  it('CORS 公网源 → 不放行', async () => {
+    const res = await request(app.getHttpServer())
+      .options('/api/auth/login')
+      .set('Origin', 'http://evil.example.com:5173')
+      .set('Access-Control-Request-Method', 'POST');
+
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
 });

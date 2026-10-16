@@ -11,6 +11,7 @@ export DEBIAN_FRONTEND=noninteractive
 export PATH="/usr/lib/postgresql/16/bin:$PATH"
 
 say() { echo "[start] $*"; }
+port_up() { ss -ltn 2>/dev/null | grep -q ":$1 "; }
 
 # ---------- 0) 系统依赖（缺失才装）----------
 if ! command -v psql >/dev/null 2>&1 || ! command -v redis-server >/dev/null 2>&1; then
@@ -51,6 +52,14 @@ if ! curl -sf -m 2 -o /dev/null http://127.0.0.1:9100/minio/health/live; then
 fi
 curl -sf -m 3 -o /dev/null http://127.0.0.1:9100/minio/health/live && say "MinIO 就绪 127.0.0.1:9100（控制台 9101）"
 
+# core 的 /healthz 依赖探测在启动时缓存一次；若 core 先于 MinIO 启动，缓存会一直是
+# degraded —— 此处检测到过期缓存则重启 core（下方第 6 步会自动重新拉起）。
+if port_up 8082 && curl -s -m 3 http://127.0.0.1:8082/healthz | grep -q '"minio":{"ok":false'; then
+  say "core 的 MinIO 探测缓存已过期，重启 core"
+  pkill -f 'uvicorn app.main:app' 2>/dev/null || true
+  sleep 1
+fi
+
 # ---------- 4) 迁移 + 种子（幂等）----------
 say "alembic upgrade head"
 make -C "$ROOT" migrate-local >/dev/null || { echo "迁移失败"; exit 1; }
@@ -67,7 +76,6 @@ print("[start] 桶 ap-artifacts 就绪")
 PY
 
 # ---------- 6) 应用三件套 ----------
-port_up() { ss -ltn 2>/dev/null | grep -q ":$1 "; }
 
 if ! port_up 8082; then
   say "启动 core :8082"
