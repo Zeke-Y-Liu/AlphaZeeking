@@ -4,9 +4,9 @@
 // + 手动 sync（bootstrap 二次确认）+ job 进度条（轮询）+ /runs 运行历史。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import { fetchRunArtifact, getDataStatus, getJob, getQuotes, listRuns, listVerifications, syncData } from '../api';
+import { fetchRunArtifact, getDataStatus, getJob, getQuotes, listEngineDatasets, listRuns, listVerifications, syncData } from '../api';
 import { ApiError } from '../api/types';
-import type { DataStatus, Quote, Run, SyncMode, VerifyDetail, VerifyResult, VerifyStatus } from '../api/types';
+import type { DataStatus, EngineDataset, Quote, Run, SyncMode, VerifyDetail, VerifyResult, VerifyStatus } from '../api/types';
 import { ApBadge, ApButton, ApCard, ApMarketBadge, ApModal, ApTable, useToast } from '../components/ui';
 import type { ApTableColumn, BadgeTone } from '../components/ui';
 import { DASH, fmtDate, fmtMoney, fmtPct } from '../utils/format';
@@ -41,6 +41,20 @@ const drawerOpen = ref(false);
 const runs = ref<Run[]>([]);
 const runType = ref('');
 const runsLoading = ref(false);
+
+/* ── 引擎数据集（因子注册表引用 + 落盘状态；与引擎页同源） ── */
+const engineDatasets = ref<EngineDataset[]>([]);
+const engineDatasetsMissing = ref(0);
+
+async function loadEngineDatasets(): Promise<void> {
+  try {
+    const res = await listEngineDatasets();
+    engineDatasets.value = res.datasets;
+    engineDatasetsMissing.value = res.missing;
+  } catch {
+    // 引擎数据集为增强信息：失败不打断数据页
+  }
+}
 
 /* ── 实时行情（V4-β：universe 全标的，10s 自动刷新） ── */
 const QUOTE_REFRESH_MS = 10_000;
@@ -166,6 +180,7 @@ async function loadStatus(): Promise<void> {
   const [s, v] = await Promise.all([getDataStatus(), listVerifications(20)]);
   status.value = s;
   verifications.value = v;
+  await loadEngineDatasets();                    // 引擎数据集随数据状态同步刷新
 }
 
 async function loadRuns(): Promise<void> {
@@ -365,6 +380,38 @@ onBeforeUnmount(() => {
         </p>
       </ApCard>
 
+      <ApCard title="引擎数据集">
+        <p class="dv-summary ap-muted" data-test="dv-engine-ds-summary">
+          因子注册表引用的数据集 · 缺失
+          <b class="ap-mono">{{ engineDatasetsMissing }}</b> 个
+          <template v-if="engineDatasetsMissing > 0">
+            —— 新增因子的数据未同步时在此提示，incremental 同步后自动消解
+          </template>
+        </p>
+        <ul v-if="engineDatasets.length" class="dv-engds" data-test="dv-engine-datasets">
+          <li
+            v-for="d in engineDatasets"
+            :key="d.dataset"
+            class="dv-engds__item"
+            :data-test="`dv-engine-ds-${d.dataset}`"
+          >
+            <ApBadge :tone="d.synced ? 'success' : 'danger'">
+              {{ d.synced ? '已同步' : '未同步' }}
+            </ApBadge>
+            <b class="ap-mono">{{ d.dataset }}</b>
+            <span class="ap-muted">
+              as_of {{ d.as_of ? fmtDate(d.as_of) : DASH }} · {{ d.series }} 序列 · {{ d.metrics.length }} 指标引用
+            </span>
+            <span v-if="!d.synced" class="dv-engds__hint" :data-test="`dv-engine-ds-hint-${d.dataset}`">
+              {{ d.hint }}
+            </span>
+          </li>
+        </ul>
+        <p v-else class="ap-muted" data-test="dv-engine-ds-empty">
+          暂无数据集引用（alpha/beta 引擎走既有行情财务管道）。
+        </p>
+      </ApCard>
+
       <ApCard title="六项验证">
         <div class="ap-row dv-badges">
           <button
@@ -490,6 +537,31 @@ onBeforeUnmount(() => {
 }
 .dv-quote-note {
   margin-top: var(--ap-sp-3);
+  font-size: var(--ap-fs-sm);
+}
+.dv-engds {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ap-sp-2);
+}
+.dv-engds__item {
+  display: flex;
+  align-items: center;
+  gap: var(--ap-sp-3);
+  flex-wrap: wrap;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--ap-hair);
+  font-size: var(--ap-fs-sm);
+}
+.dv-engds__item:last-child {
+  border-bottom: 0;
+}
+.dv-engds__hint {
+  flex-basis: 100%;
+  color: #9a4708;
   font-size: var(--ap-fs-sm);
 }
 .dv-badges {

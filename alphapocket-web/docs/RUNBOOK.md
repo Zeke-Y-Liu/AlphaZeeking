@@ -17,6 +17,9 @@ make down
 
 ### 1.2 本地直跑（无 docker，已直跑 PG:5432 / Redis:6379）
 
+**沙箱重置后的一键恢复（推荐）：`bash deploy/start-local-sandbox.sh`**——自动安装并初始化
+PG/Redis/MinIO、跑迁移与 seed、拉起 core/bff/web，幂等可重复执行。以下为手动步骤：
+
 ```bash
 make install-core                    # 建 core/.venv 并装依赖
 make migrate-local                   # alembic upgrade head
@@ -56,6 +59,33 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 | 产物 404 | 产物未生成 / 对象存储不可达 | 确认 run 已 `done`；检查 MinIO（`AP_MINIO_*`） |
 | `make migrate` 报 `Target database is not up to date` | 迁移分叉 | 先 `alembic history` 对齐；PG 单写方只有 core，勿手工改表 |
 | 端口被占用 | 8080/8081/8082 | 改 `.env` 的 `*_PORT` 或释放端口 |
+| 预览面板 `no healthy upstream` | 平台边缘网关 → 沙箱的会话注册失效（应用侧正常） | 按 §2.1 自检确认后重开会话；恢复后跑一键脚本 |
+
+### 2.1 预览 `no healthy upstream`（边缘注册失效，2026-10-09 实测）
+
+现象：预览面板打开报 `no healthy upstream`，重开面板/重新注册均无效，但本地服务与数据全部正常。
+
+处置流程：
+
+```bash
+# 1) 确认应用与预览代理自身健康（三条都应 200；有失败先修应用侧）
+curl -s -m 3 -o /dev/null -w 'web=%{http_code}\n'  localhost:5173
+curl -s -m 3 -o /dev/null -w 'proxy=%{http_code}\n' localhost:16000
+curl -s -m 3 -o /dev/null -w 'core=%{http_code}\n'  localhost:8082/healthz
+
+# 2) 点击预览链接后，确认边缘流量是否真的进入沙箱：
+#    无输出 = 边缘请求根本没进来，注册已失效
+ss -tn | grep ':16000' | grep -v '127.0.0.1'
+tail -20 /var/log/tool/agent-tool-host.stdout.log | grep preview-proxy
+
+# 3) 第 1 步全 200 且第 2 步无外部流量 → 平台侧问题，重开会话重建 Pod↔边缘映射；
+#    会话恢复后一键拉起全栈（数据/代码在 /workspace，不丢失）
+bash deploy/start-local-sandbox.sh
+```
+
+特征佐证：快照恢复型沙箱中，`agent-tool-host` 进程环境残留的 `HOSTNAME` 可能是旧 Pod 名
+（`tr '\0' '\n' < /proc/$(pgrep -f agent-tool-host)/environ | grep ^HOSTNAME`），与当前
+Pod（`hostname`）不一致时，即边缘上游仍指向已销毁的旧 Pod，重开面板无法自愈。
 
 ## 3. AKShare 熔断（数据同步上游）
 
@@ -68,8 +98,28 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 redis-cli DEL ap:sync:upstream_circuit
 ```
 
-- 适配层为单点：`alphapocket/applib/datasource.py`，接口白名单收敛「新浪 + 腾讯」两源；
-  上游改版只需改此处。
+- 适配层为单点：`alphapocket/applib/datasource.py`；数据源主/交叉/对账/降级关系已
+  声明化（见 §3.1），上游改版只需改对应 spec 声明 + interface 实现函数。
+
+### 3.1 数据源路由（T-R11 声明式）
+
+数据集与其多源关系统一登记在 `alphapocket/applib/datasets/specs_*.py`（T-R9
+DatasetSpec），每个数据集的 `sources[]` 按 `primary / cross / reconcile / fallback`
+四角色声明：
+
+| 数据域 | primary | cross | reconcile | fallback |
+| --- | --- | --- | --- | --- |
+| A 股行情 | 新浪 stock_zh_a_daily(qfq) | 腾讯 stock_zh_a_hist_tx | — | — |
+| 美股行情 | 腾讯 usK线(raw 口径) | — | 新浪 stock_us_daily(raw) | 新浪 raw 升主源（腾讯整体失败时） |
+| 港股行情 | 新浪 stock_hk_daily | 腾讯 web.ifzq.gtimg.cn | — | — |
+| 实时行情 | 新浪批量 | — | — | 腾讯逐标的 |
+| 港股通 | 雪球在线 | — | — | ggt_static 快照（`GGT_SNAPSHOT_DATE`） |
+| Fed 利率 | ak.macro_bank_usa_interest_rate | — | — | 今值缺失→前值兜底 |
+| 宏观各指标 | `_MACRO_META` 逐条 source | — | — | 逐指标 error 登记不阻断 |
+
+- `provenance.json` 的 `sources[]`（dataset/interface/upstream/params/file/sha256/bytes
+  七键）由 `_reg` 从 spec 声明解析登记；未注册数据集走手工参数（WARNING 透明降级，不阻断）。
+- 上游改版处置：改 spec 的 `interface` 声明 + 对应实现函数即可，`fetch_all` 主体无需动。
 
 ## 4. workspace 的查看 / 重置
 
@@ -77,6 +127,23 @@ redis-cli DEL ap:sync:upstream_circuit
   `var/ws/<name>/{remote,sandbox}`；`sandbox/data/ap.duckdb` 为因子宽表。
 - **DuckDB 单文件单写**：同一 workspace 的计算必须串行（`compute_lock`）；
   sync 全局唯一（`sync_lock`）。切勿绕过 JobRunner 并发直连 DuckDB。
+- **数据集清单入口（T-R9）**：`alphapocket/applib/datasets/specs_*.py` 声明
+  `DatasetSpec`（落盘路径/合并策略/入库表/验证联动/多源路由）——新数据集只改声明，
+  即自动进增量合并（`_MERGEABLE` 由 active specs 派生）、provenance 登记与验证链路，
+  `fetch_all` 主体不动。
+- **指标注册表写保护（T-R6）**：`sandbox/repo/factors/registry.json`（v2）在每次
+  同步（含 rmtree 重建）前先快照、尾部按 merge 语义回写——用户的指标启停/调参跨
+  同步保留；管理入口为 `ap metric …` CLI 与 `engine.metrics.*` MCP（API.md §7）。
+- **同步语义（2026-10-09 起）**：`incremental` / `refresh` 走**增量合并**——
+  `fetch_all` 先快照 remote/repo 可合并数据集再重建，按 secid 合并（旧尾 + 新窗口，
+  重叠日以新为准）；空窗口或个别标的拉取失败时旧数据完整保留，**不再出现"一次增量
+  把已绿数据拉红"**。`bootstrap` 仍为全量整体重建。
+- **calendar_check 尾部豁免**：末根落后 1 个交易日且腾讯交叉源已有该日 →
+  「发布滞后豁免」（新浪港股个别标的收盘后延迟发布，实测可达数小时）；腾讯亦无 →
+  「尾部无行情豁免」（停牌）。落后 ≥2 个交易日且腾讯有更新仍判 FAIL（真缺失）。
+  豁免在验证明细中透明计数，不连坐全市场。
+- `market/macro_liquidity.json`（引擎C 宏观流动性指标，月频为主；已纳入增量合并
+  `_MERGEABLE`，增量窗口为空时旧值保留）。
 - 重置（数据全量重建）：
 
 ```bash
@@ -110,17 +177,22 @@ pnpm -C bff build && pnpm -C web build
 make test-e2e    # Playwright（T7.1：剧本 A/B + 409/429/401 分支）
 ```
 
-**当前实测结果**（PG 16 + Redis 7 就绪，`make migrate-local && make seed-local` 之后）：
+> ⚠️ **core pytest 会写/清默认库**（`.env` 的 `AP_DATABASE_URL` 指向的库）：`test_migrations.py`
+> 会 `drop_all` 全部表。存有真实 job/runs 历史的库请按 **§6.2 独立测试库** 跑，勿直接 `make test-core`。
+
+**当前实测结果**（2026-10-10，PG 16 + Redis 7 就绪，core 走 §6.2 独立库；
+含引擎组件化重构 T-R1~T-R12 总验收）：
 
 | 项 | 结果 |
 | --- | --- |
+| α 内核 `pytest tests/` | **226 passed**（T-R1~T-R11 各任务新增用例后递增） |
 | core `ruff check app tests` | 通过 |
-| core `pytest` | **163 passed / 1 skipped**（跳过项为需 `AP_NET_TESTS=1` 的外网用例） |
+| core `pytest` | **188 passed / 3 skipped**（跳过项为需 `AP_NET_TESTS=1` 的外网用例） |
 | bff `eslint` | 通过 |
-| bff `jest` | 9 suites / **39 passed** |
+| bff `jest` | 9 suites / **41 passed** |
 | bff `nest build` | 通过 |
 | web `eslint` | 通过 |
-| web `vitest` | 16 files / **86 passed** |
+| web `vitest` | 17 files / **100 passed** |
 | web `vite build` | 通过 |
 | core OpenAPI 契约快照 | 20 端点冻结，通过 |
 | `make test-e2e` | **7 passed**（夹具驱动，不依赖外网/后端） |
@@ -144,6 +216,45 @@ AP_E2E_CDP=launch make test-e2e
 用例全程由 `page.route` 拦截 `/api/**` 返回冻结夹具（`e2e/fixtures/api-mock.ts`），
 不依赖真实后端、MinIO 与外网；`webServer` 会自动拉起 `web`（`vite :8080`）。
 
+### 6.2 测试环境与数据库安全（2026-10-09 实测）
+
+**对共享 PG 有写入/破坏的测试面**（core 套件）：
+
+| 测试 / 夹具 | 行为 |
+| --- | --- |
+| `test_migrations.py` | `drop_all` **全部表**后往返重建——jobs/runs/verify_results/reviews/plans/exec_orders 全历史与用户自建 securities/portfolios **被清空** |
+| `test_gate.py` 的 unknown 用例 | 删除**全部** `data_sync` job 的 `verify_results`（构造无记录场景） |
+| `seeded` 夹具（sync/gate/seed/portfolios） | 幂等 upsert demo 数据（不清用户数据） |
+| `tracked` 夹具（多数文件） | 只清理本用例创建的行（安全） |
+
+影响范围仅 PG；workspace 文件（`var/ws`）与 MinIO 产物不受影响，但 DB 记录清空后
+产物入口会 404。bff / web / e2e 测试不连 PG，可放心跑。
+
+**顺序陷阱**：pytest 按文件名字典序执行，`test_migrations`（m）排在
+`test_backtest_api` / `test_data_status` / `test_exec_flow` 等之后——套件隐含
+「起跑时表已存在」前提（主库 `ap` 平时满足）。**空库不迁移直接跑套件会前半场
+`UndefinedTable` 失败（实测 28 个）**，必须先 `alembic upgrade head`。
+
+**安全跑法（推荐：独立测试库）**——环境变量优先于 `.env`，且 alembic `env.py` 与
+app 同源读取 `AP_DATABASE_URL`：
+
+```bash
+# 一次性：建库 + 建表
+su postgres -c "createdb -O ap ap_test"
+cd core && AP_DATABASE_URL=postgresql+psycopg://ap:ap@localhost:5432/ap_test \
+  ./.venv/bin/alembic upgrade head
+
+# 每次跑
+cd core && AP_DATABASE_URL=postgresql+psycopg://ap:ap@localhost:5432/ap_test \
+  PYTHONPATH=/workspace/alphapocket ./.venv/bin/python -m pytest -q
+```
+
+实测：独立库 **188 passed / 3 skipped**（与主库结果一致），主库 `ap` 的
+jobs/runs/verify_results 行数零变化。
+
+**已在主库跑过测试之后**：历史记录不可恢复（无备份时）；恢复演示态用
+`make seed-local`（seed 幂等）。
+
 ## 7. 云端映射（GA · 主方案 §14）
 
 | dev（compose） | 阿里云生产 |
@@ -162,6 +273,15 @@ AP_E2E_CDP=launch make test-e2e
 - **日频 EOD**：数据口径为日频收盘，满足不了日内实时预期（§4.1 已明示）。
 - **QDII 溢价**：跨境品种场内价可偏离净值，执行前须人工核对 IOPV 溢价。
 - **β 单用户**：审计 actor 固定为 `system`；多用户/权限待接入登录用户后替换（T5.2）。
+- **引擎C 口径限制**：美联储资产负债表/美国 M2/欧日央行表在免费源缺失，D1 以政策利率+CPI 近似、
+  US 的 D2 维度缺席（报告中透明登记）；引擎C 为市场级条件变量，不参与权重决策。
+- **指标新公式仍需代码实现（T-R 包）**：注册表只承载启停/参数/权重/锚点/维度归属；
+  `metric add` 的 `formula` 必须引用 `factors.py` 内置公式白名单——新公式本身仍需在
+  `factors.py` 实现并经测试（公式属代码，启停调参属配置）。
+- **锚点说明文案硬编码**：`report.py` 五维锚点的说明文案仍为硬编码文本，与 registry
+  `anchors` 可能漂移——改锚点时需同步文案。
+- **宏观指标无横截面回放**：`ap metric test --tool walkforward` 仅适用引擎A/B；
+  对 macro 引擎明确报错（引擎C 为市场级条件变量，无个股横截面可回放）。
 - 无券商/交易外发请求（代码评审 + 网络白名单确认）。
 
 ## 9. 引擎C 宏观流动性（运行口径 · T-C8 收尾）

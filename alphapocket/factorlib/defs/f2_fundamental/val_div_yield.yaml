@@ -1,0 +1,41 @@
+# M7 T-F2 估值族：股息率（近 12 月），PIT 红线写在 SQL 内
+id: val_div_yield
+name: 股息率TTM
+category: F2_fundamental
+factor_type: alpha
+engine: sql
+direction: high           # 高股息为超配（价值+红利溢价文献锚点）
+universe: [CN]
+inputs: [fl_daily_bar, fl_dividend]
+lookback_days: 0
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  股息率 = 近 12 月每股分红之和 / 收盘价。
+  - PIT：分红可用性以 announce_date <= 交易日 且 ex_date <= 交易日（已除息才计入，红线）；
+    上游缺公告日（announce NULL）→ 该条不纳入（PIT 无法验证，宁缺毋滥）；
+  - 窗口：ex_date ∈ (dt − 12 MONTH, dt]；期内无分红（dps12 = 0）→ 无有效暴露，NULL 不落行
+    （无分红≠股息率 0 的有效信号，宁缺毋滥）；
+  - 无报告期概念 → used_period/used_announce 为 NULL（量价引擎同款约定）；
+  - 假设：H-0010（高股息率截面未来 1-6 月收益占优）。
+formula: SUM(dps, 12M) / close
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0010
+sql: |
+  WITH dvd AS (
+      SELECT d.dt, d.secid, d.close,
+             COALESCE(SUM(v.dps), 0) AS dps12
+      FROM fl_daily_bar d
+      LEFT JOIN fl_dividend v
+        ON v.secid = d.secid AND v.announce_date IS NOT NULL AND v.announce_date <= d.dt
+       AND v.ex_date <= d.dt AND v.ex_date > d.dt - INTERVAL 12 MONTH
+      WHERE d.dt BETWEEN $start AND $end
+      GROUP BY d.dt, d.secid, d.close
+  )
+  SELECT dt, secid,
+         CASE WHEN close > 0 AND dps12 > 0 THEN dps12 / close END AS value,
+         NULL AS used_period, NULL AS used_announce
+  FROM dvd

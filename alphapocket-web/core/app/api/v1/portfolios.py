@@ -274,13 +274,14 @@ def archive_portfolio(pid: str, db: DbDep) -> PortfolioOut:
 def create_review(
     pid: str, db: DbDep, runner: RunnerDep, settings: SettingsDep
 ) -> JSONResponse:
-    """触发评估 job（§6.2）：前置数据门禁全绿（否则 409，不提交 job）→ 202 + job_id。
+    """触发评估 job（§6.2）→ 202 + job_id。
 
-    门禁通过后不重复检查数据缺口（缺口由 job 内 ``_ensure_gap`` 处理）。
+    数据门禁不阻断评估：最近一次 data_sync 六项验证非全绿时照常提交 job，
+    但在响应 ``data_risk``（及 job 落库的 ``runs.summary.data_risk``）中提示数据风险。
     """
     portfolio = _get_or_404(db, pid)
-    # 前置门禁（同步）：最近一次 data_sync 六项验证非全绿即 409
-    verification.gate_or_raise(db)
+    # 门禁不阻断：非全绿仅计算数据风险提示（缺口由 job 内 ``_ensure_gap`` 处理）
+    data_risk = verification.data_risk_of(verification.latest_verify_summary(db))
     job_id = runner.submit(
         type="review",
         params={"pid": pid},
@@ -291,5 +292,5 @@ def create_review(
     )
     return JSONResponse(
         status_code=202,
-        content={"job_id": job_id, "poll": f"/api/v1/jobs/{job_id}"},
+        content={"job_id": job_id, "poll": f"/api/v1/jobs/{job_id}", "data_risk": data_risk},
     )

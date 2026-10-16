@@ -1,0 +1,37 @@
+# M7 T-F3 质量族：资产负债率（负向因子），PIT 红线写在 SQL 内
+id: qua_debt_to_asset
+name: 资产负债率
+category: F2_fundamental
+factor_type: alpha
+engine: sql
+direction: low            # 负向：低杠杆（低财务风险）为超配
+universe: [CN]
+inputs: [fl_daily_bar, fl_fin_report]
+lookback_days: 0
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  资产负债率 = 总负债 LF / 总资产 LF（期末口径，无 TTM 概念）。
+  - PIT：announce_date <= 交易日（PIT 红线，篡改测试对象）；LF：同日多报告期可用时
+    取 period 最新（QUALIFY）；
+  - 总资产 ≤0 防御性置 NULL；总负债/总资产任一缺失 → 该报告期不参选；
+  - 注意：银行/保险高杠杆属商业模式，跨行业截面上本因子混入金融业态属已知局限，
+    由行业中性化/分层消费端处理（本层不做行业调整，如实声明）；
+  - 假设：H-0015（低杠杆截面未来 1-6 月收益占优）。
+formula: total_liab_LF / total_assets_LF
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0015
+sql: |
+  SELECT d.dt, d.secid,
+         CASE WHEN f.total_assets > 0
+              THEN f.total_liab / f.total_assets END AS value,
+         f.period AS used_period, f.announce_date AS used_announce
+  FROM fl_daily_bar d
+  JOIN fl_fin_report f
+    ON f.secid = d.secid AND f.announce_date <= d.dt
+   AND f.total_assets IS NOT NULL AND f.total_liab IS NOT NULL
+  WHERE d.dt BETWEEN $start AND $end
+  QUALIFY row_number() OVER (PARTITION BY d.dt, d.secid ORDER BY f.period DESC) = 1

@@ -18,6 +18,8 @@ import json
 import time
 from pathlib import Path
 
+from .engines.base import factor_entries, find_factor_entry
+
 HYP_REL = Path("hypothesis") / "registry.json"      # 相对 repo 根
 
 # 状态机：合法迁移（register 校验状态合法性；transition 校验迁移合法性）
@@ -29,7 +31,9 @@ STATUS_FLOW: dict[str, set[str]] = {
     "retired": set(),
 }
 DIRECTIONS = ("positive", "negative", "neutral")     # 预期方向
-SOURCE_TYPES = ("book", "report", "paper", "doc", "note")
+# T-F9（计划 10.4 E3）：+personal_clone——克隆自外部策略的候选来源；statement = 拆解依据，
+# source.ref = 来源策略名。「个人化」只影响来源标注，不影响任何门禁（同一 ①–⑦ 流水线）。
+SOURCE_TYPES = ("book", "report", "paper", "doc", "note", "personal_clone")
 HEALTHY_SAMPLE_EVERY = 5                             # healthy 因子 20% 抽查（每 5 取 1，确定性）
 MANDATORY_STATUS = ("weakening", "invalid")          # 触发必答复查的因子状态
 
@@ -71,7 +75,8 @@ def find(reg: dict, hid: str) -> dict | None:
 
 
 def factor_ref(factor_reg: dict, factor_id: str) -> dict | None:
-    return next((f for f in factor_reg.get("factors", []) if f.get("id") == factor_id), None)
+    """取因子条目**引用**（v1/v2 同构；写回随 factor_reg 落盘）——见 find_factor_entry。"""
+    return find_factor_entry(factor_reg, factor_id)
 
 
 # ── 登记（§5.1 模板最小字段）───────────────────────────
@@ -122,6 +127,45 @@ def register(reg: dict, payload: dict) -> dict:
     }
     reg.setdefault("hypotheses", []).append(item)
     return {"registered": True, "hypothesis": item}
+
+
+# ── personal_clone 通道（T-F9 / 计划 10.4 E3 策略克隆）─────────────────
+def personal_clone_register(repo: Path, factor_id: str, *, strategy: str, thesis: str,
+                            url: str | None = None, direction: str = "neutral",
+                            who: str = "cli") -> dict:
+    """外部策略克隆 → 候选登记（draft + 来源标注）：假设登记 + 注册面血缘绑定。
+
+    - 假设：source_type=personal_clone，source.ref=来源策略名，statement=拆解依据（必填）；
+    - 因子：状态文件写 hypothesis_id（factorlib.registry.bind_hypothesis）；
+    - **只登记，不碰任何门禁语义**——personal_clone 候选走完全相同的 ①–⑦ 流水线，
+      「个人化」不豁免任何关卡（计划 10.4 原文）；
+    - 前置：因子 YAML 定义已存在且 status=draft（候选先定义后登记，宁缺毋滥）。
+    """
+    if not str(strategy or "").strip():
+        return {"error": "来源策略必填（--from-strategy）：克隆自哪个外部策略"}
+    if not str(thesis or "").strip():
+        return {"error": "拆解依据必填（--thesis）：策略的因子化逻辑须写成可检验命题"}
+    from factorlib.registry import RegistryError, bind_hypothesis, load_factor
+    try:
+        meta = load_factor(repo, factor_id)
+    except RegistryError as e:
+        return {"error": f"因子定义不存在（先落 defs YAML 再登记）：{e}"}
+    if meta.status != "draft":
+        return {"error": f"因子 {factor_id} status={meta.status}，仅 draft 候选可走克隆登记"}
+    reg = load(repo)
+    payload = {"title": f"克隆策略候选：{factor_id}", "statement": thesis.strip(),
+               "source": {"type": "personal_clone", "ref": strategy.strip(), "url": url},
+               "expected_direction": direction, "linked_factors": [factor_id]}
+    res = register(reg, payload)
+    if "error" in res:
+        return res
+    save(repo, reg)
+    bind = bind_hypothesis(repo, factor_id, res["hypothesis"]["id"], who=who,
+                           why=f"personal_clone 登记：{strategy.strip()}")
+    return {"registered": True, "factor_id": factor_id, "factor_status": meta.status,
+            "hypothesis_id": res["hypothesis"]["id"], "status": res["hypothesis"]["status"],
+            "source": res["hypothesis"]["source"], "bound": bool(bind.get("bound")),
+            "path": str(Path(repo) / HYP_REL)}
 
 
 # ── 查询：血缘双向（§5.2）──────────────────────────────
@@ -233,7 +277,7 @@ def review_items(factor_reg: dict, reg: dict) -> dict:
         return hyps.get(f.get("hypothesis_id")) or back.get(f.get("id"))
 
     mandatory, actives = [], []
-    for f in factor_reg.get("factors", []):
+    for f in factor_entries(factor_reg):
         if f.get("status") in MANDATORY_STATUS:
             mandatory.append(_review_item("mandatory", f, hyp_of(f)))
         elif f.get("status") == "active":
@@ -279,6 +323,105 @@ def write_review(res: dict, art_dir: Path) -> dict:
     jp, mp = art_dir / "hypothesis_review.json", art_dir / "hypothesis_review.md"
     jp.write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
     mp.write_text(render_review_md(res), encoding="utf-8")
+    return {"json": str(jp), "md": str(mp)}
+
+
+# ── factorlib 侧假设复查（M5 T-L5 8.2）：与 α 侧并行，α 函数零改动 ──────
+def review_items_fl(repo: Path, hyp_reg: dict, health_rows: list[dict]) -> dict:
+    """factorlib 因子复查待答项（纯函数，dict 进 dict 出；本函数不读 DB）。
+
+    - health_rows 由巡检层传入：[{factor_id, health, hypothesis_id, reasons}]；
+    - 血缘解析：hypothesis_id → 假设登记表；空/悬空 → 待答项标「血缘悬空」
+      （本身即必答项——「无来源不激活」红线的运行时复查面）；
+    - mandatory：health ∈ (weakening, invalid) 或 血缘悬空；
+    - sample：health == healthy 按 id 排序每 HEALTHY_SAMPLE_EVERY 取 1（≈20% 抽查）；
+    - unknown：透明披露（不强制不抽查，数据缺口随巡检报告带出），不生成待答项；
+    - 输出与 α 侧 review_items 同构（generated/n_mandatory/n_sample/n_active/mandatory/sample）。
+    """
+    hyps = {h.get("id"): h for h in hyp_reg.get("hypotheses", [])}
+    names: dict[str, str] = {}
+    try:                                    # 因子名 best-effort（repo 无 defs 时回退 id）
+        from factorlib.registry import load_registry
+        names = {m.id: m.name for m in load_registry(repo)}
+    except Exception:
+        pass
+
+    mandatory: list[dict] = []
+    healthy: list[dict] = []
+    for r in sorted(health_rows or [], key=lambda x: str(x.get("factor_id"))):
+        fid = str(r.get("factor_id"))
+        health = r.get("health") or "unknown"
+        hid = r.get("hypothesis_id") or None
+        hyp = hyps.get(hid)
+        dangling = (hid is None) or (hyp is None)
+        item = {
+            "kind": None,                                   # mandatory | sample
+            "factor_id": fid,
+            "factor_name": names.get(fid, fid),
+            "health": health,
+            "hypothesis_id": hid,
+            "hypothesis_title": (hyp or {}).get("title"),
+            "hypothesis_status": (hyp or {}).get("status"),
+            "lineage_dangling": dangling,
+            "reasons": list(r.get("reasons") or []),
+            "question": ("假设仍成立吗？（血缘悬空：hypothesis_id 未绑定/不在登记表）"
+                         if dangling else "假设仍成立吗？"),
+            "action": None,
+        }
+        if health in MANDATORY_STATUS or dangling:
+            item["kind"] = "mandatory"
+            item["action"] = ("必答：因子已 weakening/invalid，复核假设并决定升版本/退役"
+                              + ("；血缘悬空须先补登记（无来源不激活）" if dangling else ""))
+            mandatory.append(item)
+        elif health == "healthy":
+            item["kind"] = "sample"
+            item["action"] = "抽查：healthy 因子按 20% 复核假设来源"
+            healthy.append(item)
+        # unknown / 其它：透明披露，不生成待答项
+    samples = [it for i, it in enumerate(healthy) if i % HEALTHY_SAMPLE_EVERY == 0]
+    return {"generated": _today(), "n_mandatory": len(mandatory), "n_sample": len(samples),
+            "n_active": len(healthy), "mandatory": mandatory, "sample": samples}
+
+
+def render_review_fl_md(res: dict) -> str:
+    """factorlib 复查 MD（与 α 侧 render_review_md 同风格；α 侧渲染函数不动）。"""
+    L = ["# 巡检 · 假设复查（factorlib · M5 T-L5 8.2）", "",
+         f"生成 `{res['generated']}` · healthy 抽查池 {res['n_active']} · "
+         + f"必答复查 {res['n_mandatory']} · 抽查 {res['n_sample']}", ""]
+    L.append("## 必答复查（weakening / invalid 或血缘悬空）")
+    L.append("")
+    if not res["mandatory"]:
+        L.append("（无 weakening/invalid/血缘悬空因子，无需必答复查）")
+    else:
+        L.append("| 因子 | health | 假设 | 血缘 | 触发原因 | 待答项 |")
+        L.append("| --- | --- | --- | --- | --- | --- |")
+        for it in res["mandatory"]:
+            L.append(f"| {it['factor_id']}（{it['factor_name']}） | {it['health']} "
+                     f"| {it['hypothesis_id'] or '—'} {it['hypothesis_title'] or '—'} "
+                     f"| {'⚠ 悬空' if it['lineage_dangling'] else '✓'} "
+                     f"| {'；'.join(it['reasons']) or '—'} | {it['question']} |")
+    L.append("")
+    L.append("## 抽查（healthy 因子每 5 取 1 ≈ 20%）")
+    L.append("")
+    if not res["sample"]:
+        L.append("（池内无 healthy 因子）")
+    else:
+        L.append("| 因子 | health | 假设 | 待答项 |")
+        L.append("| --- | --- | --- | --- |")
+        for it in res["sample"]:
+            L.append(f"| {it['factor_id']}（{it['factor_name']}） | {it['health']} "
+                     f"| {it['hypothesis_id'] or '—'} {it['hypothesis_title'] or '—'} "
+                     f"| {it['question']} |")
+    L.append("")
+    return "\n".join(L)
+
+
+def write_review_fl(res: dict, art_dir: Path) -> dict:
+    """factorlib 复查落盘（文件名与 α 侧 hp_review_* 区分：hypothesis_review_fl.*）。"""
+    art_dir.mkdir(parents=True, exist_ok=True)
+    jp, mp = art_dir / "hypothesis_review_fl.json", art_dir / "hypothesis_review_fl.md"
+    jp.write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
+    mp.write_text(render_review_fl_md(res), encoding="utf-8")
     return {"json": str(jp), "md": str(mp)}
 
 

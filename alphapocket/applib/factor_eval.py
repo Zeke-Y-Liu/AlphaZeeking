@@ -20,6 +20,7 @@ from pathlib import Path
 
 from . import backtest as BT
 from . import factors as F
+from .engines.base import factor_entries
 from .walkforward import _factor_value, _month_end_dates, _spearman
 
 INCR_THRESHOLD = 0.60      # 增量价值关：|ρ| < 0.6
@@ -59,7 +60,7 @@ def incremental_checks(base_meta: dict, factor_ids: list[str], registry: dict,
                        secids: list[str], bars: dict, fund: dict,
                        start: str | None = None, end: str | None = None) -> dict:
     """逐一核对新因子 vs 基准因子（默认 mom_12_1）的 |ρ| < 阈值。"""
-    meta_by = {f["id"]: f for f in registry.get("factors", [])}
+    meta_by = {f["id"]: f for f in factor_entries(registry)}
     rows = []
     for fid in factor_ids:
         meta = meta_by.get(fid)
@@ -118,7 +119,7 @@ def run_p1_eval(pids: list[str], bars: dict, fund: dict, registry: dict,
                 gate_damp: float = BT.GATE_DAMP_DEFAULT,
                 gate_redistribute: bool = False) -> dict:
     """P1 验收总装：增量相关（新 alpha 因子 vs mom_12_1）+ 组合级 A/B 条件门对照。"""
-    meta_by = {f["id"]: f for f in registry.get("factors", [])}
+    meta_by = {f["id"]: f for f in factor_entries(registry)}
     secids = [s for s, arr in bars.items() if arr]
     incr = incremental_checks(meta_by[INCR_BASE], P1_ALPHA_FACTORS, registry,
                               secids, bars, fund, start, end)

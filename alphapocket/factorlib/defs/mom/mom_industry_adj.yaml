@@ -1,0 +1,61 @@
+# 行业内相对动量（12-1）：个股 mom_12_1 − 申万一级行业截面中位数（PIT 行业）
+id: mom_industry_adj
+name: 行业调整12-1动量
+category: F1_technical
+factor_type: alpha
+engine: sql
+direction: high
+universe: [CN]
+inputs: [fl_daily_bar, fl_industry_sw]
+lookback_days: 252
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  个股 12-1 动量 − 所属申万一级行业当日截面中位数（JT 语义近端/远端，与 mom_12_1
+  同口径修正；中位数抗离群，非均值）。
+
+  行业 PIT（industry-asof）：ASOF JOIN fl_industry_sw 取 dt 之前最后一次调整的
+  l1_code（start_date ≤ dt；样本期内 41/51 标的存在真实行业变更，PIT 生效可验证）。
+
+  回退与披露（契约红线：禁止静默）：行业截面样本 <3 只（含无行业记录的标的）→
+  回退 mom_12_1 原值。回退行无法携带 flag 列（引擎输出列固定 dt/secid/value）→
+  披露通道 = 物化脚本按日统计回退计数落日志 + 专属测试断言「回退行 value 恒等于
+  同日 mom_12_1」；真实库披露当前 l1 分布中 n<3 的组（750000/270000 各 1 只）。
+
+  窗口不足 → None（lag 252 自然缺席）。量价豁免财务 PIT。
+sql: |
+  WITH px AS (
+      SELECT secid, dt, close,
+             lag(close, 21)  OVER (PARTITION BY secid ORDER BY dt) AS c21,
+             lag(close, 252) OVER (PARTITION BY secid ORDER BY dt) AS c252
+      FROM fl_daily_bar
+  ),
+  mom AS (
+      SELECT secid, dt, c21 / c252 - 1 AS m
+      FROM px
+      WHERE c21 IS NOT NULL AND c252 IS NOT NULL AND c252 > 0
+  ),
+  j AS (
+      SELECT m.dt, m.secid, m.m, i.l1_code
+      FROM mom m
+      ASOF LEFT JOIN fl_industry_sw i
+        ON i.secid = m.secid AND i.start_date <= m.dt
+      WHERE m.dt BETWEEN $start AND $end
+  ),
+  agg AS (
+      SELECT dt, l1_code, count(*) AS n, median(m) AS med
+      FROM j
+      WHERE l1_code IS NOT NULL
+      GROUP BY 1, 2
+  )
+  SELECT j.dt, j.secid,
+         CASE WHEN a.n >= 3 THEN j.m - a.med ELSE j.m END AS value,
+         CAST(NULL AS DATE) AS used_period,
+         CAST(NULL AS DATE) AS used_announce
+  FROM j
+  LEFT JOIN agg a ON a.dt = j.dt AND a.l1_code = j.l1_code
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0022

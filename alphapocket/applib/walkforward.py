@@ -25,6 +25,7 @@ from itertools import pairwise
 from pathlib import Path
 
 from . import factors as F
+from .engines.base import factor_entries, find_factor_entry
 
 # ── 切分配置（§4.1）────────────────────────────────────
 DEFAULT_CFG = {"train_min_months": 24, "valid_months": 6, "step_months": 6}
@@ -187,7 +188,7 @@ def run_validation(factor_id: str, bars: dict, fund: dict, registry: dict,
 
     机制已跑通；α 数据仅 2021 起，统计功效待 2016 起全量历史接入后补强（§8 风险）。
     """
-    meta = next((f for f in registry.get("factors", []) if f["id"] == factor_id), None)
+    meta = find_factor_entry(registry, factor_id)
     if meta is None:
         return {"error": f"因子未注册：{factor_id}"}
     secids = [s for s, arr in bars.items() if arr]
@@ -247,7 +248,7 @@ def audit_records(registry: dict, reports: list[dict]) -> dict:
     """四查纯函数（不依赖文件系统，便于注入测试）：
     ① 字段完备 ② 取数越界 ③ lockbox 一次性 ④ 折叠无重叠
     """
-    factors = registry.get("factors", [])
+    factors = factor_entries(registry)
     checks: dict[str, dict] = {}
 
     # ① 全部 active 因子带 validation.protocol

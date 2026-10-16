@@ -1,673 +1,477 @@
-"""引擎C T-C1 数据层测试（全密封，不触网）：carry_old 合并 / 增量防丢 / 透明降级 / provenance
+"""宏观流动性数据层测试（T-C1：fetch_macro_liquidity，离线合成，不触网）
 
-- 落盘与溯源：14 指标声明、11 实测命中 + HK 3 件套 H-0006 缺失恒降级
-- carry_old（红线4）：拉取失败/空窗口 → 旧数据零丢失，黑名单登记
-- union 合并：旧点全保留、同 dt 新值覆盖、缺值行跳过
-- 纪律标记：不决策（payload 无 signals 字段）、merge_policy=carry_old
+- 降级：伪 akshare 两接口抛异常 → 其余指标正常、失败指标 series=[] 且 meta 带 error
+- 解析：中文月标签/紧凑月标签 → 月末 ISO；rrr 升序重排；tsf 12 月滚动和；
+  cn_us_10y 同日相减；fed 今值缺失前值兜底；cpi 预期差 = 今值−预测值
+
 运行：``cd alphapocket && python -m pytest tests/test_macro_liquidity.py -q``
 """
 from __future__ import annotations
 
 import json
+import sys
+import types
 
-import pandas as pd
+import pytest
 
 from applib import datasource as DS
-from applib.ctx import Ctx
-
-
-# ── 密封夹具：各接口迷你帧（列名与 2026-10-11 实测契约一致）──────────────
-
-def _frames() -> dict:
-    return {
-        "macro_china_money_supply": pd.DataFrame(
-            [["2024年12月份", 7.3], ["2024年11月份", 7.1]],
-            columns=["月份", "货币和准货币(M2)-同比增长"]),
-        "macro_china_shrzgm": pd.DataFrame(
-            [["202412", 30000.0]], columns=["月份", "社会融资规模增量"]),
-        "macro_china_shibor_all": pd.DataFrame(
-            [["2024-12-30", 1.52], ["2024-12-31", 1.50], ["2024-12-29", None]],
-            columns=["日期", "1W-定价"]),
-        "macro_china_lpr": pd.DataFrame(
-            [["2024-12-20", 3.1]], columns=["TRADE_DATE", "LPR1Y"]),
-        "repo_rate_hist": pd.DataFrame(
-            [["2024-12-31", 1.48]], columns=["date", "FR007"]),
-        "bond_zh_us_rate": pd.DataFrame(
-            [["2024-12-30", 2.0, None, None],          # 美方缺值 → 利差跳过
-             ["2024-12-31", 1.9, 4.2, -0.1]],
-            columns=["日期", "中国国债收益率10年", "美国国债收益率10年", "美国国债收益率10年-2年"]),
-        "macro_bank_usa_interest_rate": pd.DataFrame(
-            [["美联储利率决议报告", "2024-12-18", 4.25, 4.25, 4.5],
-             ["美联储利率决议报告", "2025-01-29", None, None, 4.25]],   # 未来会议行 → dropna 跳过
-            columns=["商品", "日期", "今值", "预测值", "前值"]),
-        "macro_usa_cpi_yoy": pd.DataFrame(
-            [["2024-11-01", "2024-12-11", 2.7]], columns=["时间", "发布日期", "现值"]),
-        "macro_usa_non_farm": pd.DataFrame(
-            [["美国非农就业人数", "2024-12-06", 22.7]], columns=["商品", "日期", "今值"]),
-        "macro_usa_gdp_monthly": pd.DataFrame(
-            [["美国国内生产总值(GDP)", "2024-12-19", 3.1]], columns=["商品", "日期", "今值"]),
-    }
-
-
-def _fake_iface(frames, fail=(), empty=()):
-    """替换 _macro_call_iface：按接口名返回迷你帧；fail 注入异常；empty 注入空窗口"""
-    def fake(ak, spec, start, end, cache):
-        name = spec["interface"]
-        if name in fail:
-            raise RuntimeError(f"注入失败：{name}")
-        if name in empty:
-            return pd.DataFrame()
-        return frames[name]
-    return fake
-
-
-def _ctx(tmp_path) -> Ctx:
-    return Ctx(root=tmp_path)
-
-
-def _payload(tmp_path) -> dict:
-    return json.loads((tmp_path / "remote/repo/market/macro_liquidity.json").read_text())
-
-
-# ── 落盘与溯源（总验收 #1 基座）──────────────────────────────────────────
-
-def test_fetch_persists_with_provenance(tmp_path, monkeypatch):
-    monkeypatch.setattr(DS, "_macro_call_iface", _fake_iface(_frames()))
-    res = DS.fetch_macro_liquidity(_ctx(tmp_path), start="2024-01-01", end="2024-12-31")
-
-    assert res["fetched"] is True and res["merge_policy"] == "carry_old"
-    assert res["n_ok"] == 11 and res["n_unavailable"] == 3      # HK 3 件套缺失降级
-
-    payload = _payload(tmp_path)
-    inds = payload["indicators"]
-    assert len(inds) == 14 and all(v["institution"] for v in inds.values())
-    # 日期契约：中文月份 / 紧凑月份 / ISO 三种格式实测解析
-    assert inds["cn_m2_yoy"]["last_dt"] == "2024-12-01"
-    assert inds["cn_srzg"]["last_dt"] == "2024-12-01"
-    assert inds["lpr_1y"]["last_dt"] == "2024-12-20"
-    # 利差：美方缺值行跳过，仅两列齐备处产点
-    assert inds["cn_us_spread_10y"]["series"] == [{"dt": "2024-12-31", "value": -2.3}]
-    # 同源共享接口：美债 10Y-2Y 从缓存帧取数
-    assert inds["us_10y_2y"]["last_dt"] == "2024-12-31"
-    # 未来会议行（今值 NaN）dropna 跳过
-    assert inds["us_fed_rate"]["series"] == [{"dt": "2024-12-18", "value": 4.25}]
-    # 缺值行跳过（shibor 2024-12-29 为 None）
-    assert inds["shibor_1w"]["rows"] == 2
-    # 黑名单：仅 HK 资产缺失
-    assert {b["indicator"] for b in payload["blacklist"]} == {"hk_hibor_1m", "hk_hibor_3m", "hk_usdcnh"}
-    assert all(b["kind"] == "asset_missing" for b in payload["blacklist"])
-
-
-# ── carry_old（红线4：空窗口/拉取失败 → 旧数据完整保留）───────────────────
-
-def test_carry_old_on_fetch_failure(tmp_path, monkeypatch):
-    monkeypatch.setattr(DS, "_macro_call_iface", _fake_iface(_frames()))
-    first = DS.fetch_macro_liquidity(_ctx(tmp_path))
-    old_series = _payload(tmp_path)["indicators"]["cn_m2_yoy"]["series"]
-
-    monkeypatch.setattr(DS, "_macro_call_iface", _fake_iface(_frames(), fail=("macro_china_money_supply",)))
-    second = DS.fetch_macro_liquidity(_ctx(tmp_path))
-
-    ind = _payload(tmp_path)["indicators"]["cn_m2_yoy"]
-    assert ind["status"] == "carried_old" and ind["series"] == old_series   # 零丢失
-    assert second["n_carried_old"] == 1 and second["n_ok"] == 10
-    blk = [b for b in second["blacklist"] if b["indicator"] == "cn_m2_yoy"]
-    assert blk and blk[0]["kind"] == "upstream_fail" and blk[0]["reason"]
-
 
-def test_carry_old_on_empty_window(tmp_path, monkeypatch):
-    monkeypatch.setattr(DS, "_macro_call_iface", _fake_iface(_frames()))
-    DS.fetch_macro_liquidity(_ctx(tmp_path))
-    old_series = _payload(tmp_path)["indicators"]["lpr_1y"]["series"]
-
-    monkeypatch.setattr(DS, "_macro_call_iface", _fake_iface(_frames(), empty=("macro_china_lpr",)))
-    res = DS.fetch_macro_liquidity(_ctx(tmp_path))
-
-    ind = _payload(tmp_path)["indicators"]["lpr_1y"]
-    assert ind["status"] == "carried_old" and ind["series"] == old_series   # 空窗口不覆盖旧值
-    assert res["n_carried_old"] == 1
-
-
-def test_incremental_union_never_drops(tmp_path, monkeypatch):
-    """增量防丢：旧点全保留 + 同 dt 新值覆盖（点位修正）+ 新点追加"""
-    monkeypatch.setattr(DS, "_macro_call_iface", _fake_iface(_frames()))
-    DS.fetch_macro_liquidity(_ctx(tmp_path))
-    # 构造旧历史：两期 LPR
-    payload = _payload(tmp_path)
-    payload["indicators"]["lpr_1y"]["series"] = [
-        {"dt": "2024-10-21", "value": 3.1}, {"dt": "2024-11-20", "value": 3.1}]
-    (tmp_path / "remote/repo/market/macro_liquidity.json").write_text(
-        json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-
-    frames = _frames()
-    frames["macro_china_lpr"] = pd.DataFrame(
-        [["2024-11-20", 3.0], ["2024-12-20", 3.1]], columns=["TRADE_DATE", "LPR1Y"])
-    monkeypatch.setattr(DS, "_macro_call_iface", _fake_iface(frames))
-    DS.fetch_macro_liquidity(_ctx(tmp_path))
-
-    series = _payload(tmp_path)["indicators"]["lpr_1y"]["series"]
-    assert [r["dt"] for r in series] == ["2024-10-21", "2024-11-20", "2024-12-20"]  # 旧点未丢
-    assert series[0]["value"] == 3.1        # 旧点原值保留
-    assert series[1]["value"] == 3.0        # 同 dt 新值覆盖（修正）
-    assert _payload(tmp_path)["indicators"]["lpr_1y"]["status"] == "ok"
-
-
-# ── 透明降级（HK H-0006 / 全量失败不阻断）─────────────────────────────────
-
-def test_hk_unavailable_then_file_present(tmp_path, monkeypatch):
-    monkeypatch.setattr(DS, "_macro_call_iface", _fake_iface(_frames()))
-    res = DS.fetch_macro_liquidity(_ctx(tmp_path))          # hk_rates.json 缺失 → 不抛异常
-    assert res["indicators"]["hk_hibor_1m"]["status"] == "unavailable"
-
-    hk = tmp_path / "remote/repo/market/hk_rates.json"
-    hk.write_text(json.dumps({"hk_hibor_1m": [{"dt": "2024-12-31", "value": 4.8}]}), encoding="utf-8")
-    res2 = DS.fetch_macro_liquidity(_ctx(tmp_path))
-    assert res2["indicators"]["hk_hibor_1m"]["status"] == "ok"
-    assert res2["indicators"]["hk_hibor_1m"]["last_dt"] == "2024-12-31"
-    assert res2["indicators"]["hk_hibor_3m"]["status"] == "unavailable"     # 其余两件仍降级
-
-
-def test_all_fail_full_degrade_no_exception(tmp_path, monkeypatch):
-    every = ("macro_china_money_supply", "macro_china_shrzgm", "macro_china_shibor_all",
-             "macro_china_lpr", "repo_rate_hist", "bond_zh_us_rate",
-             "macro_bank_usa_interest_rate", "macro_usa_cpi_yoy",
-             "macro_usa_non_farm", "macro_usa_gdp_monthly")
-    monkeypatch.setattr(DS, "_macro_call_iface", _fake_iface(_frames(), fail=every))
-    res = DS.fetch_macro_liquidity(_ctx(tmp_path))          # 全失败 → 文件照常落盘，不抛异常
 
-    assert res["n_ok"] == 0 and res["n_unavailable"] == 14 and len(res["blacklist"]) == 14
-    payload = _payload(tmp_path)
-    assert payload["dataset"] == "macro_liquidity"
-    assert all(v["series"] == [] for v in payload["indicators"].values())   # 无旧可保 → 空序列
+class _DF:
+    """最小 DataFrame 替身：iterrows() + columns（datasource 只用到这两者）"""
+
+    def __init__(self, rows):
+        self._rows = rows
+        self.columns = list(rows[0].keys()) if rows else []
+
+    def iterrows(self):
+        return list(enumerate(self._rows))
+
+
+def _fake_akshare(raise_on=()):
+    """伪 akshare：12 接口的最小返回；raise_on 中的接口抛异常。"""
+    m = types.ModuleType("akshare")
+
+    def _guard(name, df):
+        if name in raise_on:
+            raise RuntimeError(f"upstream {name} down")
+        return df
+
+    m.macro_china_money_supply = lambda: _guard("m2", _DF([
+        {"月份": "2026年08月份", "货币和准货币(M2)-同比增长": 6.3},
+        {"月份": "2026年09月份", "货币和准货币(M2)-同比增长": 6.8},
+    ]))
+    m.macro_china_shrzgm = lambda: _guard("tsf", _DF(
+        [{"月份": f"2025{i:02d}", "社会融资规模增量": 1000.0} for i in range(1, 13)]
+        + [{"月份": "202601", "社会融资规模增量": 2000.0}]))
+    m.rate_interbank = lambda **kw: _guard("shibor", _DF([
+        {"报告日": "2026-10-08", "利率": 1.85},
+    ]))
+    m.macro_china_lpr = lambda: _guard("lpr", _DF([
+        {"TRADE_DATE": "2026-09-20", "LPR1Y": 3.0},
+    ]))
+    m.macro_china_reserve_requirement_ratio = lambda: _guard("rrr", _DF([
+        {"生效时间": "2026年05月15日", "大型金融机构-调整后": 9.0},      # 新→旧（尾部最老）
+        {"生效时间": "2025年01月01日", "大型金融机构-调整后": 9.5},
+    ]))
+    m.bond_zh_us_rate = lambda: _guard("bond", _DF([
+        {"日期": "2026-10-08", "美国国债收益率10年": 4.1, "中国国债收益率10年": 1.8,
+         "美国国债收益率10年-2年": 0.35},
+        {"日期": "2026-10-09", "美国国债收益率10年": None, "中国国债收益率10年": 1.75,
+         "美国国债收益率10年-2年": 0.40},
+    ]))
+    m.macro_bank_usa_interest_rate = lambda: _guard("fed", _DF([
+        {"日期": "2026-10-08", "今值": 4.0, "前值": 4.25},
+        {"日期": "2026-10-09", "今值": None, "前值": 4.0},              # 今值缺失 → 前值兜底
+    ]))
+    m.macro_usa_cpi_yoy = lambda: _guard("cpiyoy", _DF([
+        {"时间": "2026-07-01", "发布日期": "2026-08-12", "现值": 3.5, "前值": 3.4},
+        {"时间": "2026-08-01", "发布日期": "2026-09-11", "现值": None, "前值": 3.5},  # 未发布 → 过滤
+    ]))
+    m.macro_usa_cpi_monthly = lambda: _guard("cpi", _DF([
+        {"商品": "美国CPI月率", "日期": "2026-09-30", "今值": 0.3, "预测值": 0.2},
+    ]))
+    m.macro_usa_non_farm = lambda: _guard("nonfarm", _DF([
+        {"商品": "美国非农就业人数", "日期": "2026-10-03", "今值": 13.9, "预测值": 12.6},
+    ]))
+    m.macro_usa_gdp_monthly = lambda: _guard("gdp", _DF([
+        {"商品": "美国国内生产总值(GDP)", "日期": "2026-09-30", "今值": 2.1, "预测值": None},
+    ]))
+    return m
+
+
+@pytest.fixture
+def patched_datasource(monkeypatch):
+    monkeypatch.setattr(DS, "_retry", lambda fn, n=3, wait=2.0: fn())   # 去退避等待
+
+
+def test_fetch_degrades_gracefully(monkeypatch, patched_datasource):
+    """两接口抛异常 → 绝不抛出；失败指标空序列+meta error；其余按契约解析。"""
+    monkeypatch.setitem(sys.modules, "akshare", _fake_akshare(raise_on=("m2", "nonfarm")))
+    out = DS.fetch_macro_liquidity(start_date="2025-01-01")
+
+    # 失败指标：series 为 [] 且 meta 带 error（函数未抛异常即通过前半）
+    assert out["series"]["m2_yoy"] == [] and "error" in out["meta"]["m2_yoy"]
+    assert out["series"]["us_nonfarm"] == [] and "error" in out["meta"]["us_nonfarm"]
+    assert len(out["series"]) == 15 and len(out["meta"]) == 15
+
+    # tsf：12 月滚动和（2025-12=12000；2026-01 窗口 2025-02..2026-01=11×1000+2000=13000）
+    assert out["series"]["tsf_new_12m"] == [{"dt": "2025-12-31", "v": 12000.0},
+                                            {"dt": "2026-01-31", "v": 13000.0}]
+    # rrr：原表新→旧 → 升序重排；中文日期解析
+    assert out["series"]["rrr_big"] == [{"dt": "2025-01-01", "v": 9.5},
+                                        {"dt": "2026-05-15", "v": 9.0}]
+    # cn_us_10y：同日相减（4.1−1.8）；第二行美债 NaN 跳过
+    assert out["series"]["cn_us_10y"] == [{"dt": "2026-10-08", "v": 2.3}]
+    # us_10y_2y：直取列，NaN 行跳过
+    assert out["series"]["us_10y_2y"] == [{"dt": "2026-10-08", "v": 0.35},
+                                          {"dt": "2026-10-09", "v": 0.40}]
+    # fed：今值缺失 → 前值兜底
+    assert out["series"]["fed_target"] == [{"dt": "2026-10-08", "v": 4.0},
+                                           {"dt": "2026-10-09", "v": 4.0}]
+    # cpi：同比独立接口（现值，未发布行过滤）；预期差 = 月率 今值−预测值
+    assert out["series"]["us_cpi_yoy"] == [{"dt": "2026-07-01", "v": 3.5}]
+    assert out["series"]["us_cpi_surprise"] == [{"dt": "2026-09-30", "v": 0.1}]
+    assert out["series"]["us_gdp_qoq"] == [{"dt": "2026-09-30", "v": 2.1}]
+    assert out["series"]["shibor_1m"] == [{"dt": "2026-10-08", "v": 1.85}]
+    assert out["series"]["lpr_1y"] == [{"dt": "2026-09-20", "v": 3.0}]
+    # as_of = 全序列最大 dt；顶层无 error（仍有 10 指标成功）
+    assert out["as_of"] == "2026-10-09"
+    assert out["error"] is None
+
+
+def test_fetch_all_fail_degrades(monkeypatch, patched_datasource):
+    """全部接口失败 → 顶层 error 登记且不抛异常。"""
+    monkeypatch.setitem(sys.modules, "akshare", _fake_akshare(
+        raise_on=("m2", "tsf", "shibor", "lpr", "rrr", "bond", "fed",
+                  "cpiyoy", "cpi", "nonfarm", "gdp")))
+    out = DS.fetch_macro_liquidity()
+    assert all(not v for v in out["series"].values())
+    assert out["as_of"] is None and out["error"] and "全部拉取失败" in out["error"]
+
+
+def test_fetch_month_regex():
+    """月标签解析：中文/紧凑 → 月末 ISO；非法输入 → None。"""
+    assert DS._month_end_cn("2026年09月份") == "2026-09-30"
+    assert DS._month_end_cn("202603") == "2026-03-31"
+    assert DS._month_end_cn("2026年12月份") == "2026-12-31"      # 跨年月
+    assert DS._month_end_cn("garbage") is None
+    assert DS._cn_date("2007年02月25日") == "2007-02-25"
+    assert DS._cn_date("2026年5月15日") == "2026-05-15"          # 非零填充
+    assert DS._cn_date("n/a") is None
+
+
+# ── 计算层：compute_macro_liquidity（T-C2，纯函数合成数据）──────
+import datetime as _d
 
-
-def test_all_fail_with_old_carry(tmp_path, monkeypatch):
-    monkeypatch.setattr(DS, "_macro_call_iface", _fake_iface(_frames()))
-    DS.fetch_macro_liquidity(_ctx(tmp_path))
-    old = _payload(tmp_path)
-
-    every = ("macro_china_money_supply", "macro_china_shrzgm", "macro_china_shibor_all",
-             "macro_china_lpr", "repo_rate_hist", "bond_zh_us_rate",
-             "macro_bank_usa_interest_rate", "macro_usa_cpi_yoy",
-             "macro_usa_non_farm", "macro_usa_gdp_monthly")
-    monkeypatch.setattr(DS, "_macro_call_iface", _fake_iface(_frames(), fail=every))
-    DS.fetch_macro_liquidity(_ctx(tmp_path))
-    new = _payload(tmp_path)
-
-    carried = [sid for sid, v in new["indicators"].items() if v["status"] == "carried_old"]
-    assert sorted(carried) == sorted(sid for sid, v in old["indicators"].items() if v["series"])
-    # 逐指标零丢失核对（增量防丢判定口径：同步前后逐项 diff 一致）
-    for sid in carried:
-        assert new["indicators"][sid]["series"] == old["indicators"][sid]["series"]
-
-
-# ── 解析器与纪律标记 ─────────────────────────────────────────────────────
-
-def test_month_parsers():
-    assert DS._macro_month_cn("2008年02月份") == "2008-02-01"
-    assert DS._macro_month_cn("2024年12月份") == "2024-12-01"
-    assert DS._macro_month_cn("bad") is None
-    assert DS._macro_month_compact("202603") == "2026-03-01"
-    assert DS._macro_month_compact("202412") == "2024-12-01"
-    assert DS._macro_month_compact("2024-12") is None      # 非紧凑格式拒绝
-
-
-def test_dedup_last_wins(tmp_path, monkeypatch):
-    frames = _frames()
-    frames["macro_china_lpr"] = pd.DataFrame(
-        [["2024-12-20", 3.0], ["2024-12-20", 3.1]],       # 同 dt 两行 → 后值覆盖
-        columns=["TRADE_DATE", "LPR1Y"])
-    monkeypatch.setattr(DS, "_macro_call_iface", _fake_iface(frames))
-    DS.fetch_macro_liquidity(_ctx(tmp_path))
-    assert _payload(tmp_path)["indicators"]["lpr_1y"]["series"] == [{"dt": "2024-12-20", "value": 3.1}]
-
-
-def test_discipline_markers(tmp_path, monkeypatch):
-    monkeypatch.setattr(DS, "_macro_call_iface", _fake_iface(_frames()))
-    DS.fetch_macro_liquidity(_ctx(tmp_path))
-    text = (tmp_path / "remote/repo/market/macro_liquidity.json").read_text()
-    payload = json.loads(text)
-    assert payload["merge_policy"] == "carry_old"
-    assert payload["discipline"]["decision_free"] is True
-    assert "signals" not in text and '"signal"' not in text   # 不决策 grep 红线（数据层无信号字段）
-    assert all(payload["indicators"][sid]["institution"]
-               for sid in ("cn_m2_yoy", "us_fed_rate", "hk_hibor_1m"))  # provenance 机构名
-
-
-# ══ 引擎C T-C2 计算层（纯函数，全密封）═════════════════════════════════════
-
-import datetime as _dt
-
-from applib.factors import (MACRO_BAND_HI, MACRO_MIN_DAILY, MACRO_MIN_MONTHLY,
-                            compute_macro_liquidity)
-
-
-def _monthly(values, y0=2024, m0=1) -> list[dict]:
-    dts, y, m = [], y0, m0
-    for _ in values:
-        dts.append(f"{y:04d}-{m:02d}-01")
-        m += 1
-        if m > 12:
-            y, m = y + 1, 1
-    return [{"dt": d, "value": v} for d, v in zip(dts, values)]
-
-
-def _daily(values, base=_dt.date(2025, 6, 15) - _dt.timedelta(days=59)) -> list[dict]:
-    """默认尾部对齐 AS_OF（2025-06-15）→ 日度最新点不 stale（path=ok）。"""
-    return [{"dt": (base + _dt.timedelta(days=i)).isoformat(), "value": v}
-            for i, v in enumerate(values)]
-
-
-def _ind(sid, market, dim, series, *, value=None) -> dict:
-    return {"market": market, "dim": dim, "name": sid, "unit": "%", "institution": "测试机构",
-            "interface": "test", "status": "ok", "rows": len(series),
-            "first_dt": series[0]["dt"] if series else None,
-            "last_dt": series[-1]["dt"] if series else None,
-            "series": value if value is not None else series}
-
-
-AS_OF = "2025-06-15"          # 组合 K 线最后交易日（调用方传入，PIT 不取未来）
-
-
-# ── scorer 表四路径：方向 / 阈值触发 / 阈值跳平 / 回退 ─────────────────────
-
-def test_scorer_four_paths():
-    from applib.factors import _macro_scorer
-    meta = {"id": "x", "name": "x", "market": "A", "dim": "D3"}
-
-    # 触发（极端分位）：12 个月度点，当前值最高 → p≈0.96 → |score|>=HI → 极端档
-    up = _monthly(list(range(1, 13)))
-    loose = _macro_scorer({**meta, "id": "cn_m2_yoy"}, up, "2025-01-10")     # dir=+1
-    assert loose["path"] == "ok" and loose["level"] == 2 and loose["score"] >= MACRO_BAND_HI
-    tight = _macro_scorer({**meta, "id": "shibor_1w"}, up, "2025-01-10")     # dir=-1 同分位反转
-    assert tight["score"] <= -MACRO_BAND_HI and tight["level"] == -2
-    assert loose["score"] == -tight["score"]                                 # 方向路径：镜像
-
-    # 跳平（中位）：当前值在窗口中位（4.5：<4.5 有 4 个，==有 1 个 → p=4.5/9=0.5）→ 0 档
-    flat = _macro_scorer({**meta, "id": "cn_m2_yoy"},
-                         _monthly([1, 2, 3, 4, 5, 6, 7, 8, 4.5]), "2024-10-10")
-    assert flat["pctile"] == 0.5 and flat["level"] == 0 and flat["score"] == 0.0
-
-    # 回退（样本不足）：月度 5 点 < MACRO_MIN_MONTHLY → 0 档 insufficient
-    few = _macro_scorer({**meta, "id": "cn_m2_yoy"}, _monthly([1, 2, 3, 4, 5]), "2024-06-10")
-    assert few["path"] == "insufficient" and few["level"] == 0 and few["score"] is None
-
-    # 无数据：HK 缺资产 → no_data
-    nd = _macro_scorer({**meta, "id": "hk_hibor_1m"}, [], AS_OF)
-    assert nd["path"] == "no_data" and nd["level"] is None
-
-
-def test_scorer_double_period_ranking():
-    """新+旧双期排位：先升后降序列，cur=65/prev=75 的窗口分位手工可复算。"""
-    from applib.factors import _macro_scorer
-    meta = {"id": "cn_m2_yoy", "name": "M2同比", "market": "A", "dim": "D2"}
-    vals = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120,
-            115, 105, 95, 85, 75, 65, 55, 45, 35, 25, 15, 5]
-    # as_of=2025-06-10 → 月度可用 2024-01..2025-05 = 前 17 点，cur=vals[16]=75，prev=85
-    sc = _macro_scorer(meta, _monthly(vals), "2025-06-10")
-    # cur 窗口=[60..75]（12 点）→ #(<75)=2 (60,70) → p=2.5/12
-    assert sc["pctile"] == round(2.5 / 12, 4)
-    # prev 窗口=[50..85]（12 点）→ #(<85)=4 (50,60,70,80) → p=4.5/12
-    assert sc["prev_pctile"] == round(4.5 / 12, 4)
-    assert sc["prev_pctile"] > sc["pctile"]       # 下降段：前期排位高于当前
-
-
-def test_monthly_lookahead_guard():
-    """月度前值站位防前视：as_of 当月的站位点不可用 → 用上月值；日度不取 as_of 之后。"""
-    from applib.factors import _macro_scorer
-    meta = {"id": "cn_m2_yoy", "name": "M2同比", "market": "A", "dim": "D2"}
-    series = _monthly([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], y0=2024)   # 2024-01..2024-12
-    sc = _macro_scorer(meta, series, "2025-02-15")
-    assert sc["cur_dt"] == "2024-12-01"           # 站位到最近可用月（2025-01 点位不存在于序列）
-    series_with_cur = series + [{"dt": "2025-02-01", "value": 99.0}]      # 当月点已落库（假想）
-    sc2 = _macro_scorer(meta, series_with_cur, "2025-02-15")
-    assert sc2["cur_dt"] == "2024-12-01" and sc2["cur_value"] == 12.0     # 当月点被 PIT 过滤
-
-    dmeta = {"id": "shibor_1w", "name": "Shibor", "market": "A", "dim": "D3"}
-    ds = _daily([1.0 + 0.01 * i for i in range(60)], base=_dt.date(2025, 1, 1))  # 至 2025-03-01
-    dsc = _macro_scorer(dmeta, ds, "2025-02-15")
-    assert dsc["cur_dt"] == "2025-02-15"          # 日度严格 dt<=as_of，不取未来
-
-
-def test_stale_marks_carried_prev():
-    """前值站位滞后标注：月度最新可用点早于上一月 → carried_prev + stale。"""
-    from applib.factors import _macro_scorer
-    meta = {"id": "cn_m2_yoy", "name": "M2同比", "market": "A", "dim": "D2"}
-    series = _monthly([1, 2, 3, 4, 5, 6, 7, 8, 9], y0=2024)               # 至 2024-09-01
-    sc = _macro_scorer(meta, series, "2025-01-10")
-    assert sc["path"] == "carried_prev" and sc["stale"] is True
-    assert sc["cur_dt"] == "2024-09-01"           # 站位到四个月前旧值
-
-
-# ── 缺值归一化（缺维度不折损）与冻结契约 ──────────────────────────────────
-
-def _full_indicators(hk_mode="none") -> dict:
-    """构造 A(4 指标 2 维)/US(2 指标 2 维)/HK 场景的 indicators 字典（形状对齐 T-C1 产物）。"""
-    a = {
-        "cn_m2_yoy": _ind("cn_m2_yoy", "A", "D2", _monthly(list(range(1, 25)))),
-        "cn_srzg": _ind("cn_srzg", "A", "D2", _monthly([100 + i for i in range(24)])),
-        "shibor_1w": _ind("shibor_1w", "A", "D3", _daily([1.0 + 0.01 * i for i in range(120)])),
-        "lpr_1y": _ind("lpr_1y", "A", "D3", _daily([3.0 + 0.01 * i for i in range(120)])),
-    }
-    us = {
-        "us_fed_rate": _ind("us_fed_rate", "US", "D1", _daily([5.0 - 0.01 * i for i in range(120)])),
-        "us_10y_2y": _ind("us_10y_2y", "US", "D3", _daily([0.5 + 0.01 * i for i in range(120)])),
-    }
-    if hk_mode == "partial":     # HK 仅 D3 一维可用（D4 缺）→ 缺维度不折损
-        hk = {"hk_hibor_1m": _ind("hk_hibor_1m", "HK", "D3", _daily([4.0 + 0.01 * i for i in range(120)])),
-              "hk_hibor_3m": _ind("hk_hibor_3m", "HK", "D3", []),
-              "hk_usdcnh": _ind("hk_usdcnh", "HK", "D4", [])}
-    elif hk_mode == "full":
-        hk = {"hk_hibor_1m": _ind("hk_hibor_1m", "HK", "D3", _daily([4.0 + 0.01 * i for i in range(120)])),
-              "hk_hibor_3m": _ind("hk_hibor_3m", "HK", "D3", _daily([4.5 + 0.01 * i for i in range(120)])),
-              "hk_usdcnh": _ind("hk_usdcnh", "HK", "D4", _daily([7.8 - 0.001 * i for i in range(120)]))}
-    else:
-        hk = {"hk_hibor_1m": _ind("hk_hibor_1m", "HK", "D3", []),
-              "hk_hibor_3m": _ind("hk_hibor_3m", "HK", "D3", []),
-              "hk_usdcnh": _ind("hk_usdcnh", "HK", "D4", [])}
-    return {**a, **us, **hk}
-
-
-def test_missing_dimension_normalization():
-    """HK 仅 D3 可用 → HK 档位由该维决定（缺维度不折损已知维度）并标注路径。"""
-    out = compute_macro_liquidity(_full_indicators(hk_mode="partial"), AS_OF)
-    assert out["markets"]["HK"] in (-2, -1, 0, 1, 2)          # 非 unavailable（部分维度即可判）
-    d3 = [v for v in out["detail"]["indicators"].values()
-          if v["market"] == "HK" and v["dim"] == "D3"]
-    d4 = [v for v in out["detail"]["indicators"].values()
-          if v["market"] == "HK" and v["dim"] == "D4"]
-    # D3 维部分可用（1m ok、3m no_data）→ 维内均值只取可用项；D4 全缺
-    assert any(v["path"] in ("ok", "carried_prev") for v in d3)
-    assert all(v["path"] in ("ok", "carried_prev") for v in d3 if v["score"] is not None)
-    assert all(v["path"] == "no_data" for v in d4)
-    # HK 档位 == D3 可用项均值档（单可用项等价于直接映射）
-    assert out["markets"]["HK"] == next(v["level"] for v in d3 if v["score"] is not None)
-
-
-def test_frozen_contract_and_idempotent():
-    out1 = compute_macro_liquidity(_full_indicators(hk_mode="full"), AS_OF)
-    out2 = compute_macro_liquidity(_full_indicators(hk_mode="full"), AS_OF)
-    assert out1 == out2                                        # 幂等重算一致（纯函数）
-
-    for key in ("state", "global", "markets", "global_score", "as_of"):
-        assert key in out1                                     # 冻结契约五键
-    assert out1["as_of"] == AS_OF
-    assert set(out1["markets"]) == {"A", "HK", "US"}
-    assert out1["global"] in (-2, -1, 0, 1, 2)
-    assert -1.0 <= out1["global_score"] <= 1.0
-    assert out1["state"] in ("neutral", "偏松", "偏紧", "unavailable")
-    for lvl in out1["markets"].values():                       # 输出位范围约束
-        assert lvl in (-2, -1, 0, 1, 2, "unavailable")
-    assert "signals" not in json.dumps(out1, ensure_ascii=False)   # 不决策 grep 红线
-    assert out1["detail"]["bands"]["window_monthly"] == 12     # scorer 表参数可追溯
-
-
-def test_state_machine_tokens():
-    # 偏松：A/US 全部构造为「值越走越松」→ score>=HI
-    out = compute_macro_liquidity(_full_indicators(hk_mode="full"), AS_OF)
-    if out["global_score"] is not None and out["global_score"] >= MACRO_BAND_HI:
-        assert out["state"] == "偏松"
-    # 全缺数据 → unavailable
-    empty = {sid: _ind(sid, m, d, []) for sid, m, d in
-             [("cn_m2_yoy", "A", "D2"), ("us_fed_rate", "US", "D1"), ("hk_hibor_1m", "HK", "D3")]}
-    out2 = compute_macro_liquidity(empty, AS_OF)
-    assert out2["state"] == "unavailable" and out2["global"] == "unavailable"
-    assert out2["global_score"] is None and out2["markets"] == {"A": "unavailable",
-                                                                "HK": "unavailable",
-                                                                "US": "unavailable"}
-
-
-def test_all_insufficient_marks_markets_unavailable():
-    """全部样本不足（回退路径）→ 指标 0 档 insufficient，市场 unavailable（不虚报中性）。"""
-    few = {sid: _ind(sid, m, d, _monthly([1, 2, 3]) if m != "US" else _daily([1.0, 2.0]))
-           for sid, m, d in [("cn_m2_yoy", "A", "D2"), ("us_fed_rate", "US", "D1"),
-                             ("hk_hibor_1m", "HK", "D3")]}
-    out = compute_macro_liquidity(few, AS_OF)
-    assert all(v["path"] == "insufficient" and v["level"] == 0
-               for v in out["detail"]["indicators"].values())
-    assert set(out["markets"].values()) == {"unavailable"}
-    assert out["state"] == "unavailable"
-
-
-def test_min_windows_constants():
-    assert MACRO_MIN_MONTHLY == 6 and MACRO_MIN_DAILY == 20 and MACRO_BAND_HI == 0.6
-
-
-# ══ 引擎C T-C3 工具层（只读面：factor.macro + ap macro）════════════════════
-
-from applib import cli as CLI
-from applib import tools as TL
 from applib import factors as F
 
 
-def _seed_macro_repo(tmp_path) -> Ctx:
-    """在 tmp sandbox/repo 落一份 macro_liquidity.json（密封 fixture，HK 缺资产降级）。"""
-    ctx = _ctx(tmp_path)
-    d = ctx.local_repo / "market"
+def _mk(key, vals, dt_start="2026-01-01", freq="D"):
+    """构造 {key: [{dt, v}]}：日/月频升序合成序列（月频取每月 1 日）。"""
+    cur = _d.date.fromisoformat(dt_start)
+    rows = []
+    for v in vals:
+        rows.append({"dt": cur.isoformat(), "v": v})
+        if freq == "M":
+            cur = _d.date(cur.year + (cur.month == 12), 1 if cur.month == 12 else cur.month + 1, 1)
+        else:
+            cur += _d.timedelta(days=1)
+    return {key: rows}
+
+
+def test_compute_easy_regime():
+    """A 市场全宽松合成（M2 上行+RRR 降+Shibor 低位）→ level == 2。"""
+    series = {}
+    series.update(_mk("m2_yoy", [5.0, 5.5, 6.0, 6.5], "2026-06-01", "M"))            # +1（打满）
+    series.update(_mk("tsf_new_12m", [200000.0, 210000.0, 220000.0, 230000.0], "2026-06-01", "M"))
+    series.update(_mk("rrr_big", [10.5, 10.0, 9.5, 9.0], "2026-06-01", "M"))         # 降准 → +1
+    series.update(_mk("shibor_1m", [2.0 - 0.025 * i for i in range(25)], "2026-09-01"))  # 低位 → +0.96
+    series.update(_mk("lpr_1y", [3.5, 3.5, 3.0, 3.0], "2026-06-01", "M"))            # 降 → +1
+    series.update(_mk("cn_us_10y", [3.0, 3.0, 3.0], "2026-09-01"))                   # +1
+    r = F.compute_macro_liquidity(series)
+    a = r["markets"]["A"]
+    assert a["level"] == 2 and a["score"] > 0.6
+    assert a["dims"]["D1"]["score"] == 1.0
+    assert a["dims"]["D2"]["n_used"] == 2 and a["dims"]["D2"]["n_total"] == 2
+    assert r["indicators"]["A"]["rrr_big"]["value"] == 9.0
+    assert r["global"]["level"] == 2 and r["global"]["state"] in ("neutral", "easy_froth")
+
+
+def test_compute_tight_stress():
+    """D1 强紧（RRR 升+fed 升）且全维度负 → global state == tight_stress。"""
+    series = {}
+    series.update(_mk("rrr_big", [8.0, 8.5, 9.0, 9.5], "2026-06-01", "M"))           # 升准 → −1
+    series.update(_mk("m2_yoy", [7.0, 6.5, 6.0, 5.5], "2026-06-01", "M"))            # −1
+    series.update(_mk("tsf_new_12m", [260000.0, 250000.0, 240000.0, 230000.0], "2026-06-01", "M"))
+    series.update(_mk("shibor_1m", [1.4 + 0.025 * i for i in range(25)], "2026-09-01"))  # 高位 → −0.96
+    series.update(_mk("lpr_1y", [3.0, 3.0, 3.5, 3.5], "2026-06-01", "M"))            # 升 → −1
+    series.update(_mk("cn_us_10y", [-3.0, -3.0, -3.0], "2026-09-01"))                # −1
+    series.update(_mk("fed_target", [4.0, 4.25, 4.5, 5.0], "2026-06-01", "M"))       # 加息 → −1
+    series.update(_mk("us_cpi_surprise", [0.3, 0.3], "2026-09-01"))                  # 超预期 → −1
+    series.update(_mk("us_10y_2y", [0.2 + 0.1 * i for i in range(11)], "2026-09-01"))  # 倒挂加剧高位
+    r = F.compute_macro_liquidity(series)
+    assert r["markets"]["A"]["level"] == -2
+    assert r["markets"]["US"]["dims"]["D1"]["score"] == -1.0
+    assert r["markets"]["HK"] == {"status": "unavailable"}                           # 未给 hk_series
+    assert r["global"]["level"] == -2 and r["global"]["state"] == "tight_stress"
+    assert r["notes"] == ["D1 以政策利率+CPI 近似（个人版口径限制）", "US D2 维度缺席（免费源缺失）"]
+
+
+def test_compute_dim_missing_drops_denominator():
+    """shibor 空序列 → D3 n_used==1/n_total==2，维度分只用 lpr。"""
+    series = {}
+    series.update(_mk("rrr_big", [9.0, 9.0], "2026-06-01", "M"))                     # 未动 → 0
+    series.update(_mk("m2_yoy", [6.0, 6.0, 6.0], "2026-06-01", "M"))                 # 0
+    series.update(_mk("tsf_new_12m", [200000.0] * 3, "2026-06-01", "M"))             # 0
+    series["shibor_1m"] = []                                                         # 空序列
+    series.update(_mk("lpr_1y", [3.5, 3.5, 3.0], "2026-06-01", "M"))                 # 降 → +1
+    series.update(_mk("cn_us_10y", [0.0], "2026-09-01"))                             # 0
+    r = F.compute_macro_liquidity(series)
+    d3 = r["markets"]["A"]["dims"]["D3"]
+    assert d3["n_used"] == 1 and d3["n_total"] == 2 and d3["score"] == 1.0
+    assert r["indicators"]["A"]["shibor_1m"]["missing"] is True
+    assert "缺失指标：shibor_1m" in r["notes"]
+
+
+def test_compute_hk_consistent_with_h0006():
+    """HK 输入使 compute_hk_regime 触发 outflow_pressure → carry/peg 指标分均为负。"""
+    hk = [{"dt": f"2026-09-{d:02d}", "hibor1m": 4.0, "fed": 3.0, "usdhkd": 7.86}
+          for d in range(1, 31)]
+    assert F.compute_hk_regime(hk)["state"] == "outflow_pressure"
+    r = F.compute_macro_liquidity({}, hk_series=hk)
+    hk_ind = r["indicators"]["HK"]
+    assert hk_ind["carry_hk_us"]["score"] < 0 and hk_ind["peg_pressure"]["score"] < 0
+    assert hk_ind["carry_hk_us"]["value"] == 1.0              # 4.0 − 3.0
+    assert r["markets"]["HK"]["dims"]["D4"]["n_total"] == 2
+
+
+def test_compute_all_empty_unavailable():
+    """series 全空 + hk_series=None → 顶层 {"status": "unavailable"}。"""
+    assert F.compute_macro_liquidity({}) == {"status": "unavailable"}
+    assert F.compute_macro_liquidity({"m2_yoy": []}) == {"status": "unavailable"}
+
+
+def test_compute_deterministic():
+    """同输入两次调用输出完全相等（纯函数确定性）。"""
+    series = {}
+    series.update(_mk("m2_yoy", [5.0, 5.5, 6.0, 6.5], "2026-06-01", "M"))
+    series.update(_mk("shibor_1m", [2.0 - 0.025 * i for i in range(25)], "2026-09-01"))
+    series.update(_mk("lpr_1y", [3.5, 3.5, 3.0, 3.0], "2026-06-01", "M"))
+    hk = [{"dt": f"2026-09-{d:02d}", "hibor1m": 4.0, "fed": 3.0, "usdhkd": 7.78}
+          for d in range(1, 11)]
+    assert (F.compute_macro_liquidity(series, hk_series=hk)
+            == F.compute_macro_liquidity(series, hk_series=hk))
+
+
+# ── 工具层：factor.macro + 集成层：portfolio_review ─────────────
+from applib.ctx import Ctx
+from applib.tools import call_tool
+
+
+def _write_ws(root, macro_payload=None, hk_payload=None):
+    """伪造 workspace：sandbox/repo/market/{macro_liquidity,hk_rates}.json。"""
+    d = root / "sandbox" / "repo" / "market"
     d.mkdir(parents=True, exist_ok=True)
-    payload = {"dataset": "macro_liquidity", "as_of": "2026-10-10", "merge_policy": "carry_old",
-               "indicators": _full_indicators(hk_mode="none")}
-    (d / "macro_liquidity.json").write_text(json.dumps(payload, ensure_ascii=False))
+    if macro_payload is not None:
+        (d / "macro_liquidity.json").write_text(
+            json.dumps(macro_payload, ensure_ascii=False), encoding="utf-8")
+    if hk_payload is not None:
+        (d / "hk_rates.json").write_text(
+            json.dumps(hk_payload, ensure_ascii=False), encoding="utf-8")
+    return Ctx(root=str(root))
+
+
+_MACRO_MIN = {k: [{"dt": "2026-09-01", "v": v} for v in vals] for k, vals in {
+    "rrr_big": [9.5, 9.0], "m2_yoy": [6.0, 6.5], "tsf_new_12m": [200000.0, 210000.0],
+    "shibor_1m": [1.8, 1.7], "lpr_1y": [3.5, 3.0], "cn_us_10y": [2.5],
+    "us_10y_2y": [0.4], "fed_target": [4.5], "us_cpi_yoy": [3.4], "us_cpi_surprise": [-0.1],
+}.items()}
+_MACRO_META_MIN = {k: {"upstream": "测试机构", "freq": "月"} for k in _MACRO_MIN}
+
+
+def test_tool_macro_ok(tmp_path):
+    """workspace 有数据 → 返回 markets/global，无 error；meta 提供来源。"""
+    ctx = _write_ws(tmp_path, {"series": _MACRO_MIN, "meta": _MACRO_META_MIN},
+                    {"series": [{"dt": "2026-09-01", "hibor1m": 4.0, "fed": 3.0, "usdhkd": 7.78}]})
+    res = call_tool("factor.macro", {}, ctx)
+    assert "error" not in res
+    assert set(res["markets"]) == {"A", "HK", "US"} and "global" in res
+    assert res["indicators"]["A"]["rrr_big"]["source"] == "测试机构"
+
+
+def test_tool_macro_missing_file(tmp_path):
+    """无 macro_liquidity.json → error 不抛异常。"""
+    res = call_tool("factor.macro", {}, Ctx(root=str(tmp_path)))
+    assert res == {"error": "宏观流动性数据未同步（先执行数据同步）"}
+
+
+def test_tool_macro_as_of_cutoff(tmp_path):
+    """as_of 早于全部数据 → 全市场缺失，按 T-C2 语义顶层 unavailable。"""
+    ctx = _write_ws(tmp_path, {"series": _MACRO_MIN, "meta": _MACRO_META_MIN})
+    res = call_tool("factor.macro", {"as_of": "2020-01-01"}, ctx)
+    assert "error" not in res
+    assert res == {"status": "unavailable"}
+
+
+# ── 集成层：portfolio_review 返回 macro_liquidity（T-C4）────────
+import inspect
+
+from applib import tools as T
+
+
+def _stub_alpha(secid, arr, reports, dividends, *a, **kw):
+    """compute_alpha 最小替身：跳过财务依赖，字段覆盖 portfolio_review 引用面。"""
+    return {"as_of": arr[-1]["dt"], "used_period": None, "used_announce": None,
+            "val_pe_ttm": None, "val_pb": None, "val_pe_pct": None, "val_pb_pct": None,
+            "div_yield_ttm": None, "qua_roe_ttm": None, "qua_margin": None,
+            "grow_rev_yoy": None, "grow_np_yoy": None, "mom_12_1": 0.1, "vol_250": 0.2,
+            "pe_hist_n": None, "dims": {}, "grades": {}, "composite": 0.0,
+            "composite_grade": "C"}
+
+
+def _stub_beta(secid, arr, *a, **kw):
+    """compute_beta 最小替身：不产生信号（引擎C 纪律断言的基础）。"""
+    return {"as_of": arr[-1]["dt"], "close": 10.0, "mom_20d": 0.05, "vol_20d": 0.15,
+            "ma20": 1.0, "ma20_break": 0.01, "state": "above", "high20_touch": False,
+            "dist_high20": 0.02, "high20_intra": 0.03, "low20": 0.9, "sigma_daily": 0.01,
+            "band_low": 0.98, "band_high": 1.02, "signals": []}
+
+
+def _write_review_ws(tmp_path, macro=True):
+    """伪造 portfolio_review 所需 workspace：组合/维度/行情/日历/因子注册表 + 宏观数据。"""
+    repo = tmp_path / "sandbox" / "repo"
+    bars = {}
+    for secid in ("510300.SH", "600519.SH"):
+        cur, rows = _d.date(2026, 8, 15), []
+        for i in range(30):                    # 末根 2026-09-13 ≥ 宏观末点 2026-09-10
+            rows.append({"dt": cur.isoformat(), "pct": 0.1 * (i % 5 - 2)})
+            cur += _d.timedelta(days=1)
+        bars[secid] = rows
+    (repo / "market").mkdir(parents=True, exist_ok=True)
+    (repo / "market" / "daily_bars.json").write_text(json.dumps(bars), encoding="utf-8")
+    (repo / "market" / "trade_calendar.json").write_text(
+        json.dumps(["2026-10-09", "2026-10-12"]), encoding="utf-8")
+    (repo / "dim").mkdir(parents=True, exist_ok=True)
+    (repo / "dim" / "security.json").write_text(json.dumps([
+        {"secid": "510300.SH", "industry": "宽基ETF", "market": "A"},
+        {"secid": "600519.SH", "industry": "白酒", "market": "A"}]), encoding="utf-8")
+    (repo / "portfolio").mkdir(parents=True, exist_ok=True)
+    (repo / "portfolio" / "cn4.json").write_text(json.dumps({
+        "id": "cn4", "name": "测试组合", "base_ccy": "CNY", "note": "T-C4 测试",
+        "positions": [{"secid": "510300.SH", "name": "沪深300ETF", "weight": 50.0},
+                      {"secid": "600519.SH", "name": "贵州茅台", "weight": 50.0}]}),
+        encoding="utf-8")
+    (repo / "factors").mkdir(parents=True, exist_ok=True)
+    (repo / "factors" / "fundamental_values.json").write_text("{}", encoding="utf-8")
+    (repo / "factors" / "registry.json").write_text(json.dumps(
+        {"factors": [{"id": "sig_ma20_break", "name": "MA20突破", "status": "active"}]}),
+        encoding="utf-8")
+    if macro:
+        # 两点日频序列（末点 2026-09-10 > 行情截断 as_of 之前有效）
+        rev = {k: [{"dt": d, "v": v} for d, v in zip(("2026-09-01", "2026-09-10"), vals)]
+               for k, vals in {"rrr_big": [9.5, 9.0], "m2_yoy": [6.0, 6.5],
+                               "tsf_new_12m": [200000.0, 210000.0], "shibor_1m": [1.8, 1.7],
+                               "lpr_1y": [3.5, 3.0], "cn_us_10y": [2.5],
+                               "us_10y_2y": [0.4], "fed_target": [4.5],
+                               "us_cpi_yoy": [3.4], "us_cpi_surprise": [-0.1]}.items()}
+        ctx = _write_ws(tmp_path, {"series": rev, "meta": _MACRO_META_MIN},
+                        {"series": [{"dt": "2026-09-10", "hibor1m": 4.0,
+                                     "fed": 3.0, "usdhkd": 7.78}]})
+    else:
+        ctx = Ctx(root=str(tmp_path))
     return ctx
 
 
-def test_factor_macro_tool_structure(tmp_path):
-    ctx = _seed_macro_repo(tmp_path)
-    res = TL.call_tool("factor.macro", {"as_of": "2025-06-15"}, ctx)
-    assert res["status"] == "ok"
-    assert set(res["markets"]) == {"A", "HK", "US"} and res["markets"]["HK"] == "unavailable"
-    # dim/level 结构完整（总验收 #3 基座）：逐指标 market/dim/level/score
-    for d in res["detail"]["indicators"].values():
-        assert {"market", "dim", "level", "score"} <= set(d)
-    # 口径/版本注记（scorer 版本、as_of、来源机构）
-    n = res["notes"]
-    assert "v1 (T-C2)" in n["scorer_version"] and n["as_of"] == "2025-06-15"
-    assert n["institutions"] == ["测试机构"] and n["decision_free"] is True
-    assert n["paths"]["no_data"] == 3          # HK 三指标透明标注
-    assert "signals" not in json.dumps(res, ensure_ascii=False)   # 不决策 grep 红线（工具面）
+def test_review_includes_macro(tmp_path, monkeypatch):
+    """组合评估返回体含 macro_liquidity；市场权重=持仓市场计数（仅 A 持仓 → global=A 分）。"""
+    monkeypatch.setattr(T.F, "compute_alpha", _stub_alpha)
+    monkeypatch.setattr(T.F, "compute_beta", _stub_beta)
+    ctx = _write_review_ws(tmp_path)
+    r = T.portfolio_review({"portfolio": "cn4"}, ctx)
+    ml = r["macro_liquidity"]
+    assert ml.get("status") != "unavailable" and "error" not in ml
+    assert set(ml["markets"]) == {"A", "HK", "US"} and "global" in ml
+    assert ml["as_of"] == r["as_of"]                     # 与评估同日截断（非今天）
+    # 市场权重生效：仅 A 持仓 → global 分 = A 市场分（HK/US 不进全局加权）
+    assert ml["global"]["score"] == pytest.approx(ml["markets"]["A"]["score"])
+    # 纪律红线：signals 无引擎C 条目；rebalance_plan 源码不引用 macro
+    assert all("macro" not in json.dumps(s, ensure_ascii=False) for s in r["signals"])
+    assert "macro" not in inspect.getsource(T.portfolio_rebalance_plan).lower()
 
 
-def test_tool_cli_output_consistent(tmp_path, capsys, monkeypatch):
-    """工具与 CLI 输出一致（同 as_of 冻结键逐字段相等）。"""
-    ctx = _seed_macro_repo(tmp_path)
-    monkeypatch.setattr(CLI, "Ctx", lambda: ctx)
-    res = TL.call_tool("factor.macro", {"as_of": "2025-06-15"}, ctx)
-    CLI.cmd_macro(type("A", (), {"as_of": "2025-06-15"})())
-    out = capsys.readouterr().out
-    head, _ = json.JSONDecoder().raw_decode(out)     # 第一个 JSON 块（冻结键头）
-    assert head == {k: res.get(k) for k in
-                    ("status", "state", "global", "markets", "global_score", "as_of")}
+def test_review_macro_degrades(tmp_path, monkeypatch):
+    """无宏观数据 → macro_liquidity unavailable 降级，评估其余键不阻断。"""
+    monkeypatch.setattr(T.F, "compute_alpha", _stub_alpha)
+    monkeypatch.setattr(T.F, "compute_beta", _stub_beta)
+    ctx = _write_review_ws(tmp_path, macro=False)
+    r = T.portfolio_review({"portfolio": "cn4"}, ctx)
+    ml = r["macro_liquidity"]
+    assert ml["status"] == "unavailable" and "error" in ml
+    # 评估主体不受影响
+    assert len(r["positions"]) == 2 and "signals" in r
+    assert isinstance(r["portfolio_metrics"]["nav"], float)
+    assert r["as_of"] == "2026-09-13"
 
 
-def test_macro_degrade_paths(tmp_path):
-    """降级路径：缺文件 / indicators 空 / 全 no_data → unavailable，不抛异常。"""
-    ctx = _ctx(tmp_path)
-    res = TL.call_tool("factor.macro", {}, ctx)                      # 文件缺失
-    assert res["status"] == "unavailable" and "reason" in res
+# ── 报告层：render_html / render_md 的 ②.5 章节（T-C5）──────────
+from applib import report as RP
 
-    ctx2 = _ctx(tmp_path / "ws2")
-    d = ctx2.local_repo / "market"
+
+def _min_review(ml):
+    """render_html/render_md 最小 review：1 个最小持仓（覆盖被访问键）+ macro_liquidity。"""
+    alpha = {"val_pe_ttm": None, "val_pb": None, "val_pe_pct": None, "val_pb_pct": None,
+             "div_yield_ttm": None, "qua_roe_ttm": None, "qua_margin": None,
+             "grow_rev_yoy": None, "grow_np_yoy": None, "mom_12_1": 0.1, "vol_250": 0.2,
+             "used_period": None}
+    beta = {"state": "above", "mom_20d": 0.05, "vol_20d": 0.15, "ma20": 1.0,
+            "ma20_break": 0.01, "high20_touch": False, "dist_high20": 0.02,
+            "high20_intra": 0.03, "low20": 0.9, "sigma_daily": 0.01,
+            "band_low": 0.98, "band_high": 1.02}
+    return {"id": "cn4", "name": "测试组合", "as_of": "2026-09-13", "note": "T-C5 测试",
+            "next_trade_date": "2026-09-14", "holiday_days": 0,
+            "portfolio_metrics": {"day_ret": 0.001, "ret_20d": 0.02, "ret_ytd": 0.05,
+                                  "ret_1y": 0.1, "max_dd_1y": -0.08, "nav": 1.05,
+                                  "method": "等权"},
+            "macro_liquidity": ml,
+            "positions": [{"secid": "510300.SH", "name": "沪深300ETF", "industry": "宽基ETF",
+                           "weight": 100.0, "asset_type": "ETF", "close": 10.0, "day_pct": 0.005,
+                           "alpha": alpha, "beta": beta, "grades": {}, "composite": None,
+                           "composite_grade": "C", "flags": ["测试"]}],
+            "signals": [], "decay_caveats": []}
+
+
+_PLAN_MIN = {"plan_id": "p0", "status": "draft", "diff_trades": [], "turnover_est": "0%",
+             "cost_est_cny": 0, "cost_note": ""}
+
+_ML_OK = {
+    "as_of": "2026-09-13",
+    "markets": {"A": {"score": 0.62, "level": 1, "dims": {}},
+                "HK": {"status": "unavailable"},
+                "US": {"score": 0.1, "level": 0, "dims": {}}},
+    "global": {"score": 0.46, "level": 1, "state": "tight_stress"},
+    "indicators": {"A": {"rrr_big": {"value": 9.0, "score": 1.0, "as_of": "2026-09-10",
+                                     "missing": False, "source": "测试机构", "freq": "月"}},
+                   "HK": {}, "US": {}},
+    "notes": ["D1 以政策利率+CPI 近似（个人版口径限制）"],
+}
+
+
+def _prov_ctx(tmp_path):
+    d = tmp_path / "sandbox" / "repo" / "market"
     d.mkdir(parents=True, exist_ok=True)
-    (d / "macro_liquidity.json").write_text(json.dumps({"indicators": {}, "as_of": "2026-10-10"}))
-    res2 = TL.call_tool("factor.macro", {}, ctx2)                    # indicators 空
-    assert res2["status"] == "unavailable"
-
-    ctx3 = _ctx(tmp_path / "ws3")
-    d3 = ctx3.local_repo / "market"
-    d3.mkdir(parents=True, exist_ok=True)
-    empty = {sid: _ind(sid, m, "D3", []) for sid, m in
-             [("cn_m2_yoy", "A"), ("us_fed_rate", "US"), ("hk_hibor_1m", "HK")]}
-    (d3 / "macro_liquidity.json").write_text(
-        json.dumps({"indicators": empty, "as_of": "2026-10-10"}))
-    res3 = TL.call_tool("factor.macro", {}, ctx3)                    # 全 no_data
-    assert res3["status"] == "unavailable" and res3["global"] == "unavailable"
+    (d / "provenance.json").write_text(json.dumps({
+        "akshare_version": "test", "fetched_at": "2026-09-13",
+        "pit_rules": {"note": "t"}, "sources": []}), encoding="utf-8")
+    return Ctx(root=str(tmp_path))
 
 
-def test_macro_tool_readonly(tmp_path):
-    """只读红线：调用前后 sandbox 文件集合与内容不变。"""
-    ctx = _seed_macro_repo(tmp_path)
-
-    def snap():
-        return {str(p.relative_to(ctx.sandbox_dir)): p.read_bytes()
-                for p in sorted(ctx.sandbox_dir.rglob("*")) if p.is_file()}
-
-    before = snap()
-    TL.call_tool("factor.macro", {"as_of": "2025-06-15"}, ctx)
-    assert snap() == before                                          # 无写入
-
-
-def test_macro_default_as_of_from_payload(tmp_path):
-    """缺省 as_of：取 payload 落盘 as_of（组合 K 线最后交易日，T-C1 写入）。"""
-    ctx = _seed_macro_repo(tmp_path)
-    res = TL.call_tool("factor.macro", {}, ctx)
-    assert res["status"] == "ok" and res["as_of"] == "2026-10-10"
-    assert res["notes"]["as_of_source"] == "payload（T-C1 落盘 as_of）"
+def test_render_html_macro_section(tmp_path):
+    """正常态：②.5 标题 + 温度计档位文案 + 琥珀徽章 + 指标表 + 注记。"""
+    html = RP.render_html(_min_review(_ML_OK), _PLAN_MIN, _prov_ctx(tmp_path),
+                          "run_smoke", "v0", "deadbeef", {})
+    assert "②.5 宏观流动性" in html and "Engine C" in html
+    assert "A市场" in html and "偏松" in html                 # 温度计行（HK unavailable 被跳过）
+    assert "流动性紧缩提示" in html                            # tight_stress 琥珀徽章
+    assert "→宽松" in html and "rrr_big" in html               # 指标明细表
+    assert "不参与权重决策" in html                             # 固定口径注记
+    assert "宏观流动性数据未同步" not in html
 
 
-# ══ 引擎C T-C4 集成层（portfolio_review regime 块 + 报告 §2.5）══════════════
-
-from applib import report as REP
-
-
-def test_review_macro_block_states(tmp_path):
-    """_macro_block 三态：存在→ok 冻结五键 / 缺失→unavailable / 损坏→unavailable 不抛异常。"""
-    ctx = _seed_macro_repo(tmp_path)
-    m = TL._macro_block(ctx, "2025-06-13")
-    assert m["status"] == "ok" and m["as_of"] == "2025-06-13"          # as_of 与评估同日
-    for k in ("state", "global", "markets", "global_score", "as_of"):
-        assert k in m                                                   # 冻结契约透传
-
-    ctx2 = _ctx(tmp_path / "ws2")
-    m2 = TL._macro_block(ctx2, "2025-06-13")                            # 缺文件
-    assert m2["status"] == "unavailable" and "不阻断" in m2["reason"]
-
-    ctx3 = _seed_macro_repo(tmp_path / "ws3")
-    (ctx3.local_repo / "market" / "macro_liquidity.json").write_text("{broken json")
-    m3 = TL._macro_block(ctx3, "2025-06-13")                            # 损坏 payload
-    assert m3["status"] == "unavailable" and "解析失败" in m3["reason"]
+def test_render_html_macro_unavailable(tmp_path):
+    """unavailable：单行灰条，不输出温度计/空表格/'None'。"""
+    html = RP.render_html(_min_review({"status": "unavailable", "error": "x"}),
+                          _PLAN_MIN, _prov_ctx(tmp_path), "run_smoke", "v0", "deadbeef", {})
+    assert "不影响本报告其余结论" in html
+    assert "偏松" not in html and "→宽松" not in html           # 无档位词/明细表
+    assert ">None<" not in html
 
 
-def _ok_macro() -> dict:
-    inds = _full_indicators(hk_mode="none")
-    out = compute_macro_liquidity(inds, "2025-06-13")
-    return {**out, "status": "ok",
-            "notes": F.macro_scorer_notes(inds, out, "2025-06-13", "payload（T-C1 落盘 as_of）")}
-
-
-def _degraded_macro() -> dict:
-    return {"status": "unavailable", "reason": "macro_liquidity.json 不存在（未采集，不阻断评估）"}
-
-
-def _fake_review(macro: dict) -> dict:
-    """最小完整 review（render_html/render_md 全字段），宏观块注入。"""
-    return {
-        "id": "cn4", "name": "测试组合", "as_of": "2025-06-13", "base_ccy": "CNY",
-        "note": "T-C4 测试组合", "next_trade_date": "2025-06-16", "holiday_days": 0,
-        "portfolio_metrics": {"day_ret": 0.01, "ret_20d": 0.02, "ret_ytd": 0.03, "ret_1y": 0.1,
-                              "max_dd_1y": -0.05, "nav": 1.1, "method": "等权·日再平衡（测试）"},
-        "positions": [{
-            "secid": "510300.SH", "name": "测试ETF", "industry": "宽基", "weight": 100,
-            "asset_type": "ETF", "settle": "ETF T+0", "cost": "无印花税",
-            "close": 4.0, "day_pct": 1.0,
-            "alpha": {"val_pe_ttm": None, "val_pb": None, "val_pe_pct": None, "val_pb_pct": None,
-                      "div_yield_ttm": None, "qua_roe_ttm": None, "qua_margin": None,
-                      "grow_rev_yoy": None, "grow_np_yoy": None, "mom_12_1": 0.05,
-                      "vol_250": 0.2, "used_period": None, "pe_hist_n": None},
-            "beta": {"mom_20d": 0.01, "vol_20d": 0.15, "ma20": 3.9, "ma20_break": 0.02,
-                     "state": "above", "high20_touch": False, "dist_high20": -0.01,
-                     "high20_intra": 4.05, "low20": 3.8, "sigma_daily": 0.009,
-                     "band_low": 3.85, "band_high": 4.0},
-            "dims": {}, "grades": {}, "composite": None, "composite_grade": None,
-            "flags": ["ETF（无财报期，估值/质量/成长不适用）"]}],
-        "signals": [], "decay_caveats": [], "macro_liquidity": macro,
-        "factor_health": {"active": [], "weakening": []},
-        "data_quality": {"last_bar": "2025-06-13", "calendar_next": "2025-06-16",
-                         "sources": "AKShare", "provenance": "x"},
-    }
-
-
-def _fake_plan() -> dict:
-    return {"plan_id": "PL-TEST", "status": "pending_human", "diff_trades": [],
-            "turnover_est": "0%", "cost_est_cny": 0, "cost_note": "测试"}
-
-
-def _seed_provenance(tmp_path) -> Ctx:
-    ctx = _ctx(tmp_path)
-    d = ctx.local_repo / "market"
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "provenance.json").write_text(json.dumps(
-        {"sources": [{"dataset": "market/daily_bars.json", "interface": "test",
-                      "params": "-", "sha256": "x", "upstream": "测试源"}],
-         "akshare_version": "1.19.1",
-         "fetched_at": "2025-06-13T00:00:00", "pit_rules": {"note": "测试 PIT 规则"}},
-        ensure_ascii=False))
-    return ctx
-
-
-def test_report_macro_section_snapshot(tmp_path):
-    """报告快照：§2.5 HTML/MD 结构、档位映射、口径注记、零外部依赖。"""
-    ctx = _seed_provenance(tmp_path)
-    review = _fake_review(_ok_macro())
-    html = REP.macro_section_html(review)
-    # 结构：标题 + 全局/三市场 + 指标明细表 + 口径注记
-    assert "②·5 宏观流动性" in html and "Engine C" in html
-    for k in ("全局", "A 市场", "HK 市场", "US 市场"):
-        assert k in html
-    assert "市场条件变量" in html and "不决策、不参与权重" in html          # 纪律注记
-    assert "v1 (T-C2)" in html and "2025-06-13" in html                    # 口径/版本注记
-    assert "carried_prev" in html or "no_data" in html                     # 缺指标透明标注
-    # 零外部依赖（报告工程惯例）：无外链脚本/样式/图片
-    assert "http" not in html and "<script" not in html and "<img" not in html
-    # 档位映射：中文档位出现且 unavailable 灰条标注（HK 全缺）
-    assert "unavailable" in html
-    # MD 同步
-    md = REP.macro_section_md(review)
-    assert "## ②·5 宏观流动性（引擎C · 不决策）" in md
-    assert "global_score" in md and "| 市场 | 维度 | 指标 |" in md
-    assert "不决策、不参与权重" in md
-
-
-def test_report_macro_section_degraded(tmp_path):
-    """降级演练：删数据 → unavailable 灰条，评估/报告流程照常完成。"""
-    html = REP.macro_section_html(_fake_review(_degraded_macro()))
-    assert "flag gray" in html and "不阻断评估" in html
-    assert "采集后自动回填" in html or "自动回填" in html
-    md = REP.macro_section_md(_fake_review(_degraded_macro()))
-    assert "透明降级（不阻断评估）" in md
-    # 宏观块无信号字段（grep 红线：引擎C 不决策）
-    assert "signals" not in json.dumps(_degraded_macro())
-    out = _ok_macro()
-    assert "signals" not in json.dumps(out, ensure_ascii=False)
-
-
-def test_render_full_report_embeds_macro(tmp_path):
-    """全文渲染：§2.5 位于 ② 与 ③ 之间，降级态整报告照常渲染。"""
-    ctx = _seed_provenance(tmp_path)
-    verify = {f"v{i}": f"pass(x)" for i in range(1, 7)}
-    html = REP.render_html(_fake_review(_ok_macro()), _fake_plan(), ctx,
-                           "RUN-T4", "v-test", "ds-test", verify)
-    i_25, i_2 = html.index("②·5 宏观流动性"), html.index("② 组合体检")
-    i_3 = html.index("③ 中长期因子评估")
-    assert i_2 < i_25 < i_3                                              # 嵌入位置
-    assert "长期因子评估" in html and "变更/执行/风险建议" in html          # 其余章节完好
-    # 降级态：整报告渲染不炸，§2.5 灰条
-    html2 = REP.render_html(_fake_review(_degraded_macro()), _fake_plan(), ctx,
-                            "RUN-T4", "v-test", "ds-test", verify)
-    assert "flag gray" in html2 and "③ 中长期因子评估" in html2
-    md = REP.render_md(_fake_review(_ok_macro()), _fake_plan(), "RUN-T4", "v-test", "ds-test", verify)
-    assert md.index("## ②·5 宏观流动性") > md.index("## ② 组合体检")
-    assert md.index("## ②·5 宏观流动性") < md.index("## ③ 中长期因子评估")
-
-
-def test_macro_as_of_fallback_from_indicators(tmp_path):
-    """旧文件兜底：payload 无顶层 as_of → 各指标最新可用 dt（T-C1 旧产物兼容）。"""
-    ctx = _seed_macro_repo(tmp_path)
-    f = ctx.local_repo / "market" / "macro_liquidity.json"
-    payload = json.loads(f.read_text())
-    payload.pop("as_of")
-    f.write_text(json.dumps(payload, ensure_ascii=False))
-    res = TL.call_tool("factor.macro", {}, ctx)
-    assert res["status"] == "ok"
-    latest = max(v["last_dt"] for v in payload["indicators"].values() if v["last_dt"])
-    assert res["as_of"] == latest
-    assert "兜底" in res["notes"]["as_of_source"]
+def test_render_md_macro_section():
+    """MD 小节：'## 宏观流动性' 出现且含全局行。"""
+    md = RP.render_md(_min_review(_ML_OK), _PLAN_MIN, "run_smoke", "v0", "deadbeef", {})
+    assert "## 宏观流动性" in md and "| 全局 |" in md
+    assert "不参与权重决策" in md
+    md_bad = RP.render_md(_min_review({"status": "unavailable", "error": "x"}),
+                          _PLAN_MIN, "run_smoke", "v0", "deadbeef", {})
+    assert "## 宏观流动性" in md_bad and "不影响本报告其余结论" in md_bad

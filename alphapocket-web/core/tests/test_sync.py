@@ -283,7 +283,7 @@ def test_incremental_uses_last_bar_date(ws_root, seeded, monkeypatch) -> None:
 
 
 def test_refresh_params(ws_root, seeded, monkeypatch) -> None:
-    """refresh：universe==[secid]、start≈today-5d。"""
+    """refresh：universe==[secid]、start≈today-5d、incremental_from=窗口前一日（合并语义）。"""
     captured: dict[str, Any] = {}
     _install_fake_fetch_all(monkeypatch, captured)
 
@@ -291,7 +291,10 @@ def test_refresh_params(ws_root, seeded, monkeypatch) -> None:
 
     assert captured["universe"] == ["510300.SH"]
     assert captured["start"] == (date.today() - timedelta(days=5)).isoformat()
-    assert captured["incremental_from"] is None
+    # T-fix：refresh 不再整体覆盖（旧行为丢历史），经 incremental_from 走按日合并
+    assert captured["incremental_from"] == {
+        "510300.SH": (date.today() - timedelta(days=6)).isoformat()
+    }
 
 
 def test_invalid_mode_raises_validation(ws_root, seeded, monkeypatch) -> None:

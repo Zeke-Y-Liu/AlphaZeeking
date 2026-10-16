@@ -1,0 +1,45 @@
+# python_udf 引擎示例：EPS 同比修正（PIT 在 UDF 内自持，审计层逐行复核）
+id: eps_revise_fl
+name: EPS同比修正
+category: F2_fundamental
+factor_type: alpha
+engine: python_udf
+direction: high
+universe: [CN]
+inputs: [fl_fin_report]
+lookback_days: 0
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  最新可用报告（announce_date <= dt）的 eps_ytd 减去去年同期报告的 eps_ytd；
+  去年同期缺失或未公告则记缺失。演示 python_udf 引擎表达 SQL 不便描述的逻辑
+  （纯函数约束见 engine/python_udf.py 的 AST 守卫）。
+transform: []
+neutralization: []
+owner: factorlib
+udf: |
+  def compute(secid, bars, reports, as_of):
+      """EPS 同比修正：{dt: (value, used_period, used_announce)} | None"""
+      if not reports:
+          return None
+      out = {}
+      for b in bars:
+          dt = str(b["dt"])[:10]
+          cur = None
+          for r in reports:                     # 已公告报告中报告期最新者
+              if str(r["announce_date"])[:10] <= dt:
+                  if cur is None or str(r["period"])[:10] > str(cur["period"])[:10]:
+                      cur = r
+          if cur is None:
+              continue
+          py = str(int(str(cur["period"])[:4]) - 1) + str(cur["period"])[4:10]
+          prev = None
+          for r in reports:
+              if str(r["period"])[:10] == py and str(r["announce_date"])[:10] <= dt:
+                  prev = r
+          if prev is None or cur["eps_ytd"] is None or prev["eps_ytd"] is None:
+              continue
+          out[dt] = (cur["eps_ytd"] - prev["eps_ytd"], str(cur["period"])[:10],
+                     str(cur["announce_date"])[:10])
+      return out or None

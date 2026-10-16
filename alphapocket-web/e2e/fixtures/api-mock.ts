@@ -5,7 +5,8 @@
  * α 锚点快照数据（§1.2），保证可重复：
  *  - 剧本 A：新建 multi5（新 workspace）→ 验证全绿 → 评估 → 回测（A2 锚点）→ 调仓 → 执行单 → 确认 → 登记成交；
  *  - 剧本 B：seed cn4 回归（评估 + 回测）；
- *  - 分支：门禁 409 VERIFY_GATE_FAILED、互斥 409 JOB_LOCKED、登录 429 ACCOUNT_LOCKED。
+ *  - 分支：门禁（评估不阻断仅提示 data_risk / 回测与调仓 409 VERIFY_GATE_FAILED）、
+ *    互斥 409 JOB_LOCKED、登录 429 ACCOUNT_LOCKED。
  *
  * 关键：mock 严格复刻真实契约（如 `/v1/runs` 的 portfolio_id 必须是数值主键，
  * 传 'NaN' 会 422），因此前端若用 Number(pid) 过滤会被 E2E 直接暴露。
@@ -167,36 +168,6 @@ const GLOBALMIX_PORTFOLIO: PortfolioFixture = {
   positions: makePositions([CN4[0], MULTI5[0], HKUS[0], HKUS[1], HKUS[2]]),
 };
 
-/* ── 引擎C 宏观流动性（T-C7 e2e 夹具：T-C2 全量块 + T-C6 冻结五键两形态） ── */
-/** 正常态（multi5 剧本 A）：温度计五档呈现。 */
-const MACRO_BLOCK_OK = {
-  status: 'ok', state: 'loose', global: 1,
-  markets: { A: 1, HK: 0, US: 1 },
-  global_score: 0.458, as_of: AS_OF,
-  detail: { indicators: {} }, notes: { scorer_version: 'v1 (T-C2)', decision_free: true },
-};
-const MACRO_SUMMARY_OK = {
-  state: 'loose', global: 1,
-  markets: { A: 1, HK: 0, US: 1 },
-  global_score: 0.458, as_of: AS_OF,
-};
-/** 降级态（cn4 剧本 B）：灰条「宏观数据缺失，评估继续」——透明降级语义可复现。 */
-const MACRO_BLOCK_NA = {
-  status: 'unavailable', state: 'unavailable', global: 'unavailable',
-  markets: { A: 'unavailable', HK: 'unavailable', US: 'unavailable' },
-  global_score: null, as_of: null,
-  detail: null, notes: null,
-};
-const MACRO_SUMMARY_NA = {
-  state: 'unavailable', global: 'unavailable',
-  markets: { A: 'unavailable', HK: 'unavailable', US: 'unavailable' },
-  global_score: null, as_of: null,
-};
-/** cn4（剧本 B seed 回归）演示降级分支；其余组合正常态。 */
-const macroBlock = (pf: PortfolioFixture) => (pf.pid === 'cn4' ? MACRO_BLOCK_NA : MACRO_BLOCK_OK);
-const macroSummary = (pf: PortfolioFixture) =>
-  pf.pid === 'cn4' ? MACRO_SUMMARY_NA : MACRO_SUMMARY_OK;
-
 /* ── 产物构建（α 锚点） ─────────────────────────────────────── */
 
 function buildReview(pf: PortfolioFixture) {
@@ -267,7 +238,6 @@ function buildReview(pf: PortfolioFixture) {
       cooldown: i === 2,
     })),
     factor_health: { active: ['mom_12_1'], weakening: [] },
-    macro_liquidity: macroBlock(pf),
     data_quality: { last_bar: AS_OF, calendar_next: NEXT_TRADE_DATE },
   };
 }
@@ -768,6 +738,19 @@ async function handle(route: Route, store: MockStore): Promise<void> {
     return ok(route, { job_id: jobId, poll: `/api/v1/jobs/${jobId}` }, 202);
   }
 
+  /* ── 引擎（指标注册表 + 数据集联动；数据页/引擎页共用） ── */
+  if (method === 'GET' && path === '/v1/engines/datasets') {
+    return ok(route, {
+      datasets: [
+        {
+          dataset: 'macro_liquidity', synced: true, as_of: SYNCED_AS_OF, series: 12,
+          metrics: ['m2_yoy', 'lpr_1y'],
+        },
+      ],
+      missing: 0,
+    });
+  }
+
   /* ── 组合 ── */
   if (method === 'GET' && path === '/v1/portfolios') {
     return ok(route, store.portfolios.map((pf) => pfOut(store, pf, false)));
@@ -825,23 +808,50 @@ async function handle(route: Route, store: MockStore): Promise<void> {
     if (method === 'POST' && (m = path.match(re))) {
       const pf = findPf(store, m[1]);
       if (!pf) return fail(route, 404, 'NOT_FOUND', `组合不存在：${m[1]}`);
-      const gate = checkGate(store, route);
-      if (gate) return gate;
+      // 互斥对三类计算任务均生效
+      if (store.jobLocked) {
+        return fail(route, 409, 'JOB_LOCKED', '同 workspace 有计算任务进行中');
+      }
+      // 门禁只拦截回测 / 调仓；评估不阻断，改为下发 data_risk 提示
+      if (store.gateFail && suffix !== '/review') {
+        return fail(route, 409, 'VERIFY_GATE_FAILED', '数据验证未全绿，计算被门禁拦截', {
+          failed: ['golden_test', 'adjust_check'],
+        });
+      }
       if (suffix === '/review') {
         const uid = `run-review-${pf.pid}`;
         const review = buildReview(pf);
+        const dataRisk = store.gateFail
+          ? {
+              status: 'fail' as const,
+              message: '数据验证未全绿，评估结果可能失真；建议先完成数据同步并查看验证明细',
+              failed: [
+                { check: 'golden_test', text: 'FAIL(510300.SH 缺失)' },
+                { check: 'adjust_check', text: 'FAIL(最大偏差超限)' },
+              ],
+              job_id: null,
+            }
+          : null;
         upsertRun(store, uid, 'review', pf.id, AS_OF, ['review.json', 'report.html', 'report.md'], {
           as_of: review.as_of,
           portfolio_metrics: review.portfolio_metrics,
           position_count: review.positions.length,
           signal_count: review.signals.length,
           signal_states: {},
-          macro_liquidity: macroSummary(pf),   // T-C6 冻结五键（cn4=降级形态 / 其余=正常态）
+          data_risk: dataRisk,
+          // 引擎C 宏观流动性摘要（runs.summary.macro_liquidity，字段冻结）
+          macro_liquidity: {
+            markets: { A: 1, HK: -1, US: 0 },
+            global: 0,
+            global_score: 0.12,
+            state: 'neutral',
+            as_of: '2026-10-09',
+          },
         });
         store.artifacts[`${uid}/review.json`] = review;
         store.artifacts[`${uid}/report.html`] = `<html><body><h1>${pf.name} 报告</h1></body></html>`;
         store.artifacts[`${uid}/report.md`] = `# ${pf.name} 报告`;
-        return accepted(store, route, 'review', pf.pid);
+        return accepted(store, route, 'review', pf.pid, { data_risk: dataRisk });
       }
       if (suffix === '/backtest') {
         const uid = `run-backtest-${pf.pid}`;
@@ -1001,18 +1011,6 @@ async function handle(route: Route, store: MockStore): Promise<void> {
 
 /* ── 分支与工厂辅助 ─────────────────────────────────────────── */
 
-function checkGate(store: MockStore, route: Route): Promise<void> | null {
-  if (store.gateFail) {
-    return fail(route, 409, 'VERIFY_GATE_FAILED', '数据验证未全绿，计算被门禁拦截', {
-      failed: ['golden_test', 'adjust_check'],
-    });
-  }
-  if (store.jobLocked) {
-    return fail(route, 409, 'JOB_LOCKED', '同 workspace 有计算任务进行中');
-  }
-  return null;
-}
-
 function job(id: string, type: string, progress: number, status = 'done') {
   return {
     id,
@@ -1029,10 +1027,16 @@ function job(id: string, type: string, progress: number, status = 'done') {
   };
 }
 
-function accepted(store: MockStore, route: Route, type: string, pid: string): Promise<void> {
+function accepted(
+  store: MockStore,
+  route: Route,
+  type: string,
+  pid: string,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
   const jobId = `job-${type}-${++store.seq}`;
   store.jobs[jobId] = { ...job(jobId, type, 100), params: { pid } };
-  return ok(route, { job_id: jobId, poll: `/api/v1/jobs/${jobId}` }, 202);
+  return ok(route, { job_id: jobId, poll: `/api/v1/jobs/${jobId}`, ...extra }, 202);
 }
 
 function run(

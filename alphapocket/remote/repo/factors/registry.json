@@ -1,201 +1,812 @@
 {
-  "factors": [
-    {
-      "id": "val_pe_ttm",
-      "name": "市盈率TTM",
-      "type": "alpha",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
+  "version": 2,
+  "updated_at": "2026-10-15T09:15:24+00:00",
+  "engines": {
+    "alpha": {
+      "dim_weights": {
+        "估值": 0.25,
+        "质量": 0.25,
+        "成长": 0.2,
+        "动量": 0.15,
+        "红利低波": 0.15
+      },
+      "anchors": {
+        "s_qua": [
+          [
+            0,
+            10
+          ],
+          [
+            5,
+            35
+          ],
+          [
+            10,
+            55
+          ],
+          [
+            15,
+            75
+          ],
+          [
+            20,
+            90
+          ],
+          [
+            30,
+            100
+          ]
+        ],
+        "s_gro": [
+          [
+            -20,
+            10
+          ],
+          [
+            0,
+            40
+          ],
+          [
+            10,
+            60
+          ],
+          [
+            20,
+            75
+          ],
+          [
+            35,
+            90
+          ],
+          [
+            60,
+            100
+          ]
+        ],
+        "s_mom": [
+          [
+            -30,
+            10
+          ],
+          [
+            -10,
+            30
+          ],
+          [
+            0,
+            45
+          ],
+          [
+            10,
+            60
+          ],
+          [
+            30,
+            80
+          ],
+          [
+            60,
+            100
+          ]
+        ],
+        "s_dvd": [
+          [
+            0,
+            10
+          ],
+          [
+            1,
+            35
+          ],
+          [
+            2,
+            55
+          ],
+          [
+            3,
+            70
+          ],
+          [
+            5,
+            90
+          ],
+          [
+            7,
+            100
+          ]
+        ],
+        "s_lvol": [
+          [
+            15,
+            100
+          ],
+          [
+            20,
+            85
+          ],
+          [
+            30,
+            60
+          ],
+          [
+            40,
+            40
+          ],
+          [
+            60,
+            20
+          ]
+        ]
+      },
+      "metrics": [
+        {
+          "id": "val_pe_ttm",
+          "engine": "alpha",
+          "formula": "builtin:pe_ttm_pit",
+          "dim": "估值",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "val_pb",
+          "engine": "alpha",
+          "formula": "builtin:pb_pit",
+          "dim": "估值",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "val_pe_pct",
+          "engine": "alpha",
+          "formula": "builtin:pctile_pe_5y",
+          "dim": "估值",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "val_pb_pct",
+          "engine": "alpha",
+          "formula": "builtin:pctile_pb_5y",
+          "dim": "估值",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "div_yield_ttm",
+          "engine": "alpha",
+          "formula": "builtin:div_yield_ttm",
+          "dim": "红利低波",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "qua_roe_ttm",
+          "engine": "alpha",
+          "formula": "builtin:roe_ttm",
+          "dim": "质量",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "qua_margin",
+          "engine": "alpha",
+          "formula": "builtin:margin",
+          "dim": "质量",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "grow_rev_yoy",
+          "engine": "alpha",
+          "formula": "builtin:rev_g",
+          "dim": "成长",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "grow_np_yoy",
+          "engine": "alpha",
+          "formula": "builtin:np_g",
+          "dim": "成长",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "mom_12_1",
+          "engine": "alpha",
+          "formula": "builtin:mom_12_1",
+          "dim": "动量",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "vol_250",
+          "engine": "alpha",
+          "formula": "builtin:vol_250",
+          "dim": "动量",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "rev_20d",
+          "engine": "alpha",
+          "formula": "builtin:rev",
+          "dim": "动量",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {
+            "n": 20
+          },
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "rev_60d",
+          "engine": "alpha",
+          "formula": "builtin:rev",
+          "dim": "动量",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {
+            "n": 60
+          },
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "qua_leverage",
+          "engine": "alpha",
+          "formula": "builtin:quality_leverage",
+          "dim": "质量",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "qua_accrual",
+          "engine": "alpha",
+          "formula": "builtin:quality_accrual",
+          "dim": "质量",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "qua_fcf",
+          "engine": "alpha",
+          "formula": "builtin:quality_fcf",
+          "dim": "质量",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "liq_amihud_20d",
+          "engine": "alpha",
+          "formula": "builtin:amihud_20d",
+          "dim": "红利低波",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "liq_roll_60d",
+          "engine": "alpha",
+          "formula": "builtin:roll_60d",
+          "dim": "红利低波",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "liq_cs_60d",
+          "engine": "alpha",
+          "formula": "builtin:cs_spread_60d",
+          "dim": "红利低波",
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        }
       ]
     },
-    {
-      "id": "val_pb",
-      "name": "市净率",
-      "type": "alpha",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ]
-    },
-    {
-      "id": "val_pe_pct",
-      "name": "PE五年分位",
-      "type": "alpha",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ]
-    },
-    {
-      "id": "val_pb_pct",
-      "name": "PB五年分位",
-      "type": "alpha",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ]
-    },
-    {
-      "id": "div_yield_ttm",
-      "name": "股息率TTM",
-      "type": "alpha",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ]
-    },
-    {
-      "id": "qua_roe_ttm",
-      "name": "ROE TTM",
-      "type": "alpha",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ]
-    },
-    {
-      "id": "qua_margin",
-      "name": "主营业务利润率",
-      "type": "alpha",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ]
-    },
-    {
-      "id": "grow_rev_yoy",
-      "name": "营收同比",
-      "type": "alpha",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ]
-    },
-    {
-      "id": "grow_np_yoy",
-      "name": "净利同比",
-      "type": "alpha",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ]
-    },
-    {
-      "id": "mom_12_1",
-      "name": "12-1月动量",
-      "type": "alpha",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ]
-    },
-    {
-      "id": "vol_250",
-      "name": "250日年化波动",
-      "type": "alpha",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ]
-    },
-    {
-      "id": "mom_20d",
-      "name": "20日动量",
-      "type": "signal",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
+    "beta": {
+      "defaults": {
+        "win": 20,
+        "band": 0.02,
+        "band_sigma": 1.5,
+        "bias_thresh": 0.08,
+        "vpd_thresh": 0.3,
+        "pct_window": 250
+      },
+      "signals": [
+        {
+          "id": "sig_ma20_break",
+          "status": "active",
+          "evidence": "E2",
+          "cooldown": "10 交易日",
+          "type": {
+            "below": "卖出预警",
+            "above": "买入/持有确认"
+          },
+          "action": {
+            "below": "生成减仓评估单（不自动卖出）",
+            "above": "引擎A目标仓位执行确认（模式③）"
+          },
+          "detail": {
+            "below": "收盘低于 MA20 {ratio:+.1%}（{band_pct} 确认带外）",
+            "above": "收盘高于 MA20 {ratio:+.1%}（{band_pct} 确认带外）"
+          }
+        },
+        {
+          "id": "sig_high20_touch",
+          "status": "active",
+          "evidence": "E2",
+          "cooldown": "10 交易日",
+          "type": "持有确认",
+          "action": "趋势延续确认，持有（引擎A持仓内）",
+          "detail": "收盘创 {n} 日收盘新高（{close:.2f}）"
+        },
+        {
+          "id": "sig_bias_ext",
+          "status": "active",
+          "evidence": "E2",
+          "cooldown": "10 交易日",
+          "type": {
+            "pos": "卖出预警",
+            "neg": "买入/持有确认"
+          },
+          "action": "反转风险提示：超买减仓评估 / 超卖关注回归（不自动交易）",
+          "detail": {
+            "pos": "乖离率 {ratio:+.1%}（|乖离| ≥ {bias_pct:g}%，超买极端）",
+            "neg": "乖离率 {ratio:+.1%}（|乖离| ≥ {bias_pct:g}%，超卖极端）"
+          }
+        },
+        {
+          "id": "sig_vol_price_div",
+          "status": "active",
+          "evidence": "E2",
+          "cooldown": "10 交易日",
+          "type": "卖出预警",
+          "action": "趋势可持续性存疑：减仓评估（不自动卖出）",
+          "detail": "20 日量价相关性 {vp_corr:+.2f} ≤ −{vpd_thresh:g}（价升量缩/量价背离）"
+        }
       ],
-      "horizon_days": 20
+      "metrics": [
+        {
+          "id": "mom_20d",
+          "engine": "beta",
+          "formula": "builtin:mom",
+          "dim": null,
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {
+            "n": 20
+          },
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "vol_20d",
+          "engine": "beta",
+          "formula": "builtin:vol",
+          "dim": null,
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {
+            "n": 20
+          },
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "ma20_break",
+          "engine": "beta",
+          "formula": "builtin:ma_break",
+          "dim": null,
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {
+            "win": 20,
+            "band": 0.02
+          },
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "high20_touch",
+          "engine": "beta",
+          "formula": "builtin:high_touch",
+          "dim": null,
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {
+            "win": 20
+          },
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "dist_high20",
+          "engine": "beta",
+          "formula": "builtin:dist_high",
+          "dim": null,
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {
+            "win": 20
+          },
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "turnover_pct",
+          "engine": "beta",
+          "formula": "builtin:amt_pctile",
+          "dim": null,
+          "market": null,
+          "dataset": null,
+          "scorer": null,
+          "params": {
+            "pct_window": 250
+          },
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        }
+      ]
     },
-    {
-      "id": "vol_20d",
-      "name": "20日年化波动",
-      "type": "signal",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ],
-      "horizon_days": 20
-    },
-    {
-      "id": "ma20_break",
-      "name": "MA20突破",
-      "type": "signal",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ],
-      "horizon_days": 20
-    },
-    {
-      "id": "high20_touch",
-      "name": "20日新高",
-      "type": "signal",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ],
-      "horizon_days": 20
-    },
-    {
-      "id": "dist_high20",
-      "name": "距20日高点",
-      "type": "signal",
-      "status": "active",
-      "version": "v1.0",
-      "universe": [
-        "CN",
-        "HK",
-        "US"
-      ],
-      "horizon_days": 20
+    "macro": {
+      "dim_weights": {
+        "D1": 0.3,
+        "D2": 0.25,
+        "D3": 0.25,
+        "D4": 0.2
+      },
+      "regime": {
+        "chg_win": 20,
+        "peg_strong": 7.75,
+        "peg_weak": 7.85,
+        "carry_widen_pt": 0.5
+      },
+      "metrics": [
+        {
+          "id": "m2_yoy",
+          "engine": "macro",
+          "formula": "builtin:macro_series",
+          "dim": "D2",
+          "market": "A",
+          "dataset": "macro_liquidity",
+          "scorer": {
+            "type": "mom",
+            "arg": 0.5
+          },
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "tsf_new_12m",
+          "engine": "macro",
+          "formula": "builtin:macro_series",
+          "dim": "D2",
+          "market": "A",
+          "dataset": "macro_liquidity",
+          "scorer": {
+            "type": "mom",
+            "arg": 20000.0
+          },
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "shibor_1m",
+          "engine": "macro",
+          "formula": "builtin:macro_series",
+          "dim": "D3",
+          "market": "A",
+          "dataset": "macro_liquidity",
+          "scorer": {
+            "type": "quant",
+            "arg": null
+          },
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "lpr_1y",
+          "engine": "macro",
+          "formula": "builtin:macro_series",
+          "dim": "D3",
+          "market": "A",
+          "dataset": "macro_liquidity",
+          "scorer": {
+            "type": "step",
+            "arg": 6
+          },
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "rrr_big",
+          "engine": "macro",
+          "formula": "builtin:macro_series",
+          "dim": "D1",
+          "market": "A",
+          "dataset": "macro_liquidity",
+          "scorer": {
+            "type": "step",
+            "arg": 0
+          },
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "cn_us_10y",
+          "engine": "macro",
+          "formula": "builtin:macro_series",
+          "dim": "D4",
+          "market": "A",
+          "dataset": "macro_liquidity",
+          "scorer": {
+            "type": "clip",
+            "arg": 1.5
+          },
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "us_10y_2y",
+          "engine": "macro",
+          "formula": "builtin:macro_series",
+          "dim": "D3",
+          "market": "US",
+          "dataset": "macro_liquidity",
+          "scorer": {
+            "type": "quant",
+            "arg": null
+          },
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "fed_target",
+          "engine": "macro",
+          "formula": "builtin:macro_series",
+          "dim": "D1",
+          "market": "US",
+          "dataset": "macro_liquidity",
+          "scorer": {
+            "type": "step",
+            "arg": 0
+          },
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "us_cpi_yoy",
+          "engine": "macro",
+          "formula": "builtin:macro_series",
+          "dim": null,
+          "market": "US",
+          "dataset": "macro_liquidity",
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": "背景指标：同步落盘但不参与打分（scorer 未登记）"
+        },
+        {
+          "id": "us_cpi_surprise",
+          "engine": "macro",
+          "formula": "builtin:macro_series",
+          "dim": "D1",
+          "market": "US",
+          "dataset": "macro_liquidity",
+          "scorer": {
+            "type": "pulse",
+            "arg": null
+          },
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": ""
+        },
+        {
+          "id": "hibor_1m",
+          "engine": "macro",
+          "formula": "builtin:macro_series",
+          "dim": "D3",
+          "market": "HK",
+          "dataset": "hk_rates",
+          "scorer": {
+            "type": "quant",
+            "arg": null
+          },
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": "来源 market/hk_rates.json（H-0006 港美利率族）"
+        },
+        {
+          "id": "carry_hk_us",
+          "engine": "macro",
+          "formula": "builtin:macro_series",
+          "dim": "D4",
+          "market": "HK",
+          "dataset": "hk_rates",
+          "scorer": {
+            "type": "clip",
+            "arg": -1.0
+          },
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": "来源 market/hk_rates.json（H-0006 港美利率族）"
+        },
+        {
+          "id": "peg_pressure",
+          "engine": "macro",
+          "formula": "builtin:macro_series",
+          "dim": "D4",
+          "market": "HK",
+          "dataset": "hk_rates",
+          "scorer": {
+            "type": "clip",
+            "arg": -1.0
+          },
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": "来源 market/hk_rates.json（H-0006 港美利率族）"
+        }
+      ]
     }
-  ]
+  },
+  "changelog": []
 }

@@ -3,7 +3,6 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import type { RouteRecordRaw, Router } from 'vue-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiError } from '../../api/types';
 import type { Portfolio, ReviewPayload, Run } from '../../api/types';
 import PortfolioDetailView from '../PortfolioDetailView.vue';
 
@@ -15,12 +14,13 @@ vi.mock('../../api', () => ({
   reviewPortfolio: vi.fn(),
 }));
 
-import { fetchRunArtifact, getPortfolio, listRuns, reviewPortfolio } from '../../api';
+import { fetchRunArtifact, getJob, getPortfolio, listRuns, reviewPortfolio } from '../../api';
 
 const mGetPortfolio = vi.mocked(getPortfolio);
 const mListRuns = vi.mocked(listRuns);
 const mReview = vi.mocked(reviewPortfolio);
 const mArtifact = vi.mocked(fetchRunArtifact);
+const mGetJob = vi.mocked(getJob);
 
 const Stub = { template: '<div />' };
 
@@ -39,7 +39,7 @@ function makePortfolio(over: Partial<Portfolio> = {}): Portfolio {
   };
 }
 
-function makeRun(over: Partial<Run> = {}): Run {
+function makeRun(): Run {
   return {
     id: 9,
     run_uid: 'run-x',
@@ -50,21 +50,8 @@ function makeRun(over: Partial<Run> = {}): Run {
     summary: {},
     artifact_keys: ['review.json'],
     created_at: '2024-06-28T00:00:00Z',
-    ...over,
   };
 }
-
-/** 引擎C 冻结五键夹具（T-C6 契约示例形态 / 降级归一形态）。 */
-const MACRO_OK = {
-  state: 'loose', global: 1,
-  markets: { A: 1, HK: 0, US: 1 },
-  global_score: 0.458, as_of: '2024-06-28',
-};
-const MACRO_NA = {
-  state: 'unavailable', global: 'unavailable',
-  markets: { A: 'unavailable', HK: 'unavailable', US: 'unavailable' },
-  global_score: null, as_of: null,
-};
 
 function makeReview(): ReviewPayload {
   return {
@@ -187,24 +174,79 @@ describe('PortfolioDetailView', () => {
     expect(mArtifact).toHaveBeenCalledWith('run-x', 'review.json', 'json');
   });
 
-  it('门禁 409 VERIFY_GATE_FAILED → 红条 + 数据页链接', async () => {
+  it('门禁未全绿 → 评估不阻断：202 data_risk → 琥珀警示条 + 数据页链接', async () => {
     mGetPortfolio.mockResolvedValue(makePortfolio());
-    mListRuns.mockResolvedValue([]);
-    mReview.mockRejectedValue(
-      new ApiError('VERIFY_GATE_FAILED', '数据验证未全绿', 409, { failed: ['golden_test'] }),
-    );
+    const dataRisk = {
+      status: 'fail' as const,
+      message: '数据验证未全绿，评估结果可能失真；建议先完成数据同步并查看验证明细',
+      failed: [{ check: 'golden_test', text: 'FAIL(510300.SH 缺失)' }],
+      job_id: 'job_sync_x',
+    };
+    // 初始加载无 run；评估完成后 load() 拉到带 data_risk 的 run（与真实后端一致）
+    mListRuns.mockResolvedValueOnce([]);
+    mReview.mockResolvedValue({ job_id: 'job-risk', poll: '/api/v1/jobs/job-risk', data_risk: dataRisk });
+    mGetJob.mockResolvedValue({ status: 'done', progress: 100 } as never);
+    const riskyRun = makeRun();
+    riskyRun.summary = { data_risk: dataRisk };
+    mListRuns.mockResolvedValue([riskyRun]);
 
     const { wrapper } = await mountDetail();
     await wrapper.find('[data-test="evaluate-btn"]').trigger('click');
     await flushPromises();
 
-    const bar = wrapper.find('[data-test="gate-bar"]');
+    const bar = wrapper.find('[data-test="risk-bar"]');
     expect(bar.exists()).toBe(true);
     expect(bar.text()).toContain('golden_test');
+    expect(bar.text()).toContain('评估结果可能失真');
 
-    const link = wrapper.find('[data-test="gate-link"]');
+    const link = wrapper.find('[data-test="risk-link"]');
     expect(link.exists()).toBe(true);
     expect(link.text()).toContain('数据');
+  });
+
+  it('runs.summary.data_risk 持久化 → 刷新后仍显示警示条', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    mReview.mockResolvedValue({
+      job_id: 'job-x',
+      poll: '/api/v1/jobs/job-x',
+    } as never);
+    mArtifact.mockResolvedValue(makeReview());
+    const riskyRun = makeRun();
+    riskyRun.summary = {
+      data_risk: {
+        status: 'unknown',
+        message: '尚未完成数据同步与验证，评估结果可能基于不完整数据',
+        failed: [],
+        job_id: null,
+      },
+    };
+    mListRuns.mockResolvedValue([riskyRun]);
+
+    const { wrapper } = await mountDetail();
+
+    const bar = wrapper.find('[data-test="risk-bar"]');
+    expect(bar.exists()).toBe(true);
+    expect(bar.text()).toContain('不完整数据');
+    // unknown（从未验证）≠ fail（有未通过项），无明细时兜底文案需区分
+    expect(bar.text()).toContain('验证状态未知');
+  });
+
+  it('data_risk.status=fail 且无明细项 → 兜底文案「存在未通过项」', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    const riskyRun = makeRun();
+    riskyRun.summary = {
+      data_risk: {
+        status: 'fail',
+        message: '部分数据检查未通过，评估结果可能基于不完整数据',
+        failed: [],
+        job_id: null,
+      },
+    };
+    mListRuns.mockResolvedValue([riskyRun]);
+
+    const { wrapper } = await mountDetail();
+
+    expect(wrapper.find('[data-test="risk-bar"]').text()).toContain('存在未通过项');
   });
 
   it('无 review run → 空态与「先运行评估」按钮', async () => {
@@ -217,69 +259,71 @@ describe('PortfolioDetailView', () => {
     expect(wrapper.find('[data-test="empty-evaluate"]').text()).toContain('先运行评估');
   });
 
-  it('引擎C 卡片 ok 态：全局档位 / score / 三市场档位中文 / as_of（消费 T-C6 冻结五键）', async () => {
+  // ── T-C7：引擎C 宏观流动性卡片（runs.summary.macro_liquidity）──
+  it('引擎C 卡片渲染三市场徽章与全局指数', async () => {
     mGetPortfolio.mockResolvedValue(makePortfolio());
-    mListRuns.mockResolvedValue([makeRun({ summary: { macro_liquidity: MACRO_OK } })]);
+    const run = makeRun();
+    run.summary = {
+      macro_liquidity: {
+        markets: { A: 1, HK: -1, US: 0 },
+        global: 0,
+        global_score: 0.12,
+        state: 'neutral',
+        as_of: '2024-06-28',
+      },
+    };
+    mListRuns.mockResolvedValue([run]);
     mArtifact.mockResolvedValue(makeReview());
 
     const { wrapper } = await mountDetail();
 
-    expect(wrapper.find('[data-test="macro-card"]').exists()).toBe(true);
-    expect(wrapper.find('[data-test="macro-global"]').text()).toBe('偏松');          // global=1 → 偏松
-    expect(wrapper.find('[data-test="macro-score"]').text()).toBe('0.458');
-    // 三市场档位中文映射：A股 偏松 / 港股 中性 / 美股 偏松
-    expect(wrapper.find('[data-test="macro-market-A"]').text()).toBe('A股 偏松');
-    expect(wrapper.find('[data-test="macro-market-HK"]').text()).toBe('港股 中性');
-    expect(wrapper.find('[data-test="macro-market-US"]').text()).toBe('美股 偏松');
-    expect(wrapper.find('[data-test="macro-asof"]').text()).toContain('2024-06-28');
-    // 注记：只呈现不引导
-    expect(wrapper.text()).toContain('不参与决策、不参与权重');
+    const badgeA = wrapper.find('[data-test="macro-badge-A"]');
+    expect(badgeA.exists()).toBe(true);
+    expect(badgeA.text()).toContain('偏松');            // 正档位 → 偏松（tone=success）
+    expect(wrapper.find('[data-test="macro-badge-HK"]').text()).toContain('偏紧');
+    expect(wrapper.find('[data-test="macro-badge-US"]').text()).toContain('中性');
+    const g = wrapper.find('[data-test="macro-global"]');
+    expect(g.exists()).toBe(true);
+    expect(g.text()).toContain('全局');
+    expect(g.text()).toContain('+0.12');
+    expect(wrapper.find('[data-test="macro-warn"]').exists()).toBe(false); // 中性态无警示
   });
 
-  it('引擎C 卡片 unavailable 态：灰条降级可见且不阻断页面（透明降级语义）', async () => {
+  it('极端态提示：tight_stress → macro-warn 可见且含「紧缩」', async () => {
     mGetPortfolio.mockResolvedValue(makePortfolio());
-    mListRuns.mockResolvedValue([makeRun({ summary: { macro_liquidity: MACRO_NA } })]);
+    const run = makeRun();
+    run.summary = {
+      macro_liquidity: {
+        markets: { A: -2 },
+        global: -2,
+        global_score: -0.71,
+        state: 'tight_stress',
+        as_of: '2024-06-28',
+      },
+    };
+    mListRuns.mockResolvedValue([run]);
+    mArtifact.mockResolvedValue(makeReview());
+
+    const { wrapper } = await mountDetail();
+
+    const warn = wrapper.find('[data-test="macro-warn"]');
+    expect(warn.exists()).toBe(true);
+    expect(warn.text()).toContain('紧缩');
+    expect(wrapper.find('[data-test="macro-badge-A"]').text()).toContain('深度紧缩');
+  });
+
+  it('unavailable 降级：macro-unavailable 可见、无徽章', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    const run = makeRun();
+    run.summary = { macro_liquidity: { status: 'unavailable', error: '宏观流动性序列为空' } };
+    mListRuns.mockResolvedValue([run]);
     mArtifact.mockResolvedValue(makeReview());
 
     const { wrapper } = await mountDetail();
 
     expect(wrapper.find('[data-test="macro-unavailable"]').exists()).toBe(true);
-    expect(wrapper.find('[data-test="macro-unavailable"]').text()).toContain('宏观数据缺失，评估继续');
-    // 评估内容照常渲染（不阻断页面）：体检卡与引擎A 仍在
-    expect(wrapper.find('[data-test="metric-day"]').exists()).toBe(true);
-    expect(wrapper.find('[data-test="macro-card"]').exists()).toBe(false);
-  });
-
-  it('引擎C 卡片 error 态：结构异常兜底提示（真实验链路不可达时透明降级）', async () => {
-    mGetPortfolio.mockResolvedValue(makePortfolio());
-    // 结构异常：state 非法且 markets 缺失（mock/契约外的脏数据）
-    mListRuns.mockResolvedValue([
-      makeRun({ summary: { macro_liquidity: { state: 42 } as unknown as Run['summary'] } }),
-    ]);
-    mArtifact.mockResolvedValue(makeReview());
-
-    const { wrapper } = await mountDetail();
-
-    expect(wrapper.find('[data-test="macro-error"]').exists()).toBe(true);
-    expect(wrapper.find('[data-test="macro-error"]').text()).toContain('不阻断评估');
-  });
-
-  it('引擎C 卡片文案 grep：无决策性动词（买入/卖出/调仓）', async () => {
-    mGetPortfolio.mockResolvedValue(makePortfolio());
-    mListRuns.mockResolvedValue([makeRun({ summary: { macro_liquidity: MACRO_OK } })]);
-    mArtifact.mockResolvedValue(makeReview());
-
-    const { wrapper } = await mountDetail();
-
-    const cardText = wrapper.find('[data-test="macro-card"]').text();
-    for (const word of ['买入', '卖出', '调仓']) {
-      expect(cardText).not.toContain(word);
-    }
-    // 旧 run 无 macro_liquidity 字段 → unavailable 降级（向后兼容）
-    mGetPortfolio.mockResolvedValue(makePortfolio());
-    mListRuns.mockResolvedValue([makeRun()]);
-    mArtifact.mockResolvedValue(makeReview());
-    const { wrapper: w2 } = await mountDetail();
-    expect(w2.find('[data-test="macro-unavailable"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="macro-unavailable"]').text()).toContain('不影响其余评估');
+    expect(wrapper.find('[data-test="macro-badge-A"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="macro-global"]').exists()).toBe(false);
   });
 });

@@ -14,9 +14,6 @@
    失败只 ``logger.warning`` 不阻断；
 4. ``portfolio_review`` / ``portfolio_rebalance_plan``（applib 工具）→ 渲染报告 →
    上传产物（MinIO）→ 写 ``runs`` 记录 → 返回 ``{run_uid, artifact_keys, summary}``。
-   ``summary.macro_liquidity``（T-C5/T-C6）为 ``_macro_summary`` 纯函数从引擎C
-   regime 块提炼的**冻结五键**（state/global/markets/global_score/as_of；
-   消费不实现，降级归一 unavailable 形态，不阻断评估、不进门禁、不进 data_risk）。
 
 β 阶段限制（登记，不单方面改契约）
 ---------------------------------
@@ -45,7 +42,7 @@ from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode
 from app.db.session import session_scope
 from app.models import Portfolio, Run
-from app.services import artifacts
+from app.services import artifacts, verification
 
 logger = logging.getLogger("app.review")
 
@@ -108,48 +105,41 @@ def _signal_states(review: dict[str, Any]) -> dict[str, int]:
     return counts
 
 
-# 引擎C 冻结契约五键（T-C6）：字段级冻结，向后兼容只增不改；
-# 改名/删字段 = 破坏性变更，须走契约修订（API.md 注释同步）
-_MACRO_SUMMARY_KEYS = ("state", "global", "markets", "global_score", "as_of")
-_MACRO_NA_MARKETS = {"A": "unavailable", "HK": "unavailable", "US": "unavailable"}
+def _macro_summary(review: dict[str, Any]) -> dict[str, Any]:
+    """引擎C 精简摘要（字段冻结）：三市场档位 + 全局 + state；unavailable 原样。
 
-
-def _macro_summary(macro: Any) -> dict[str, Any]:
-    """从 T-C2/T-C4 regime 块提炼 ``runs.summary.macro_liquidity`` 冻结字段子集（纯函数）。
-
-    冻结契约（结构定型，下游 T-C7 前端与 API.md 全部引用此结构）::
-
-        {"state": "neutral", "global": 1,
-         "markets": {"A": 1, "HK": 0, "US": 1},
-         "global_score": 0.458, "as_of": "2026-10-09"}
-
-    降级归一（透明降级语义，块内 ``status/reason/detail/notes`` 等**不进** summary）：
-    缺块/非 dict/status=unavailable → ``state="unavailable"、global_score=None、
-    as_of=None、三市场 "unavailable"``。
-    边界（T-C6 交付 3）：本字段**不进 data_risk**（不参与数据风险判定）、
-    **不进六项验证门禁**（宏观数据缺失区别于行情数据）。
+    冻结字段：``status?`` / ``markets`` / ``global`` / ``global_score`` / ``state`` /
+    ``as_of`` / ``error?``。引擎C 为市场级条件变量，不参与权重决策与门禁。
     """
-    if not isinstance(macro, dict) or macro.get("status") == "unavailable":
-        return {"state": "unavailable", "global": "unavailable",
-                "markets": dict(_MACRO_NA_MARKETS), "global_score": None, "as_of": None}
-    return {k: macro.get(k) for k in _MACRO_SUMMARY_KEYS}
+    ml = review.get("macro_liquidity") or {}
+    if not ml or ml.get("status") == "unavailable":    # 缺失/降级 → unavailable 原样
+        return {"status": "unavailable", "error": ml.get("error")}
+    markets = {}
+    for mkt, m in (ml.get("markets") or {}).items():
+        if isinstance(m, dict) and "level" in m:
+            markets[mkt] = m["level"]
+    g = ml.get("global") or {}
+    return {
+        "markets": markets,                        # {"A": 1, "HK": -1, "US": 0}
+        "global": g.get("level"),                  # int | None
+        "global_score": g.get("score"),            # float | None（保留两位由前端格式化）
+        "state": g.get("state"),                   # neutral | tight_stress | easy_froth
+        "as_of": ml.get("as_of"),
+    }
 
 
 def _build_summary(review: dict[str, Any]) -> dict[str, Any]:
     """组装 ``runs.summary``（字段冻结，供 T6.4 前端直接读）。
 
-    引擎C（T-C5/T-C6）：``macro_liquidity`` **消费不实现**——``_macro_summary``
-    纯函数从 applib ``portfolio_review`` 的 regime 块提炼冻结五键（单一事实源，
-    core 不重复计算；降级归一 unavailable 形态，不阻断评估、不进门禁、不进 data_risk）。
+    ``data_risk`` 由 ``run_review`` 在落库前按当时验证状态补充（全绿为 ``None``）。
     """
-    macro = review.get("macro_liquidity")
     return {
         "as_of": review.get("as_of"),
         "portfolio_metrics": review.get("portfolio_metrics"),
         "position_count": len(review.get("positions") or []),
         "signal_count": len(review.get("signals") or []),
         "signal_states": _signal_states(review),
-        "macro_liquidity": _macro_summary(macro),
+        "macro_liquidity": _macro_summary(review),
     }
 
 
@@ -201,12 +191,15 @@ def run_review(
     files = {p.name: p for p in sorted(art_dir.glob("*")) if p.is_file()}
     keys = artifacts.put_run_artifacts(run_uid, files)
 
-    # 8) summary（字段冻结）
+    # 8) summary（字段冻结；data_risk 按评估时点验证状态补充，全绿为 None）
     summary = _build_summary(review)
 
     # 9) 写 runs
     as_of = date.fromisoformat(review["as_of"]) if review.get("as_of") else None
     with session_scope() as db:
+        summary["data_risk"] = verification.data_risk_of(
+            verification.latest_verify_summary(db)
+        )
         portfolio = db.execute(
             select(Portfolio).where(Portfolio.pid == pid)
         ).scalar_one_or_none()

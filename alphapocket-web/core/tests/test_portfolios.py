@@ -155,7 +155,7 @@ def test_create_multi5_replica_materializes_like_alpha(api_client, ws_root, trac
             continue
         if key == "positions":
             assert len(materialized["positions"]) == len(value)
-            for got_pos, exp_pos in zip(materialized["positions"], value):
+            for got_pos, exp_pos in zip(materialized["positions"], value, strict=True):
                 for k, v in exp_pos.items():
                     assert got_pos.get(k) == v, (
                         f"position 字段 {k} 与 α 参考不一致：{got_pos.get(k)} != {v}"

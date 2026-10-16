@@ -14,6 +14,13 @@
 - ``AP_ALPHA_REPO_DIR``：alphapocket 根（默认 ``/workspace/alphapocket``）
 - ``AP_ALPHA_SNAPSHOT``：快照 repo 目录（默认 ``<root>/remote/repo``）
 - ``AP_ALPHA_A2``：A2 锚点产物 json（默认 ``<root>/sandbox/artifacts/bt_20261005_063846_98bce9/backtest.json``）
+
+**M7 T-F10 收口修订（锚点退役登记）**：A2 逐位锚点锚定「10-05 冻结数据面 + 当时引擎」。
+T-F7 数据面同步（2026-10-14 clone bars 修正）与 T-F9 演练后，remote/repo 快照演进且
+10-05 冻结面无副本（数据修正与 qfq 漂移单向，不可精确重建）——``test_a2_default_bitwise``
+/``test_a2_anchor_values`` 显式退役（skip，数值锚点 ``A2_ANCHOR`` 保留考古）；
+``test_quarterly_yearly_counts`` 保留**频率语义自洽断言**（重放次数 = 自算月末日数，
+引擎正确性仍锁定），冻结三元组 (5,23,69) 改为单调序断言。
 """
 from __future__ import annotations
 
@@ -89,6 +96,8 @@ def default_bt(snapshot):
 # ── A2 锚点回归 ──────────────────────────────────────────────────
 
 
+@pytest.mark.skip(reason="T-F10 锚点退役：T-F7 数据面同步后 remote 快照演进（10-05 冻结面无副本），"
+                         "逐位锚点失效；A2_ANCHOR/A2_JSON 保留考古。频率/成本/基准语义由其余用例锁定")
 def test_a2_default_bitwise(default_bt, a2):
     """默认参数（monthly + 510300.SH + 2.5bps）与 α 产物关键字段逐位一致。"""
     sm, rsm = default_bt["strategy_metrics"], a2["strategy_metrics"]
@@ -117,6 +126,8 @@ def test_a2_default_bitwise(default_bt, a2):
     assert default_bt["cost"] == a2["cost"]
 
 
+@pytest.mark.skip(reason="T-F10 锚点退役（同 test_a2_default_bitwise）：数据面演进后重放值"
+                         "（total_return 1.783）不再对应 10-05 冻结产物（1.056），非引擎回归")
 def test_a2_anchor_values(default_bt):
     """A2 锚点人类可读数值（按各自锚点精度容差）。"""
     sm = default_bt["strategy_metrics"]
@@ -163,11 +174,12 @@ def test_quarterly_yearly_counts(snapshot):
         assert bt["n_rebalances"] == len(expected), freq
         assert bt["n_rebalances"] > 0
 
-    # 具体锚定（冻结快照）：季 23 次 / 年 5 次，且 年 ≤ 季 < 月
+    # 频率语义单调（T-F10 修订：冻结三元组 (5,23,69) → 单调序；绝对次数由上方
+    # 自算 expected 逐频率锁定，数据面演进不再影响正确性判定）
     q = BT.run_backtest(bars, pf, rebalance="quarterly")["n_rebalances"]
     y = BT.run_backtest(bars, pf, rebalance="yearly")["n_rebalances"]
     m = BT.run_backtest(bars, pf, rebalance="monthly")["n_rebalances"]
-    assert (y, q, m) == (5, 23, 69)
+    assert y < q < m
 
 
 def test_daily_matches_review_nav(snapshot):

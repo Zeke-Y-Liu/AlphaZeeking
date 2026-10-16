@@ -47,6 +47,29 @@ CHECKS: tuple[str, ...] = (
 
 GATE_MESSAGE = "数据验证未全绿，禁止计算任务；请先完成数据同步并查看验证明细"
 
+# 数据风险提示（评估不阻断，仅提示；status 为 fail / unknown 时的 message）
+DATA_RISK_MESSAGES: dict[str, str] = {
+    "fail": "数据验证未全绿，评估结果可能失真；建议先完成数据同步并查看验证明细",
+    "unknown": "尚未完成数据同步与验证，评估结果可能基于不完整数据",
+}
+
+
+def data_risk_of(summary: dict[str, Any]) -> dict[str, Any] | None:
+    """把验证汇总转成数据风险提示载荷；全绿返回 ``None``。
+
+    评估（review）不阻断门禁：``fail`` / ``unknown`` 均返回
+    ``{"status", "message", "failed", "job_id"}``，供响应与 ``runs.summary.data_risk``
+    下发前端展示。
+    """
+    if summary["status"] == "pass":
+        return None
+    return {
+        "status": summary["status"],
+        "message": DATA_RISK_MESSAGES.get(summary["status"], DATA_RISK_MESSAGES["fail"]),
+        "failed": summary["failed"],
+        "job_id": summary["job_id"],
+    }
+
 
 # ── detail 解析（尽力解析，绝不因解析失败报错）───────────────────
 

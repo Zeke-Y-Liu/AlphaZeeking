@@ -56,28 +56,33 @@ def _weight_variants(base: dict, delta: float = 0.20) -> list[tuple[str, dict]]:
     return out
 
 
-# ── 引擎 B 参数化止损序列（与 compute_beta 同式，O(n) 快路径）──
+# ── 引擎 B 止损序列（T-R4 统一：走引擎真源，删除独立公式）────────
 def _own_closes(bars_secid: list[dict]) -> list[tuple[str, float]]:
     """该标的自身有效 K 线（与 compute_beta 的 closes 同源：dt/close 且 close 为真）"""
     return [(r["dt"], r["close"]) for r in bars_secid if r.get("close")]
 
 
-def _beta_series(dts: list[str], closes: list[float], n: int, band: float,
+def _beta_series(secid: str, bars_secid: list[dict], n: int, band: float,
                  band_sigma: float) -> dict[str, dict]:
-    """{date: {ma_stop, vol_stop, scale}}；样本不足窗口（i < n）→ 不触发（scale=1）"""
+    """{date: {ma_stop, vol_stop, scale}}；样本不足窗口（i < n）→ 不触发（scale=1）。
+
+    T-R4 统一：逐日经引擎 B 真源（engines.BetaEngine.run → factors.compute_beta，
+    overrides 注入 win/band/band_sigma）取 ma_stop（state==below）/vol_stop，
+    删除与 compute_beta 同式的第三份独立实现。离线研究工具，允许变慢，
+    不允许变错（与旧公式逐位对拍见 tests/test_engines_beta_cfg.py）。
+    """
+    from . import engines as E
+    eng = E.get_engine("beta")
     out: dict[str, dict] = {}
-    for i, d in enumerate(dts):
+    own = _own_closes(bars_secid)
+    ovr = {"win": int(n), "band": band, "band_sigma": band_sigma}
+    for i, (d, _c) in enumerate(own):
         if i < n:
             out[d] = {"ma_stop": False, "vol_stop": False, "scale": 1.0}
             continue
-        w = closes[i - n + 1:i + 1]
-        ma = sum(w) / n
-        rets = [closes[j] / closes[j - 1] - 1 for j in range(i - n + 1, i + 1)]
-        mu = sum(rets) / len(rets)
-        sd = (sum((x - mu) ** 2 for x in rets) / (len(rets) - 1)) ** 0.5
-        ratio = closes[i] / ma - 1
-        ma_stop = ratio < -band
-        vol_stop = closes[i] < ma * (1 - band_sigma * sd)
+        r = eng.run(secid, bars_secid, as_of=d, overrides=ovr)
+        ma_stop = r["state"] == "below"
+        vol_stop = bool(r["vol_stop"])
         out[d] = {"ma_stop": ma_stop, "vol_stop": vol_stop,
                   "scale": STOP_SCALE if (ma_stop or vol_stop) else 1.0}
     return out
@@ -92,6 +97,27 @@ def _ffill_scale(bs: dict[str, dict], dates: list[str]) -> dict[str, float]:
             last = v["scale"]
         out[d] = last
     return out
+
+
+# ── 引擎A 真源取数（T-R5 统一：经 AlphaEngine；惰性取，monkeypatch 友好）──
+def _alpha_weights() -> dict:
+    """引擎A生效五维权重（registry dim_weights 优先，否则内置 DEFAULT_DIM_WEIGHTS）。"""
+    from . import engines as E
+    return E.get_engine("alpha").weights()
+
+
+def _alpha_composite(secid: str, bars_secid: list[dict], fd: dict, d: str,
+                     weights: dict | None) -> float | None:
+    """引擎A综合分（经 AlphaEngine.run → factors.compute_alpha 真源）。
+
+    weights=None → registry dim_weights 生效（未加载 → 内置默认，与旧直调逐位一致）；
+    显式 weights dict（OAT 权重变体）→ overrides 覆盖 registry（调试注入同语义）。
+    """
+    from . import engines as E
+    eng = E.get_engine("alpha")
+    ovr = {"weights": weights} if weights is not None else None
+    return eng.run(secid, bars_secid, fd.get("reports", []), fd.get("dividends", []),
+                   as_of=d, overrides=ovr)["composite"]
 
 
 # ── 规则型阿尔法驱动加权（P2.1 规则版前置）───────────────
@@ -139,9 +165,7 @@ def run_strategy_bt(pf: dict, bars: dict, fund: dict, *,
         for s in secids:
             key = (s, win, band, band_sigma)
             if key not in cache:
-                own = _own_closes(bars[s])
-                cache[key] = _beta_series([d for d, _ in own], [c for _, c in own],
-                                          int(win), band, band_sigma)
+                cache[key] = _beta_series(s, bars[s], int(win), band, band_sigma)
             scale[s] = _ffill_scale(cache[key], dates)
 
     rebal = BT._rebalance_dates(dates, rebalance)
@@ -153,10 +177,8 @@ def run_strategy_bt(pf: dict, bars: dict, fund: dict, *,
             sc = {}
             for s in secids:
                 if (s, d) not in scores_memo:
-                    fd = fund.get(s, {})
-                    a = F.compute_alpha(s, bars[s], fd.get("reports", []), fd.get("dividends", []),
-                                        d, weights)
-                    scores_memo[(s, d)] = a["composite"]
+                    # T-R5 统一：经 AlphaEngine 真源取综合分（registry 权重/锚点/启停生效）
+                    scores_memo[(s, d)] = _alpha_composite(s, bars[s], fund.get(s, {}), d, weights)
                 sc[s] = scores_memo[(s, d)]
             t = _alpha_targets(sc, max_weight)
             if t:
@@ -274,14 +296,12 @@ def run_scan(pf: dict, bars: dict, fund: dict, start: str | None = None,
         dates = [d for d in dates if d >= start]
     if end:
         dates = [d for d in dates if d <= end]
-    # ② 引擎 B 状态一致性：快路径 ma_stop ↔ F.compute_beta(win/band)（各自 K 线抽样）
+    # ② 引擎 B 状态一致性：统一路径 ↔ F.compute_beta 直调（各自 K 线抽样，验「无自相矛盾」）
     mism, n_samp = 0, 0
     for s in [p["secid"] for p in pf["positions"]]:
         key = (s, cfg["win"], cfg["band"], cfg["band_sigma"])
         if key not in cache:                  # 锚点比对（stops=False）未填充 → 此处按默认参数补算
-            own = _own_closes(bars[s])
-            cache[key] = _beta_series([d for d, _ in own], [c for _, c in own],
-                                      cfg["win"], cfg["band"], cfg["band_sigma"])
+            cache[key] = _beta_series(s, bars[s], cfg["win"], cfg["band"], cfg["band_sigma"])
         bs = cache[key]
         own_dates = list(bs)
         for d in own_dates[::max(1, len(own_dates) // 12)][1:]:
@@ -300,7 +320,7 @@ def run_scan(pf: dict, bars: dict, fund: dict, start: str | None = None,
         "band_sigma": _oat("止损带宽(σ)", VARIANTS["band_sigma"], lambda v: run_bt(band_sigma=v), cfg["band_sigma"]),
     }
     if has_fund:
-        wvs = _weight_variants(F.DEFAULT_DIM_WEIGHTS)
+        wvs = _weight_variants(_alpha_weights())     # T-R5：变体基准 = 引擎A生效权重
         wmap = {lab: w for lab, w in wvs}
         oat["weights"] = _oat("五维权重", [lab for lab, _ in wvs],
                               lambda lab: run_bt(weighting="alpha", weights=wmap[lab]),

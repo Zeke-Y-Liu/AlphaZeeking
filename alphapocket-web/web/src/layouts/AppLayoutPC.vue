@@ -13,6 +13,10 @@ const navGroups = [
     ],
   },
   {
+    key: '引擎',
+    items: [{ to: '/engines', label: '引擎与因子' }],
+  },
+  {
     key: '数据',
     items: [{ to: '/data', label: '数据看板' }],
   },

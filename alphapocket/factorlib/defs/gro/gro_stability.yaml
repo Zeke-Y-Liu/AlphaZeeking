@@ -1,0 +1,58 @@
+# M7 T-F4 成长族：营收增长稳定性（负向），PIT 红线写在 SQL 内
+id: gro_stability
+name: 营收增长波动率
+category: F2_fundamental
+factor_type: alpha
+engine: sql
+direction: low            # 低增长波动为超配（稳定成长溢价，负向因子：asc=原始值小好）
+universe: [CN]
+inputs: [fl_daily_bar, fl_dws_financial_ttm]
+lookback_days: 0
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  增长稳定性 = 当期及此前 7 个季度时点（共 8 季）各期营收 TTM 同比的样本标准差：
+  std{ yoy(P−7q), …, yoy(P) }，yoy(t) = ttm_rev(t)/ttm_rev(t−12月) − 1（TTM 对齐）。
+  - 窗口样本 <8 → NULL 不落行（窗口不足 8 季如实缺席；「真实 0」（全稳态增长）
+    是有行值 0，与 None 严格区分，单测双锁）；
+  - 各期 yoy 沿用 gro_rev_yoy 口径：基期 ≤0 → 该期样本缺席；全部依赖报告期
+    （窗口 8 期 + 各自 −12 月基期）均须 announce_date <= 交易日（PIT 红线）；
+  - 预热声明（min_periods 语义）：yoy 序列最早可算时点 = 2019Q1（基期 2018Q1；
+    更早基期 ttm 因缺 2016 年报 NULL）→ 首个满足 8 期窗口的 cur = 2020Q3 报告期
+    （窗口 2018Q4..2020Q3，yoy(2018Q4) 基期 ttm(2017Q4) 为 12 月期 YTD 非空），
+    即 2020-11 公告起有值；检验窗口 2021-01 起有值；
+  - 假设：H-0019（低增长波动截面未来 1-6 月收益占优——盈利/增长平滑溢价，负向）。
+formula: stddev( TTM(revenue)/TTM(revenue,-4Q) - 1, window=8Q )
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0019
+sql: |
+  WITH cur AS (
+      SELECT d.dt, d.secid, t.period AS used_period, t.announce_date AS used_announce
+      FROM fl_daily_bar d
+      JOIN fl_dws_financial_ttm t
+        ON t.secid = d.secid AND t.announce_date <= d.dt AND t.ttm_rev IS NOT NULL
+      WHERE d.dt BETWEEN $start AND $end
+      QUALIFY row_number() OVER (PARTITION BY d.dt, d.secid ORDER BY t.period DESC) = 1
+  ), hist AS (
+      SELECT c.dt, c.secid, c.used_period, c.used_announce,
+             t.ttm_rev / b.ttm_rev - 1 AS yoy
+      FROM cur c
+      JOIN fl_dws_financial_ttm t
+        ON t.secid = c.secid
+       AND date_diff('month', t.period, c.used_period) BETWEEN 0 AND 21
+       AND date_diff('month', t.period, c.used_period) % 3 = 0
+       AND t.announce_date <= c.dt
+      JOIN fl_dws_financial_ttm b
+        ON b.secid = t.secid
+       AND date_diff('month', b.period, t.period) = 12
+       AND b.announce_date <= c.dt
+       AND b.ttm_rev > 0
+  )
+  SELECT dt, secid,
+         CASE WHEN count(yoy) = 8 THEN stddev_samp(yoy) END AS value,
+         max(used_period) AS used_period, max(used_announce) AS used_announce
+  FROM hist
+  GROUP BY dt, secid

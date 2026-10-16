@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// ApToast：提示容器（固定右上/移动端顶部），渲染 useToast 队列，支持 success/error/info。
+// ApToast：提示容器（固定右上/移动端顶部），渲染 useToast 队列，支持 success/error/info/warn。
 import { useToast } from './useToast';
 
 const { items, remove } = useToast();
@@ -56,6 +56,10 @@ const { items, remove } = useToast();
 .ap-toast__item--info {
   border-color: rgba(44, 95, 138, 0.4);
   color: var(--ap-info);
+}
+.ap-toast__item--warn {
+  border-color: rgba(176, 140, 60, 0.45);
+  color: var(--ap-warn);
 }
 .ap-toast-enter-active,
 .ap-toast-leave-active {

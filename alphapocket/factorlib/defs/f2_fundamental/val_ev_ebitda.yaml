@@ -1,0 +1,59 @@
+# M7 T-F2 估值族：EV/EBITDA，PIT 红线写在 SQL 内
+id: val_ev_ebitda
+name: 企业价值倍数
+category: F2_fundamental
+factor_type: alpha
+engine: sql
+direction: low            # 低 EV/EBITDA 为超配（剔除资本结构与折旧政策差异的企业级估值）
+universe: [CN]
+inputs: [fl_daily_bar, fl_fin_report, fl_dws_financial_ttm, fl_market_cap]
+lookback_days: 0
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  EV/EBITDA =（总市值 + 有息债务 − 现金）/ EBITDA。
+  - EV：市值（周频快照 ASOF JOIN）+ LF 有息债务（short_borrow + long_borrow + bonds_payable
+    + current_mature_debt）− LF 现金（cash）；资产负债表科目任一缺失 → 该报告期不参选；
+  - EBITDA = ttm_ebit + ttm_dep（累计口径 TTM，见 prepare）；东财 Q1/Q3 折旧摊销全缺 →
+    仅 H1/FY 报告期可算，其余期 NULL 过滤后截面回退最近可算期（ transparency：期数少于 PE/PB）；
+  - PIT：两条链各自以 announce_date <= 交易日（PIT 红线，篡改测试对象），QUALIFY 各取最新；
+  - EV ≤0 或 EBITDA ≤0（亏损）→ NULL 不落行；
+  - 假设：H-0009（低 EV/EBITDA 截面未来 1-6 月收益占优）。
+formula: (mktcap + interest_debt - cash) / (TTM(ebit) + TTM(dep_amort))
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0009
+sql: |
+  WITH bs AS (
+      SELECT d.dt, d.secid, c.mktcap_yi * 1e8 AS mktcap,
+             f.short_borrow + f.long_borrow + f.bonds_payable
+             + f.current_mature_debt AS debt,
+             f.cash
+      FROM fl_daily_bar d
+      ASOF JOIN fl_market_cap c ON c.secid = d.secid AND c.dt <= d.dt
+      JOIN fl_fin_report f
+        ON f.secid = d.secid AND f.announce_date <= d.dt
+       AND f.short_borrow IS NOT NULL AND f.long_borrow IS NOT NULL
+       AND f.bonds_payable IS NOT NULL AND f.current_mature_debt IS NOT NULL
+       AND f.cash IS NOT NULL
+      WHERE d.dt BETWEEN $start AND $end
+      QUALIFY row_number() OVER (PARTITION BY d.dt, d.secid ORDER BY f.period DESC) = 1
+  ), tt AS (
+      SELECT d.dt, d.secid,
+             t.period AS used_period, t.announce_date AS used_announce,
+             t.ttm_ebit + t.ttm_dep AS ebitda
+      FROM fl_daily_bar d
+      JOIN fl_dws_financial_ttm t
+        ON t.secid = d.secid AND t.announce_date <= d.dt
+       AND t.ttm_ebit IS NOT NULL AND t.ttm_dep IS NOT NULL
+      WHERE d.dt BETWEEN $start AND $end
+      QUALIFY row_number() OVER (PARTITION BY d.dt, d.secid ORDER BY t.period DESC) = 1
+  )
+  SELECT b.dt, b.secid,
+         CASE WHEN b.mktcap + b.debt - b.cash > 0 AND t.ebitda > 0
+              THEN (b.mktcap + b.debt - b.cash) / t.ebitda END AS value,
+         t.used_period, t.used_announce
+  FROM bs b
+  JOIN tt t ON t.dt = b.dt AND t.secid = b.secid

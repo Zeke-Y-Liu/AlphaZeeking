@@ -1,0 +1,371 @@
+{
+ "factor_id": "val_pe_ttm",
+ "checkpoints": [
+  "2021-01-29",
+  "2021-02-26",
+  "2021-04-29",
+  "2021-04-30"
+ ],
+ "cases": [
+  {
+   "secid": "600001.SH",
+   "dt": "2021-01-29",
+   "close": 10.5,
+   "ttm_eps": 1.0,
+   "expected": 10.5,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600001.SH",
+   "dt": "2021-02-26",
+   "close": 11.0,
+   "ttm_eps": 1.0,
+   "expected": 11.0,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600001.SH",
+   "dt": "2021-04-29",
+   "close": 11.5,
+   "ttm_eps": 1.0,
+   "expected": 11.5,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-03-31"
+  },
+  {
+   "secid": "600001.SH",
+   "dt": "2021-04-30",
+   "close": 12.0,
+   "ttm_eps": 1.1,
+   "expected": 10.909090909090908,
+   "used_period": "2021-03-31",
+   "used_announce": "2021-04-30"
+  },
+  {
+   "secid": "600002.SH",
+   "dt": "2021-01-29",
+   "close": 11.5,
+   "ttm_eps": 1.0,
+   "expected": 11.5,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600002.SH",
+   "dt": "2021-02-26",
+   "close": 12.0,
+   "ttm_eps": 1.0,
+   "expected": 12.0,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600002.SH",
+   "dt": "2021-04-29",
+   "close": 12.5,
+   "ttm_eps": 1.0,
+   "expected": 12.5,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-03-31"
+  },
+  {
+   "secid": "600002.SH",
+   "dt": "2021-04-30",
+   "close": 13.0,
+   "ttm_eps": 1.1,
+   "expected": 11.818181818181817,
+   "used_period": "2021-03-31",
+   "used_announce": "2021-04-30"
+  },
+  {
+   "secid": "600003.SH",
+   "dt": "2021-01-29",
+   "close": 12.5,
+   "ttm_eps": 1.0,
+   "expected": 12.5,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600003.SH",
+   "dt": "2021-02-26",
+   "close": 13.0,
+   "ttm_eps": 1.0,
+   "expected": 13.0,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600003.SH",
+   "dt": "2021-04-29",
+   "close": 13.5,
+   "ttm_eps": 1.0,
+   "expected": 13.5,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-03-31"
+  },
+  {
+   "secid": "600003.SH",
+   "dt": "2021-04-30",
+   "close": 14.0,
+   "ttm_eps": 1.1,
+   "expected": 12.727272727272727,
+   "used_period": "2021-03-31",
+   "used_announce": "2021-04-30"
+  },
+  {
+   "secid": "600004.SH",
+   "dt": "2021-01-29",
+   "close": 13.5,
+   "ttm_eps": 1.0,
+   "expected": 13.5,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600004.SH",
+   "dt": "2021-02-26",
+   "close": 14.0,
+   "ttm_eps": 1.0,
+   "expected": 14.0,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600004.SH",
+   "dt": "2021-04-29",
+   "close": 14.5,
+   "ttm_eps": 1.0,
+   "expected": 14.5,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-03-31"
+  },
+  {
+   "secid": "600004.SH",
+   "dt": "2021-04-30",
+   "close": 15.0,
+   "ttm_eps": 1.1,
+   "expected": 13.636363636363635,
+   "used_period": "2021-03-31",
+   "used_announce": "2021-04-30"
+  },
+  {
+   "secid": "600005.SH",
+   "dt": "2021-01-29",
+   "close": 14.5,
+   "ttm_eps": 1.0,
+   "expected": 14.5,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600005.SH",
+   "dt": "2021-02-26",
+   "close": 15.0,
+   "ttm_eps": 1.0,
+   "expected": 15.0,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600005.SH",
+   "dt": "2021-04-29",
+   "close": 15.5,
+   "ttm_eps": 1.0,
+   "expected": 15.5,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-03-31"
+  },
+  {
+   "secid": "600005.SH",
+   "dt": "2021-04-30",
+   "close": 16.0,
+   "ttm_eps": 1.1,
+   "expected": 14.545454545454545,
+   "used_period": "2021-03-31",
+   "used_announce": "2021-04-30"
+  },
+  {
+   "secid": "600006.SH",
+   "dt": "2021-01-29",
+   "close": 15.5,
+   "ttm_eps": 1.0,
+   "expected": 15.5,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600006.SH",
+   "dt": "2021-02-26",
+   "close": 16.0,
+   "ttm_eps": 1.0,
+   "expected": 16.0,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600006.SH",
+   "dt": "2021-04-29",
+   "close": 16.5,
+   "ttm_eps": 1.0,
+   "expected": 16.5,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-04-29"
+  },
+  {
+   "secid": "600006.SH",
+   "dt": "2021-04-30",
+   "close": 17.0,
+   "ttm_eps": 1.0,
+   "expected": 17.0,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-04-29"
+  },
+  {
+   "secid": "600007.SH",
+   "dt": "2021-01-29",
+   "close": 16.5,
+   "ttm_eps": 1.0,
+   "expected": 16.5,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600007.SH",
+   "dt": "2021-02-26",
+   "close": 17.0,
+   "ttm_eps": 1.0,
+   "expected": 17.0,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600007.SH",
+   "dt": "2021-04-29",
+   "close": 17.5,
+   "ttm_eps": 1.0,
+   "expected": 17.5,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-04-29"
+  },
+  {
+   "secid": "600007.SH",
+   "dt": "2021-04-30",
+   "close": 18.0,
+   "ttm_eps": 1.0,
+   "expected": 18.0,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-04-29"
+  },
+  {
+   "secid": "600008.SH",
+   "dt": "2021-01-29",
+   "close": 17.5,
+   "ttm_eps": 1.0,
+   "expected": 17.5,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600008.SH",
+   "dt": "2021-02-26",
+   "close": 18.0,
+   "ttm_eps": 1.0,
+   "expected": 18.0,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600008.SH",
+   "dt": "2021-04-29",
+   "close": 18.5,
+   "ttm_eps": 1.0,
+   "expected": 18.5,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-04-29"
+  },
+  {
+   "secid": "600008.SH",
+   "dt": "2021-04-30",
+   "close": 19.0,
+   "ttm_eps": 1.0,
+   "expected": 19.0,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-04-29"
+  },
+  {
+   "secid": "600009.SH",
+   "dt": "2021-01-29",
+   "close": 18.5,
+   "ttm_eps": 1.0,
+   "expected": 18.5,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600009.SH",
+   "dt": "2021-02-26",
+   "close": 19.0,
+   "ttm_eps": 1.0,
+   "expected": 19.0,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600009.SH",
+   "dt": "2021-04-29",
+   "close": 19.5,
+   "ttm_eps": 1.0,
+   "expected": 19.5,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-04-29"
+  },
+  {
+   "secid": "600009.SH",
+   "dt": "2021-04-30",
+   "close": 20.0,
+   "ttm_eps": 1.0,
+   "expected": 20.0,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-04-29"
+  },
+  {
+   "secid": "600010.SH",
+   "dt": "2021-01-29",
+   "close": 19.5,
+   "ttm_eps": 1.0,
+   "expected": 19.5,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600010.SH",
+   "dt": "2021-02-26",
+   "close": 20.0,
+   "ttm_eps": 1.0,
+   "expected": 20.0,
+   "used_period": "2020-09-30",
+   "used_announce": "2020-10-31"
+  },
+  {
+   "secid": "600010.SH",
+   "dt": "2021-04-29",
+   "close": 20.5,
+   "ttm_eps": 1.0,
+   "expected": 20.5,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-04-29"
+  },
+  {
+   "secid": "600010.SH",
+   "dt": "2021-04-30",
+   "close": 21.0,
+   "ttm_eps": 1.0,
+   "expected": 21.0,
+   "used_period": "2020-12-31",
+   "used_announce": "2021-04-29"
+  }
+ ]
+}
