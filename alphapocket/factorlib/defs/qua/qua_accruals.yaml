@@ -1,0 +1,50 @@
+# M7 T-F3 质量族：应计异象（Sloan 1996，负向因子），PIT 红线写在 SQL 内
+id: qua_accruals
+name: 应计项目比率
+category: F2_fundamental
+factor_type: alpha
+engine: sql
+direction: low            # 负向：高应计（利润远超经营现金流）= 低质量，值小好
+universe: [CN]
+inputs: [fl_daily_bar, fl_fin_report, fl_dws_financial_ttm]
+lookback_days: 0
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  应计比率 = (归母净利 TTM − 经营现金流净额 TTM) / 总资产 LF。
+  - Sloan (1996) 口径用平均总资产；本库仅期末 LF 快照 → 以 LF 期末总资产为分母，
+    口径差异如实标注（简化不冒充平均）；
+  - 分子双 TTM（ttm_np / ttm_ocf 累计口径，见 prepare）；任一缺失 → 该报告期 NULL；
+  - PIT：两条链各自以 announce_date <= 交易日（PIT 红线，篡改测试对象），QUALIFY 各取最新；
+  - 总资产 ≤0（理论不可达）防御性置 NULL；
+  - 假设：H-0013（低应计截面未来 1-6 月收益占优，Sloan 1996）。
+formula: (TTM(net_profit) - TTM(ocf)) / total_assets_LF
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0013
+sql: |
+  WITH tt AS (
+      SELECT d.dt, d.secid, t.ttm_np, t.ttm_ocf,
+             t.period AS used_period, t.announce_date AS used_announce
+      FROM fl_daily_bar d
+      JOIN fl_dws_financial_ttm t
+        ON t.secid = d.secid AND t.announce_date <= d.dt
+       AND t.ttm_np IS NOT NULL AND t.ttm_ocf IS NOT NULL
+      WHERE d.dt BETWEEN $start AND $end
+      QUALIFY row_number() OVER (PARTITION BY d.dt, d.secid ORDER BY t.period DESC) = 1
+  ), bs AS (
+      SELECT d.dt, d.secid, f.total_assets
+      FROM fl_daily_bar d
+      JOIN fl_fin_report f
+        ON f.secid = d.secid AND f.announce_date <= d.dt AND f.total_assets IS NOT NULL
+      WHERE d.dt BETWEEN $start AND $end
+      QUALIFY row_number() OVER (PARTITION BY d.dt, d.secid ORDER BY f.period DESC) = 1
+  )
+  SELECT t.dt, t.secid,
+         CASE WHEN b.total_assets > 0
+              THEN (t.ttm_np - t.ttm_ocf) / b.total_assets END AS value,
+         t.used_period, t.used_announce
+  FROM tt t
+  JOIN bs b ON b.dt = t.dt AND b.secid = t.secid

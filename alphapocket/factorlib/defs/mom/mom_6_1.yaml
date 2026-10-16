@@ -1,0 +1,25 @@
+# 6-1 月动量：qlib_expr 引擎，剔除最近 1 月防短期反转
+id: mom_6_1
+name: 6-1月动量
+category: F1_technical
+factor_type: alpha
+engine: qlib_expr
+direction: high
+universe: [CN]
+inputs: [fl_daily_bar]
+lookback_days: 126
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  6-1 月动量 = P(t−21) / P(t−126) − 1（近端/远端；剔除最近 1 个月防短期反转）。
+
+  与 mom_12_1 同口径修正（契约 T-F5.md 公式分子分母颠倒，按 JT 语义实现，
+  见 mom_12_1.yaml description 登记）。direction 声明 + directed IC 实证，
+  结论反向如实落档。窗口不足（2017-08 起有值）→ None。
+formula: Ref($close,21)/Ref($close,126)-1
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0021
+expr: Ref($close,21)/Ref($close,126)-1

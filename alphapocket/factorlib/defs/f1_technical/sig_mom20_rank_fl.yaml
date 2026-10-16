@@ -1,0 +1,21 @@
+# qlib_expr 信号因子示例：覆盖 signal 校验路径（horizon_days ∈ [10,30]）
+id: sig_mom20_rank_fl
+name: 20日动量截面排名信号
+category: F1_technical
+factor_type: signal
+engine: qlib_expr
+direction: high
+universe: [CN]
+inputs: [fl_daily_bar]
+lookback_days: 20
+pit: true
+horizon_days: 20
+version: 1.0.0
+status: draft
+description: |
+  20 日动量的截面百分位（0~1，并列取平均秩），作为持有 20 个交易日的调仓信号。
+formula: Rank($close/Ref($close,20))
+transform: []
+neutralization: []
+owner: factorlib
+expr: Rank($close/Ref($close,20))

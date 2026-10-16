@@ -1,0 +1,48 @@
+# M7 T-F4 成长族：归母净利 TTM 同比，PIT 红线写在 SQL 内
+id: gro_np_yoy
+name: 归母净利TTM同比增长
+category: F2_fundamental
+factor_type: alpha
+engine: sql
+direction: high           # 高净利增长为超配（成长溢价假设，实证裁决）
+universe: [CN]
+inputs: [fl_daily_bar, fl_dws_financial_ttm]
+lookback_days: 0
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  净利同比 = 归母净利 TTM_t / 归母净利 TTM_{t-4季} − 1（TTM 对齐，同 gro_rev_yoy；
+  fin_report 无扣非口径 → 归母口径如实标注，不冒充扣非）。
+  - 分子或分母 ≤0 → NULL 不落行（负净利同比比率失真：亏损收窄/扩大在比率上无序）；
+    负净利标的不参与截面，置空计数在物化脚本如实披露（金融/周期股占比）；
+  - PIT：当期与基期两链均以 announce_date <= 交易日；当期 QUALIFY 回退最近可算期；
+  - 预热声明（min_periods 语义）：同 gro_rev_yoy——财报 2017Q1 起时最早可算
+    = 2019Q1 报告期（基期 ttm 依赖链限制）；负净利置空进一步缩覆盖（如实计数披露）；
+  - 假设：H-0017（高净利增长截面未来 1-6 月收益占优；A 股散户趋势外推语境下
+    与美股 glamour 折价文献相反方向的命题，门禁实证裁决）。
+formula: TTM(net_profit) / TTM(net_profit, -4Q) - 1
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0017
+sql: |
+  WITH cur AS (
+      SELECT d.dt, d.secid, t.ttm_np,
+             t.period AS used_period, t.announce_date AS used_announce
+      FROM fl_daily_bar d
+      JOIN fl_dws_financial_ttm t
+        ON t.secid = d.secid AND t.announce_date <= d.dt AND t.ttm_np IS NOT NULL
+      WHERE d.dt BETWEEN $start AND $end
+      QUALIFY row_number() OVER (PARTITION BY d.dt, d.secid ORDER BY t.period DESC) = 1
+  )
+  SELECT c.dt, c.secid,
+         CASE WHEN b.ttm_np > 0 AND c.ttm_np > 0
+              THEN c.ttm_np / b.ttm_np - 1 END AS value,
+         c.used_period, c.used_announce
+  FROM cur c
+  JOIN fl_dws_financial_ttm b
+    ON b.secid = c.secid
+   AND date_diff('month', b.period, c.used_period) = 12
+   AND b.announce_date <= c.dt
+   AND b.ttm_np IS NOT NULL

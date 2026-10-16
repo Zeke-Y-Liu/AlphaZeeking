@@ -1,0 +1,48 @@
+# M7 T-F4 成长族：营收 TTM 同比，PIT 红线写在 SQL 内
+id: gro_rev_yoy
+name: 营收TTM同比增长
+category: F2_fundamental
+factor_type: alpha
+engine: sql
+direction: high           # 高营收增长为超配（成长溢价假设，实证裁决）
+universe: [CN]
+inputs: [fl_daily_bar, fl_dws_financial_ttm]
+lookback_days: 0
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  营收同比 = 营收 TTM_t / 营收 TTM_{t-4季} − 1（TTM 对齐：滚动 4 季和 vs 其 12 月前值，
+  复用 M1 fl_dws_financial_ttm 累计口径 TTM 阶梯，禁止旁路自算双口径）。
+  - PIT：当期与基期两条链均以 announce_date <= 交易日（PIT 红线，篡改测试对象）；
+    当期取「ttm 非空的最新可见报告期」（QUALIFY 回退最近可算期，与 qua 族一致）；
+  - 基期 TTM ≤0 → NULL 不落行（同比比率失真；负营收基数如实缺席，不以 0 顶替）；
+  - 预热声明（min_periods 语义）：依赖上年同期 YTD + 上年 FY 的 TTM 阶梯 →
+    财报序列 2017Q1 起时，最早可算 yoy = 2019Q1 报告期（2019-04 公告起；2018Q1 的
+    基期 ttm(2017Q1) 因缺 2016 年报而 NULL）；检验窗口 2021-01 起有值；
+  - 假设：H-0016（高营收增长截面未来 1-6 月收益占优；方向与美股 glamour 折价
+    文献相反的 A 股命题，门禁实证裁决）。
+formula: TTM(revenue) / TTM(revenue, -4Q) - 1
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0016
+sql: |
+  WITH cur AS (
+      SELECT d.dt, d.secid, t.ttm_rev,
+             t.period AS used_period, t.announce_date AS used_announce
+      FROM fl_daily_bar d
+      JOIN fl_dws_financial_ttm t
+        ON t.secid = d.secid AND t.announce_date <= d.dt AND t.ttm_rev IS NOT NULL
+      WHERE d.dt BETWEEN $start AND $end
+      QUALIFY row_number() OVER (PARTITION BY d.dt, d.secid ORDER BY t.period DESC) = 1
+  )
+  SELECT c.dt, c.secid,
+         CASE WHEN b.ttm_rev > 0 THEN c.ttm_rev / b.ttm_rev - 1 END AS value,
+         c.used_period, c.used_announce
+  FROM cur c
+  JOIN fl_dws_financial_ttm b
+    ON b.secid = c.secid
+   AND date_diff('month', b.period, c.used_period) = 12
+   AND b.announce_date <= c.dt
+   AND b.ttm_rev IS NOT NULL

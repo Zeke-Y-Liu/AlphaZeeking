@@ -1,0 +1,72 @@
+[
+ {
+  "secid": "600001.SH",
+  "name": "标的600001",
+  "market": "SH",
+  "asset_type": "stock",
+  "industry": "医药生物"
+ },
+ {
+  "secid": "600002.SH",
+  "name": "标的600002",
+  "market": "SH",
+  "asset_type": "stock",
+  "industry": "食品饮料"
+ },
+ {
+  "secid": "600003.SH",
+  "name": "标的600003",
+  "market": "SH",
+  "asset_type": "stock",
+  "industry": "银行"
+ },
+ {
+  "secid": "600004.SH",
+  "name": "标的600004",
+  "market": "SH",
+  "asset_type": "stock",
+  "industry": "医药生物"
+ },
+ {
+  "secid": "600005.SH",
+  "name": "标的600005",
+  "market": "SH",
+  "asset_type": "stock",
+  "industry": "食品饮料"
+ },
+ {
+  "secid": "600006.SH",
+  "name": "标的600006",
+  "market": "SH",
+  "asset_type": "stock",
+  "industry": "银行"
+ },
+ {
+  "secid": "600007.SH",
+  "name": "标的600007",
+  "market": "SH",
+  "asset_type": "stock",
+  "industry": "医药生物"
+ },
+ {
+  "secid": "600008.SH",
+  "name": "标的600008",
+  "market": "SH",
+  "asset_type": "stock",
+  "industry": "食品饮料"
+ },
+ {
+  "secid": "600009.SH",
+  "name": "标的600009",
+  "market": "SH",
+  "asset_type": "stock",
+  "industry": "银行"
+ },
+ {
+  "secid": "600010.SH",
+  "name": "标的600010",
+  "market": "SH",
+  "asset_type": "stock",
+  "industry": "医药生物"
+ }
+]

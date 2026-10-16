@@ -106,6 +106,120 @@ def _cls(v):
     return "up" if (v or 0) > 0 else "down" if (v or 0) < 0 else ""
 
 
+# ── ②.5 宏观流动性（引擎C，T-C5）：温度计条 + 全局指数 + 指标明细 + 口径注记 ──
+_ML_LEVEL_TXT = {2: "宽松", 1: "偏松", 0: "中性", -1: "偏紧", -2: "深度紧缩"}
+_ML_MKT_TXT = {"A": "A市场", "HK": "HK", "US": "US"}
+_ML_SEG_BG = {  # 色带：深档=实色、中档=同 hex 半透明（取值与 .up/.down/.mute 一致）
+    -2: "#C0392B", -1: "rgba(192,57,43,.45)", 0: "#9C9585",
+    1: "rgba(30,122,94,.45)", 2: "#1E7A5E"}
+
+
+def _ml_badge(ml):
+    """极端态琥珀徽章（复用 .flag 徽章类 + 既有 .tInfo 琥珀色值）。"""
+    st = (ml.get("global") or {}).get("state")
+    txt = {"tight_stress": "流动性紧缩提示", "easy_froth": "流动性充裕提示"}.get(st)
+    if not txt:
+        return ""
+    return f'<span class="flag" style="color:#8A6D2F;border-color:rgba(178,140,60,.4)">{txt}</span>'
+
+
+def _ml_dir(score):
+    """方向列：score>0.1 宽松 / <-0.1 收紧 / 其间中性（None→—）。"""
+    if score is None:
+        return "—", ""
+    if score > 0.1:
+        return "→宽松", "up"
+    if score < -0.1:
+        return "→收紧", "down"
+    return "中性", ""
+
+
+def _macro_html(review) -> str:
+    ml = review.get("macro_liquidity") or {}
+    head = (f'<h2>②.5 宏观流动性<em>Engine C · 市场级条件变量（不构成买卖信号）</em>{_ml_badge(ml)}</h2>')
+    if ml.get("status") == "unavailable":
+        err = ml.get("error") or "数据未同步"
+        return (f'{head}<div class="meta" style="padding:6px 0">'
+                f'宏观流动性数据未同步（不影响本报告其余结论） · 原因：{err}</div>')
+    h = [head, '<div class="card">']
+    for mkt in ("A", "HK", "US"):                      # 温度计：跳过 unavailable 市场
+        m = (ml.get("markets") or {}).get(mkt) or {}
+        lv = m.get("level")
+        if m.get("status") == "unavailable" or lv is None:
+            continue
+        segs = "".join(
+            f'<span style="flex:1;height:9px;border-radius:2px;'
+            f'{"border:2px solid var(--ink);" if seg == lv else ""}background:{_ML_SEG_BG[seg]}"></span>'
+            for seg in (-2, -1, 0, 1, 2))
+        lv_txt = f"{_ML_LEVEL_TXT.get(lv, '?')} ({lv:+d})" if lv else f"{_ML_LEVEL_TXT.get(lv, '?')} (0)"
+        h.append(f'<div style="display:flex;align-items:center;gap:9px;margin:5px 0">'
+                 f'<span style="font-size:11px;width:44px;flex:0 0 auto">{_ML_MKT_TXT[mkt]}</span>'
+                 f'<span style="flex:1;display:flex;gap:3px">{segs}</span>'
+                 f'<span class="mono" style="font-size:10px;width:100px;text-align:right;flex:0 0 auto">{lv_txt}</span></div>')
+    g = ml.get("global") or {}
+    gs = f"{g['score']:+.2f}" if g.get("score") is not None else "—"
+    as_of = ml.get("as_of") or review.get("as_of") or "—"
+    h.append(f'<div class="meta" style="margin-top:8px">全局流动性指数 <b>{gs}</b> · '
+             f'{_ML_LEVEL_TXT.get(g.get("level"), "—")} · 数据截至 {as_of}</div>')
+    for mkt in ("A", "HK", "US"):                      # 指标明细表（每市场一组）
+        m = (ml.get("markets") or {}).get(mkt) or {}
+        ind = (ml.get("indicators") or {}).get(mkt) or {}
+        if m.get("status") == "unavailable" or not ind:
+            continue
+        rows = ""
+        for k, e in ind.items():
+            dtxt, dcls = _ml_dir(e.get("score"))
+            v = e.get("value")
+            rows += (f'<tr><td class="mono">{k}</td><td class="mono">{"—" if v is None else v}</td>'
+                     f'<td class="{dcls}">{dtxt}</td><td class="mono">{e.get("as_of") or "—"}</td>'
+                     f'<td>{e.get("source") or "—"}</td></tr>')
+        h.append(f'<div style="margin-top:10px"><div class="meta">{_ML_MKT_TXT[mkt]} 指标明细</div>'
+                 f'<table><tr><th>指标</th><th>最新值</th><th>方向</th><th>数据截至</th><th>来源</th></tr>{rows}</table></div>')
+    notes = list(ml.get("notes") or []) + ["引擎C 为市场级条件变量，不参与权重决策"]
+    h.append('<div class="warn"><span>◇</span><div>'
+             + "".join(f"<div>· {n}</div>" for n in notes) + "</div></div></div>")
+    return "".join(h)
+
+
+def _macro_md(review) -> list:
+    ml = review.get("macro_liquidity") or {}
+    L = ["## 宏观流动性（引擎C · 市场级条件变量，不构成买卖信号）"]
+    if ml.get("status") == "unavailable":
+        L += [f"- 宏观流动性数据未同步（不影响本报告其余结论）{('：' + ml['error']) if ml.get('error') else ''}", ""]
+        return L
+    L += ["| 市场 | 档位 | 分数 |", "| --- | --- | --- |"]
+    for mkt in ("A", "HK", "US"):
+        m = (ml.get("markets") or {}).get(mkt) or {}
+        lv = m.get("level")
+        if m.get("status") == "unavailable" or lv is None:
+            continue
+        s = m.get("score")
+        L.append(f"| {_ML_MKT_TXT[mkt]} | {_ML_LEVEL_TXT.get(lv, '?')} ({lv:+d}) | "
+                 f"{s:+.2f} |" if s is not None else f"| {_ML_MKT_TXT[mkt]} | {_ML_LEVEL_TXT.get(lv, '?')} | — |")
+    g = ml.get("global") or {}
+    gs = f"{g['score']:+.2f}" if g.get("score") is not None else "—"
+    L.append(f"| 全局 | {_ML_LEVEL_TXT.get(g.get('level'), '—')} | {gs} |")
+    st = {"tight_stress": "流动性紧缩提示", "easy_froth": "流动性充裕提示"}.get(g.get("state"))
+    if st:
+        L.append(f"- ⚠ {st}")
+    L.append(f"- 数据截至 {ml.get('as_of') or review.get('as_of') or '—'}")
+    for mkt in ("A", "HK", "US"):                      # 指标明细
+        m = (ml.get("markets") or {}).get(mkt) or {}
+        ind = (ml.get("indicators") or {}).get(mkt) or {}
+        if m.get("status") == "unavailable" or not ind:
+            continue
+        L += [f"\n**{_ML_MKT_TXT[mkt]} 指标明细**\n| 指标 | 最新值 | 方向 | 数据截至 | 来源 |",
+              "| --- | --- | --- | --- | --- |"]
+        for k, e in ind.items():
+            dtxt, _ = _ml_dir(e.get("score"))
+            v = e.get("value")
+            L.append(f"| {k} | {'—' if v is None else v} | {dtxt} | {e.get('as_of') or '—'} "
+                     f"| {e.get('source') or '—'} |")
+    notes = list(ml.get("notes") or []) + ["引擎C 为市场级条件变量，不参与权重决策"]
+    L += ["", "口径注记："] + [f"- {n}" for n in notes] + [""]
+    return L
+
+
 def _verify_rows(verify):
     rows = ""
     for k, v in verify.items():
@@ -201,6 +315,9 @@ def render_html(review, plan, ctx: Ctx, run_id: str, code_ver, ds_commit, verify
 <div><div class="k">持仓数</div><div class="v">{len(review['positions'])}</div></div>
 </div>
 <div class="meta" style="margin-top:9px">{pm['method']} · {review['note']} · 资产分布：{mix_txt}（{fx_txt}）</div></div>""")
+
+    # ②.5 宏观流动性（引擎C：市场级条件变量，不产生信号、不参与权重决策）
+    h.append(_macro_html(review))
 
     # ③ 中长期因子评估（引擎 A）
     rows = ""
@@ -319,6 +436,7 @@ def render_md(review, plan, run_id, code_ver, ds_commit, verify) -> str:
     pm = review["portfolio_metrics"]
     L.append(f"- 当日 {_pct(pm['day_ret'])} · 近20日 {_pct(pm['ret_20d'])} · 年初至今 {_pct(pm['ret_ytd'])} · 近一年 {_pct(pm['ret_1y'])} · 一年最大回撤 {_pct(pm['max_dd_1y'])}")
     L.append(f"- {pm['method']} · {review['note']}\n")
+    L.extend(_macro_md(review))
     L.append("## ③ 中长期因子评估（引擎A）\n| 标的 | PE-TTM(分位) | PB(分位) | 股息率 | ROE-TTM | 营收同比 | 净利同比 | 动量12-1 | 年化波动 | 五维 | 综合 |")
     L.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for p in review["positions"]:

@@ -1,0 +1,43 @@
+# M7 T-F2 估值族：P/B（LF 净资产），PIT 红线写在 SQL 内
+id: val_pb_lf
+name: 市净率LF
+category: F2_fundamental
+factor_type: alpha
+engine: sql
+direction: low            # 低 P/B 为超配（价值溢价文献锚点）
+universe: [CN]
+inputs: [fl_daily_bar, fl_fin_report, fl_market_cap]
+lookback_days: 0
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  P/B_LF = 总市值 / 最新报告期净资产（净资产 = total_assets − total_liab）。
+  - PIT：报告期可用性以 announce_date <= 交易日（PIT 红线，篡改测试对象）；
+  - LF：同日多报告期可用时取 period 最新（QUALIFY）；
+  - 市值：fl_market_cap 周频快照 ASOF JOIN（≤dt 最新点，滞后 ≤7 天，透明口径）；
+  - 净资产 ≤0（资不抵债）P/B 无意义 → NULL 不落行；
+  - 假设：H-0007（A 股低 P/B 截面未来 1-6 月收益占优）。
+formula: mktcap / (total_assets - total_liab)
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0007
+sql: |
+  WITH pb AS (
+      SELECT d.dt, d.secid,
+             c.mktcap_yi * 1e8 AS mktcap,
+             f.period AS used_period, f.announce_date AS used_announce,
+             f.total_assets - f.total_liab AS equity
+      FROM fl_daily_bar d
+      ASOF JOIN fl_market_cap c ON c.secid = d.secid AND c.dt <= d.dt
+      JOIN fl_fin_report f
+        ON f.secid = d.secid AND f.announce_date <= d.dt
+       AND f.total_assets IS NOT NULL AND f.total_liab IS NOT NULL
+      WHERE d.dt BETWEEN $start AND $end
+  )
+  SELECT dt, secid,
+         CASE WHEN equity > 0 THEN mktcap / equity END AS value,
+         used_period, used_announce
+  FROM pb
+  QUALIFY row_number() OVER (PARTITION BY dt, secid ORDER BY used_period DESC) = 1

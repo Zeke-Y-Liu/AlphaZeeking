@@ -1,0 +1,41 @@
+# M7 T-F3 质量族：毛利率 TTM（Novy-Marx 盈利能力锚点），PIT 红线写在 SQL 内
+id: qua_gross_margin
+name: 毛利率TTM
+category: F2_fundamental
+factor_type: alpha
+engine: sql
+direction: high           # 高毛利为超配（Novy-Marx 2013 毛利溢价）
+universe: [CN]
+inputs: [fl_daily_bar, fl_dws_financial_ttm]
+lookback_days: 0
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  毛利率 = (TTM 营收 − TTM 营业成本) / TTM 营收（累计口径 TTM，见 prepare）。
+  - PIT：announce_date <= 交易日（PIT 红线）；
+  - 缺口纪律：cost_of_sales 缺失（金融行业利润表无「营业成本」科目，银行/保险/券商
+    全期 NULL）→ ttm_cost NULL → 消费端 IS NOT NULL 过滤后无行——data_gap 如实披露，
+    不 mock 不以 0 毛利率顶替（契约 d 路径，单测锁定）；
+  - TTM 营收 ≤0 → NULL 不落行；
+  - 假设：H-0012（高毛利率截面未来 1-6 月收益占优）。
+formula: (TTM(revenue) - TTM(cost_of_sales)) / TTM(revenue)
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0012
+sql: |
+  WITH tt AS (
+      SELECT d.dt, d.secid, t.ttm_rev, t.ttm_cost,
+             t.period AS used_period, t.announce_date AS used_announce
+      FROM fl_daily_bar d
+      JOIN fl_dws_financial_ttm t
+        ON t.secid = d.secid AND t.announce_date <= d.dt
+       AND t.ttm_rev IS NOT NULL AND t.ttm_cost IS NOT NULL
+      WHERE d.dt BETWEEN $start AND $end
+      QUALIFY row_number() OVER (PARTITION BY d.dt, d.secid ORDER BY t.period DESC) = 1
+  )
+  SELECT dt, secid,
+         CASE WHEN ttm_rev > 0 THEN (ttm_rev - ttm_cost) / ttm_rev END AS value,
+         used_period, used_announce
+  FROM tt

@@ -67,6 +67,70 @@ def repo_status(args: dict, ctx: Ctx) -> dict:
             "dirty": bool(changed or added), "changed": changed, "added": added}
 
 
+def _factor_gate(ctx: Ctx, changed: list[str]) -> str:
+    """§15.2 CR 审查 · 因子门禁证据（T-R6 v2 语义）：本地 registry 相对远端的条目 diff。
+
+    比对 metric 条目（新增/删除/状态翻转/参数·归属·版本变化）与引擎级配置
+    （权重表/锚点/regime/defaults/信号）。**新增指标或 status 翻转**须带
+    ``hypothesis_id``（无来源不放行）；纯 orphan 标记（T-R6 同步对账产物）与
+    updated_at 变化豁免；参数调优计入 touched 但不强制来源（评审项，非来源项）。
+    远端可为 v1 旧格式（按 factors[].id 对照）。保持既有错误码与消息风格。
+    """
+    if "factors/registry.json" not in changed:
+        return "n/a（未改动因子注册表）"
+    try:
+        local = json.loads((ctx.local_repo / "factors" / "registry.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "n/a（因子注册表不可读）"
+    rp = ctx.repo_dir / "factors" / "registry.json"
+    remote = json.loads(rp.read_text(encoding="utf-8")) if rp.exists() else {}
+
+    def _index(reg: dict) -> dict:                       # v2 engines.*.metrics ⊕ v1 factors[]
+        out = {}
+        for sec in (reg.get("engines") or {}).values():
+            for m in (sec or {}).get("metrics") or []:
+                if isinstance(m, dict) and m.get("id"):
+                    out[m["id"]] = m
+        for f in reg.get("factors") or []:
+            if isinstance(f, dict) and f.get("id"):
+                out.setdefault(f["id"], f)
+        return out
+
+    rem, loc = _index(remote), _index(local)
+    touched, unbound = [], []
+    for mid, m in loc.items():
+        old = rem.get(mid)
+        if m.get("orphan"):
+            continue                                     # 纯 orphan 标记豁免（同步对账产物）
+        if old is None:                                  # 新增 → 须带来源
+            touched.append(f"{mid}(new→{m.get('status', 'active')})")
+            if not str(m.get("hypothesis_id") or "").strip():
+                unbound.append(mid)
+            continue
+        ost, nst = old.get("status", "active"), m.get("status", "active")
+        if ost != nst:                                   # 状态翻转 → 须带来源
+            touched.append(f"{mid}({ost}→{nst})")
+            if not str(m.get("hypothesis_id") or "").strip():
+                unbound.append(mid)
+        elif any(m.get(k) != old.get(k) for k in ("params", "scorer", "dim", "version")):
+            touched.append(f"{mid}(参数/归属变更)")       # 参数调优：评审项，不强制来源
+    for mid in rem.keys() - loc.keys():
+        touched.append(f"{mid}(removed)")                # 删除：报告放行（不删数据由 orphan 语义保障）
+    for eid in ("alpha", "beta", "macro"):               # 引擎级配置：报告不设来源门禁
+        lo = (local.get("engines") or {}).get(eid) or {}
+        ro = (remote.get("engines") or {}).get(eid) or {}
+        for key in ("dim_weights", "anchors", "defaults", "regime"):
+            if (lo.get(key) or ro.get(key)) and lo.get(key) != ro.get(key):
+                touched.append(f"{eid}.{key}(变更)")
+        if (lo.get("signals") or ro.get("signals")) and lo.get("signals") != ro.get("signals"):
+            touched.append(f"{eid}.signals(变更)")
+    if not touched:
+        return "pass（因子注册表无实质变更）"
+    if unbound:
+        return f"FAIL（新增/激活因子无 hypothesis_id：{','.join(unbound)}）"
+    return f"pass（因子变更 {len(touched)}：{'；'.join(touched)}）"
+
+
 def repo_push(args: dict, ctx: Ctx, run_manifest: dict | None = None) -> dict:
     """本地变更 → 远端 CR（Change Request）：§15.2 验证门禁（全绿才允许 push）→ pending_human"""
     st = repo_status({}, ctx)
@@ -100,7 +164,7 @@ def repo_push(args: dict, ctx: Ctx, run_manifest: dict | None = None) -> dict:
     review = dict(verify)
     review["run_evidence"] = run_manifest["run_id"]
     review["backtest_compare"] = "n/a（无策略绩效变更）"
-    review["factor_gate"] = "n/a（未注册新因子）"
+    review["factor_gate"] = _factor_gate(ctx, changed)
 
     crs = json.loads(ctx.crs_file.read_text()) if ctx.crs_file.exists() else {"next": 1, "items": []}
     cr = {"cr_id": f"CR-{crs['next']:04d}", "msg": args.get("m", "update"), "files": changed,

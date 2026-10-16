@@ -1,0 +1,61 @@
+# 低 β 异象：252 日个股日收益对基准（510300.SH）日收益的 OLS β
+id: low_beta
+name: 252日贝塔
+category: F1_technical
+factor_type: alpha
+engine: sql
+direction: low
+universe: [CN]
+inputs: [fl_daily_bar]
+lookback_days: 252
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  β = cov(r_i, r_m) / var(r_m)（252 交易日窗口 OLS 斜率，样本矩实现：
+  (E[ri·rm] − E[ri]E[rm]) / (E[rm²] − E[rm]²)）。基准 = 510300.SH（沪深300ETF，
+  T-F1 etf_keep）日收益；基准缺行日对齐 inner join（契约）。
+
+  窗口守卫：有效对齐日 <126 → None（契约显式要求）；var(r_m) = 0（常数收益）
+  → NULL（除零保护）。基准自身（510300.SH）不输出（与自身 β ≡ 1 无意义）；
+  其余 ETF vs 沪深300 的 β 合法输出。direction=low（低 β 好，eval asc）。
+sql: |
+  WITH m AS (
+      SELECT dt,
+             close / lag(close, 1) OVER (ORDER BY dt) - 1 AS rm
+      FROM fl_daily_bar
+      WHERE secid = '510300.SH'
+  ),
+  r AS (
+      SELECT secid, dt,
+             close / lag(close, 1) OVER (PARTITION BY secid ORDER BY dt) - 1 AS ri
+      FROM fl_daily_bar
+      WHERE secid <> '510300.SH'
+  ),
+  j AS (
+      SELECT r.secid, r.dt, r.ri, m.rm
+      FROM r JOIN m ON m.dt = r.dt
+      WHERE r.ri IS NOT NULL AND m.rm IS NOT NULL
+  ),
+  w AS (
+      SELECT secid, dt, ri, rm,
+             count(ri) OVER w1 AS n,
+             avg(ri) OVER w1 AS ai,
+             avg(rm) OVER w1 AS am,
+             avg(ri * rm) OVER w1 AS airm,
+             avg(rm * rm) OVER w1 AS amm
+      FROM j
+      WINDOW w1 AS (PARTITION BY secid ORDER BY dt
+                    ROWS BETWEEN 251 PRECEDING AND CURRENT ROW)
+  )
+  SELECT secid, dt,
+         CASE WHEN amm - am * am > 0
+              THEN (airm - ai * am) / (amm - am * am) END AS value,
+         CAST(NULL AS DATE) AS used_period,
+         CAST(NULL AS DATE) AS used_announce
+  FROM w
+  WHERE n >= 126 AND dt BETWEEN $start AND $end
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0024

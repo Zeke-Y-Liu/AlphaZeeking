@@ -1,0 +1,50 @@
+# M7 T-F3 质量族：ROE TTM（归母口径），PIT 红线写在 SQL 内
+id: qua_roe_ttm
+name: 净资产收益率TTM
+category: F2_fundamental
+factor_type: alpha
+engine: sql
+direction: high           # 高 ROE 为超配（盈利质量溢价，FF5 RMW 锚点）
+universe: [CN]
+inputs: [fl_daily_bar, fl_fin_report, fl_dws_financial_ttm]
+lookback_days: 0
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  ROE_TTM = 归母净利 TTM / 最新公告期净资产（LF）。口径三锁（单测锁定，禁混用）：
+  - 分子 TTM：ttm_np（累计口径 TTM 阶梯，见 prepare）；fin_report 无扣非净利列
+    → 本因子为「归母净利」口径，如实标注，不冒充扣非；
+  - 分母 LF：同日多报告期可用时取 period 最新（BS 链 QUALIFY）；
+  - TTM/LF 双口径错配是经典错误（分子用 YTD 或分母用 TTM 均错），golden 对账锁定；
+  - PIT：两条链各自以 announce_date <= 交易日（PIT 红线，篡改测试对象），QUALIFY 各取最新；
+  - 净资产 ≤0（资不抵债）ROE 无意义 → NULL 不落行；净利 TTM <0 的负 ROE 是真实信息，保留；
+  - 假设：H-0011（高 ROE 截面未来 1-6 月收益占优）。
+formula: TTM(net_profit) / (total_assets_LF - total_liab_LF)
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0011
+sql: |
+  WITH np AS (
+      SELECT d.dt, d.secid, t.ttm_np,
+             t.period AS used_period, t.announce_date AS used_announce
+      FROM fl_daily_bar d
+      JOIN fl_dws_financial_ttm t
+        ON t.secid = d.secid AND t.announce_date <= d.dt AND t.ttm_np IS NOT NULL
+      WHERE d.dt BETWEEN $start AND $end
+      QUALIFY row_number() OVER (PARTITION BY d.dt, d.secid ORDER BY t.period DESC) = 1
+  ), bs AS (
+      SELECT d.dt, d.secid, f.total_assets - f.total_liab AS equity
+      FROM fl_daily_bar d
+      JOIN fl_fin_report f
+        ON f.secid = d.secid AND f.announce_date <= d.dt
+       AND f.total_assets IS NOT NULL AND f.total_liab IS NOT NULL
+      WHERE d.dt BETWEEN $start AND $end
+      QUALIFY row_number() OVER (PARTITION BY d.dt, d.secid ORDER BY f.period DESC) = 1
+  )
+  SELECT n.dt, n.secid,
+         CASE WHEN b.equity > 0 THEN n.ttm_np / b.equity END AS value,
+         n.used_period, n.used_announce
+  FROM np n
+  JOIN bs b ON b.dt = n.dt AND b.secid = n.secid

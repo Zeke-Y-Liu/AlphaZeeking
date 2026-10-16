@@ -11,10 +11,24 @@ from . import data as D
 from . import repo as R
 from . import factors as F
 from . import hypothesis as H
+from .engines.base import apply_metric_change, factor_entries
 
 
 def _load(p):
     return json.loads(p.read_text(encoding="utf-8"))
+
+
+def _engine(eid: str, ctx=None):
+    """取引擎包装器实例并加载 workspace 注册表（T-R2：引擎统一入口）。
+
+    注册表缺失/损坏由 load_registry 透明降级（内置默认），绝不阻断评估；
+    ctx=None 时保持内置默认（纯函数调用场景）。
+    """
+    from . import engines as E
+    eng = E.get_engine(eid)
+    if ctx is not None:
+        eng.load(ctx.local_repo)
+    return eng
 
 
 # ── factor ─────────────────────────────────────────────
@@ -35,12 +49,13 @@ def factor_compute(args, ctx):
     con.execute("DELETE FROM factor_value_daily WHERE factor_id IN (%s)" %
                 ",".join(f"'{f}'" for f in F.ENGINE_B_FACTORS))
     bars, _ = _bars_reports(ctx)
+    beta_eng = _engine("beta", ctx)          # 引擎入口（T-R2）：经包装器调用
     out, signals = [], []
     as_of = args.get("as_of") or "auto"
     for secid, arr in bars.items():
         if not arr:                          # 上游失败标的（0 根 K 线）：跳过，防 IndexError
             continue
-        b = F.compute_beta(secid, arr, None if as_of == "auto" else as_of)
+        b = beta_eng.run(secid, arr, None if as_of == "auto" else as_of)
         vals = {"mom_20d": b["mom_20d"], "vol_20d": b["vol_20d"], "ma20_break": b["ma20_break"],
                 "high20_touch": b["high20_touch"], "dist_high20": b["dist_high20"]}
         for fid, v in vals.items():
@@ -62,14 +77,15 @@ def factor_compute_alpha(args, ctx):
                 ",".join(f"'{f}'" for f in F.ENGINE_A_FACTORS))
     con.execute("DELETE FROM factor_pit_meta")
     bars, fund = _bars_reports(ctx)
+    alpha_eng = _engine("alpha", ctx)        # 引擎入口（T-R2）：经包装器调用
     out = []
     as_of = args.get("as_of") or "auto"
     for secid, arr in bars.items():
         if not arr:                          # 上游失败标的（0 根 K 线）：跳过，防 IndexError
             continue
         fd = fund.get(secid, {})
-        a = F.compute_alpha(secid, arr, fd.get("reports", []), fd.get("dividends", []),
-                            None if as_of == "auto" else as_of)
+        a = alpha_eng.run(secid, arr, fd.get("reports", []), fd.get("dividends", []),
+                          None if as_of == "auto" else as_of)
         for fid in F.ENGINE_A_FACTORS:
             if a.get(fid) is not None:
                 con.execute("INSERT INTO factor_value_daily VALUES (?,?,?,?)", (a["as_of"], secid, fid, a[fid]))
@@ -84,6 +100,149 @@ def factor_compute_alpha(args, ctx):
     con.close()
     return {"engine": "A", "as_of": out[0]["dt"] if out else None, "computed": out,
             "pit_rule": "报告期+披露窗口（Q1+30/H1+62/Q3+31/FY+120 日）= 可用人时点"}
+
+
+def factor_regime(args, ctx):
+    """港美利率/汇率 regime 条件变量（H-0006）：carry_hk_us / peg_pressure → 市场级择时状态
+
+    数据源 ``market/hk_rates.json``（``ap fetch`` 时 universe 含港股则同步；HIBOR1M / 联邦基金 /
+    USDHKD 逐日序列）。非横截面选股因子：输出市场级 ``state``（outflow_pressure / neutral），
+    仅供择时参考。
+    """
+    p = ctx.local_repo / "market" / "hk_rates.json"
+    if not p.exists():
+        return {"error": "港美利率数据未就绪：请先 `ap fetch`（universe 含港股时同步 market/hk_rates.json）"}
+    data = _load(p)
+    series = data.get("series") or []
+    if not series:
+        return {"error": f"港美利率序列为空：{data.get('error') or '数据源返回 0 行'}"}
+    r = _engine("beta", ctx).run_hk_regime(series, as_of=args.get("as_of"),
+                                           chg_win=(int(args["chg_win"]) if args.get("chg_win") else None))
+    return {"as_of": r["as_of"], "source": data.get("source"), "chg_win": r["chg_win"],
+            "state": r["state"], "factors": {fid: r[fid] for fid in F.HK_REGIME_FACTORS},
+            "detail": r}
+
+
+def factor_macro(args, ctx):
+    """引擎C：宏观流动性 regime（A/HK/US 三市场温度计与维度分，市场级条件变量）。
+
+    数据源 ``market/macro_liquidity.json``（``ap fetch`` 恒同步）+ ``market/hk_rates.json``
+    （HK 维度输入，缺失则 HK 市场降级 unavailable）。非横截面选股因子：输出市场级
+    ``state``（tight_stress / neutral / easy_froth）与三市场档位，仅供择时参考；
+    **不产生 signals 条目、不参与权重决策**（引擎C 纪律红线）。
+    """
+    p = ctx.local_repo / "market" / "macro_liquidity.json"
+    if not p.exists():
+        return {"error": "宏观流动性数据未同步（先执行数据同步）"}
+    data = _load(p)
+    hk_p = ctx.local_repo / "market" / "hk_rates.json"
+    hk_series = (_load(hk_p).get("series") if hk_p.exists() else None)
+    if not data.get("series"):
+        return {"error": "宏观流动性序列为空（上游拉取失败，重跑同步）"}
+    return _engine("macro", ctx).run(data["series"], hk_series,
+                                     as_of=args.get("as_of"),
+                                     meta=data.get("meta"))
+
+
+# ── engine.metrics：指标全生命周期（T-R7；写 sandbox 注册表，ap push 经门禁回流）──
+def _registry_read(ctx) -> dict:
+    """加载 sandbox 注册表（缺失/损坏 → 内置默认透明降级；写回时建立完整文件）。"""
+    from .engines.base import load_registry
+    return load_registry(ctx.local_repo)
+
+
+def _registry_write(ctx, reg: dict):
+    p = ctx.local_repo / "factors" / "registry.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(reg, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _locate_metric(reg: dict, mid: str, engine: str | None):
+    """跨引擎定位指标 id → (engine_id, None) | (None, 中文错误)。"""
+    hits = [eid for eid, sec in reg["engines"].items()
+            if (not engine or eid == engine)
+            and any(isinstance(m, dict) and m.get("id") == mid for m in sec.get("metrics", []))]
+    if not hits:
+        return None, f"指标不存在：{mid}"
+    if len(hits) > 1:
+        return None, f"指标 {mid} 在多个引擎中存在（{hits}），请指定 engine"
+    return hits[0], None
+
+
+def engine_metrics_list(args, ctx):
+    """指标清单（按引擎/状态过滤；含 changelog 计数）。"""
+    reg = _registry_read(ctx)
+    out = []
+    for eid, sec in reg["engines"].items():
+        if args.get("engine") and eid != args["engine"]:
+            continue
+        for m in sec.get("metrics", []):
+            if args.get("status") and m.get("status", "active") != args["status"]:
+                continue
+            out.append({**{k: m.get(k) for k in
+                           ("id", "formula", "dim", "market", "dataset", "scorer",
+                            "params", "status", "version", "hypothesis_id", "note")},
+                        "engine": eid})
+    return {"metrics": out, "changelog_n": len(reg.get("changelog") or [])}
+
+
+def engine_metrics_add(args, ctx):
+    """新增指标（spec=完整声明，formula 须内置清单；hypothesis_id 必填）。"""
+    eid, spec = args.get("engine"), args.get("spec")
+    if not eid:
+        return {"error": "缺少 engine（alpha/beta/macro）"}
+    if not isinstance(spec, dict) or not spec.get("id"):
+        return {"error": "缺少 spec.id（新指标完整声明，formula 必填）"}
+    try:
+        reg = _registry_read(ctx)
+        new_reg, rec = apply_metric_change(reg, eid, {
+            "op": "add", "id": spec["id"],
+            "patch": {k: v for k, v in spec.items() if k != "id"},
+            "hypothesis_id": args.get("hypothesis_id"), "reason": args.get("reason") or ""})
+    except ValueError as e:
+        return {"error": str(e)}
+    _registry_write(ctx, new_reg)
+    return {"ok": True, "metric": rec["after"],
+            "warnings": ["已写入 sandbox 注册表；`ap push` 提交变更（需六项验证全绿）"]}
+
+
+def engine_metrics_update(args, ctx):
+    """修改指标（patch=部分字段；params/scorer 深合并；status 翻转需 hypothesis_id）。"""
+    mid, patch = args.get("id"), args.get("patch")
+    if not mid or not isinstance(patch, dict) or not patch:
+        return {"error": "需要 id 与非空 patch（部分字段）"}
+    try:
+        reg = _registry_read(ctx)
+        eid, err = _locate_metric(reg, mid, args.get("engine"))
+        if err:
+            return {"error": err}
+        new_reg, rec = apply_metric_change(reg, eid, {
+            "op": "update", "id": mid, "patch": patch,
+            "hypothesis_id": args.get("hypothesis_id"), "reason": args.get("reason") or ""})
+    except ValueError as e:
+        return {"error": str(e)}
+    _registry_write(ctx, new_reg)
+    return {"ok": True, "before": rec["before"], "after": rec["after"]}
+
+
+def engine_metrics_remove(args, ctx):
+    """移除指标（软删：status=inactive，条目保留；hypothesis_id 必填）。"""
+    mid = args.get("id")
+    if not mid:
+        return {"error": "缺少 id"}
+    try:
+        reg = _registry_read(ctx)
+        eid, err = _locate_metric(reg, mid, args.get("engine"))
+        if err:
+            return {"error": err}
+        new_reg, rec = apply_metric_change(reg, eid, {
+            "op": "remove", "id": mid,
+            "hypothesis_id": args.get("hypothesis_id"), "reason": args.get("reason") or ""})
+    except ValueError as e:
+        return {"error": str(e)}
+    _registry_write(ctx, new_reg)
+    return {"ok": True, "metric": rec["after"],
+            "warnings": ["软删完成：条目保留（status=inactive），可 update 复活"]}
 
 
 # ── portfolio ───────────────────────────────────────────
@@ -106,14 +265,16 @@ def portfolio_review(args, ctx):
     pf = _load(pf_path)
     dims = {d["secid"]: d for d in _load(ctx.local_repo / "dim" / "security.json")}
     bars, fund = _bars_reports(ctx)
+    alpha_eng = _engine("alpha", ctx)        # 引擎入口（T-R2）：三引擎均经包装器调用
+    beta_eng = _engine("beta", ctx)
     positions, signals = [], []
     day_rets, members = {}, {}
     for p in pf["positions"]:
         secid = p["secid"]
         arr = bars[secid]
         fd = fund.get(secid, {})
-        a = F.compute_alpha(secid, arr, fd.get("reports", []), fd.get("dividends", []))
-        b = F.compute_beta(secid, arr)
+        a = alpha_eng.run(secid, arr, fd.get("reports", []), fd.get("dividends", []))
+        b = beta_eng.run(secid, arr)
         day_pct = arr[-1]["pct"]
         # 基金/指数类无财报（used_announce=None）→ 无陈旧度概念
         staleness = ((dt.date.fromisoformat(a["as_of"]) - dt.date.fromisoformat(a["used_announce"])).days
@@ -168,13 +329,38 @@ def portfolio_review(args, ctx):
     next_td, holiday_days = _next_trade_date(ctx, port[-1][0])
 
     reg = _load(ctx.local_repo / "factors" / "registry.json")
+    entries = factor_entries(reg)
     # R4：信号延迟衰减 caveat（fast_decay 的 engine B signal → 报告挂警示）
     decay_caveats = [{"signal_id": f["id"], "name": f.get("name"),
                       "decay_rate": (f.get("delay_decay") or {}).get("decay_rate"),
                       "t1_open": (f.get("delay_decay") or {}).get("t1_open"),
                       "n_events": (f.get("delay_decay") or {}).get("n_events")}
-                     for f in reg["factors"]
+                     for f in entries
                      if (f.get("delay_decay") or {}).get("flag") == "fast_decay"]
+    # 引擎C（宏观流动性，市场级条件变量；不产生信号、不参与权重决策，失败透明降级）
+    macro_liquidity = {"status": "unavailable", "error": "unknown"}
+    try:
+        import json as _json
+        mp = ctx.local_repo / "market" / "macro_liquidity.json"
+        hp = ctx.local_repo / "market" / "hk_rates.json"
+        data = _json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}
+        hk_series = (_json.loads(hp.read_text(encoding="utf-8")).get("series")
+                     if hp.exists() else None)
+        if data.get("series"):
+            # 市场权重 = 组合持仓按市场计数（基金/ETF 计入 A；无持仓计数的市场剔除）
+            mw = {}
+            for p in pf["positions"]:
+                mkt = (dims.get(p["secid"], {}).get("market")
+                       or ("A" if not p["secid"].endswith((".HK", ".US")) else
+                           "HK" if p["secid"].endswith(".HK") else "US"))
+                mw[mkt] = mw.get(mkt, 0) + 1
+            macro_liquidity = _engine("macro").run(
+                data["series"], hk_series, as_of=port[-1][0],
+                market_weights=mw or None, meta=data.get("meta"))
+        else:
+            macro_liquidity = {"status": "unavailable", "error": "宏观流动性序列为空"}
+    except Exception as exc:                                   # noqa: BLE001 - 引擎C 失败不阻断评估
+        macro_liquidity = {"status": "unavailable", "error": f"{type(exc).__name__}: {exc}"}
     return {
         "id": pf["id"], "name": pf["name"], "as_of": port[-1][0], "base_ccy": pf["base_ccy"],
         "note": pf["note"], "next_trade_date": next_td, "holiday_days": holiday_days,
@@ -182,10 +368,11 @@ def portfolio_review(args, ctx):
                               "ret_ytd": series[-1][1] / series[ytd_base][1] - 1,
                               "ret_1y": ret(252), "max_dd_1y": mdd, "nav": series[-1][1],
                               "method": "等权·日再平衡·名义组合（真实行情合成；停牌/缺K线按0收益·权重冻结近似；最大回撤=近252交易日窗口）"},
+        "macro_liquidity": macro_liquidity,
         "positions": positions, "signals": signals,
         "decay_caveats": decay_caveats,
-        "factor_health": {"active": [f["id"] for f in reg["factors"] if f["status"] == "active"],
-                          "weakening": [f for f in reg["factors"] if f["status"] == "weakening"]},
+        "factor_health": {"active": [f["id"] for f in entries if f.get("status") == "active"],
+                          "weakening": [f for f in entries if f.get("status") == "weakening"]},
         "data_quality": {"last_bar": port[-1][0], "calendar_next": next_td, "sources": "AKShare 新浪+腾讯",
                          "provenance": str(ctx.local_repo / "market" / "provenance.json")},
     }
@@ -326,7 +513,8 @@ def research_walkforward(args, ctx):
     factor = str(args.get("factor", "all"))
     bars = _load(ctx.local_repo / "market" / "daily_bars.json")
     fund = _load(ctx.local_repo / "factors" / "fundamental_values.json")
-    registry = _load(ctx.local_repo / "factors" / "registry.json")
+    registry = {"factors": factor_entries(
+        _load(ctx.local_repo / "factors" / "registry.json"))}
     known = {f["id"] for f in registry["factors"]}
     if factor != "all" and factor not in known:
         return {"error": f"因子未注册：{factor}"}
@@ -458,6 +646,34 @@ def factor_activate(args, ctx):
     return H.factor_activate(args, ctx)
 
 
+def factor_fl_activate(args, ctx):
+    """M5 8.1：factorlib 中长期因子 draft→active 激活门禁（③④⑤⑥+血缘，无旁路）。
+
+    与 factor.activate（α 引擎 registry）分工：本工具面向 factorlib 因子库
+    （fl_* 治理表消费 + factor_registry_state.json 状态机）。
+    """
+    from factorlib.lifecycle import activate_factor
+    return activate_factor(ctx.sandbox_dir / "data" / "fl.duckdb", ctx.local_repo,
+                           str(args.get("factor", "")), who="mcp",
+                           why=str(args.get("why", "")))
+
+
+def factor_fl_inspect(args, ctx):
+    """M5 8.2：季度巡检编排（三指标三态 + fl_factor_health 落库 + 状态同步）。
+
+    drill / inject_decay 任一给出即演练态：不落库不写状态文件（artifact 标注 drill）。
+    """
+    from applib.factor_inspect import run_inspection
+    inj = args.get("inject_decay")
+    factor = args.get("factor")
+    return run_inspection(ctx,
+                          factors=[str(factor)] if factor else None,
+                          as_of=args.get("as_of"),
+                          drill=bool(args.get("drill")),
+                          inject_decay=inj if isinstance(inj, list)
+                          else ([str(inj)] if inj else None))
+
+
 # ── report ──────────────────────────────────────────────
 def report_generate(args, ctx, run: dict | None = None):
     from . import report as RP
@@ -510,6 +726,76 @@ def checkpoint_restore(args, ctx):
     return {"restored": False, "reason": "checkpoint 不存在"}
 
 
+# ── 二线数据源（a-stock-data v3.10.1 摘取，不替换主源）──────
+def _portfolio_secids(ctx) -> list[str]:
+    """全部组合持仓 secid 去重（PIT 行业查询的默认标的集）。"""
+    out: list[str] = []
+    for p in sorted((ctx.local_repo / "portfolio").glob("*.json")):
+        try:
+            out += [x["secid"] for x in _load(p).get("positions", [])]
+        except (KeyError, ValueError):
+            continue
+    return sorted(set(out))
+
+
+def altdata_sync(args, ctx):
+    """二线源同步：申万行业分类变迁史 → dim/industry_sw.json（含 provenance 登记）"""
+    from . import altdata as A
+    return A.fetch_sw_industry(ctx, allow_insecure_ssl=not args.get("strict_ssl"))
+
+
+def altdata_industry_asof(args, ctx):
+    """PIT 行业查询：只取 as_of 之前最后一次行业调整（无前视）。
+
+    同时给出主源 ``dim/security.json`` 的静态标注，便于对照「用今天的行业套历史」的偏差。
+    ``industries`` 字段即 ``factors.industry_neutralize`` 可直接消费的映射。
+    """
+    from . import altdata as A
+    records = A.load_sw(ctx)
+    if not records:
+        return {"error": "申万行业未同步：请先运行 `ap altdata-sync`"}
+    as_of = args.get("as_of") or dt.date.today().isoformat()
+    level = args.get("level") or "l1"
+    raw = args.get("codes")
+    codes = ([c.strip() for c in str(raw).split(",") if c.strip()] if raw
+             else _portfolio_secids(ctx))
+    sp = ctx.local_repo / "dim" / "security.json"
+    static = {s["secid"]: s.get("industry") for s in _load(sp)} if sp.exists() else {}
+    rows, mapping = [], {}
+    for c in codes:
+        r = A.sw_industry_as_of(records, c, as_of, level)
+        mapping[c] = r["industry"] if r else None
+        rows.append({"secid": c, "industry_sw": r["industry"] if r else None,
+                     "since": r["since"] if r else None,
+                     "industry_static": static.get(c)})
+    return {"as_of": as_of, "level": level, "source": A.PIN_SOURCE, "n": len(rows),
+            "n_no_record": sum(1 for r in rows if r["industry_sw"] is None),
+            "note": "industry_sw=申万代码（官方仅发布代码，无中文名）；industry_static=主源静态标注，"
+                    "两者分类体系不同，不可直接等同",
+            "industries": mapping, "rows": rows}
+
+
+def research_source(args, ctx):
+    """R3 研报来源（只读拉取）：东财研报（评级/目标价/三年EPS预测）+ 同花顺一致预期 EPS"""
+    from . import altdata as A
+    code = args.get("code")
+    if not code:
+        return {"error": "需提供 code（如 601058 / 601058.SH）"}
+    strict = bool(args.get("strict_ssl"))
+    reports, eps, errs = [], [], []
+    try:
+        reports = A.research_reports(code, max_pages=int(args.get("max_pages") or 1),
+                                     allow_insecure_ssl=not strict)
+    except Exception as e:                                   # 单源失败不阻断另一源
+        errs.append(f"东财研报: {type(e).__name__}: {e}")
+    try:
+        eps = A.eps_consensus(code, allow_insecure_ssl=not strict)
+    except Exception as e:
+        errs.append(f"同花顺一致预期: {type(e).__name__}: {e}")
+    return {"code": A.six(code), "source": A.PIN_SOURCE, "n_reports": len(reports),
+            "reports": reports, "eps_consensus": eps, "errors": errs}
+
+
 # ── 工具注册表（MCP 暴露面）─────────────────────────────
 def _tool(fn, desc):
     return {"fn": fn, "desc": desc}
@@ -521,6 +807,12 @@ TOOLS = {
     "factor.list":     _tool(factor_list, "列出因子注册中心（id/类型/状态/版本）"),
     "factor.compute":  _tool(factor_compute, "引擎B：20日信号因子（mom/vol/MA20突破/新高/距高点）"),
     "factor.compute_alpha": _tool(factor_compute_alpha, "引擎A：中长期因子（估值/质量/成长/动量/红利低波+五维）"),
+    "factor.regime":   _tool(factor_regime, "H-0006：港美利率/汇率 regime 条件变量（carry_hk_us/peg_pressure，市场级择时）"),
+    "factor.macro":    _tool(factor_macro, "引擎C：宏观流动性 regime（A/HK/US 三市场温度计与维度分，市场级条件变量）"),
+    "engine.metrics.list":   _tool(engine_metrics_list, "指标注册表清单（按引擎/状态过滤，含变更日志计数）"),
+    "engine.metrics.add":    _tool(engine_metrics_add, "指标新增（formula 须 builtin 内置清单；hypothesis_id 必填；写 sandbox 注册表）"),
+    "engine.metrics.update": _tool(engine_metrics_update, "指标修改（部分字段/参数深合并/启停；status 翻转需 hypothesis_id；version 自增）"),
+    "engine.metrics.remove": _tool(engine_metrics_remove, "指标移除（软删：status=inactive 条目保留；需 hypothesis_id；可 update 复活）"),
     "portfolio.review": _tool(portfolio_review, "cn4 组合复盘：中长期因子+短期20日+下一交易日指引"),
     "portfolio.rebalance_plan": _tool(portfolio_rebalance_plan, "生成拟调仓/评估单（变更建议，需人工确认）"),
     "portfolio.exec_orders": _tool(portfolio_exec_orders, "调仓执行单：目标权重→金额→整手股数委托清单（待人工确认，不自动下单）"),
@@ -532,12 +824,17 @@ TOOLS = {
     "research.delay_decay": _tool(research_delay_decay, "R4：时间延迟敏感性实证（引擎B 0/1/2日执行衰减表 + 降级联动）→ decay_*"),
     "research.risk_model": _tool(research_risk_model, "P0：风险模型最小集（波动目标/等风险/敞口/限额）→ risk_*"),
     "research.p1_eval": _tool(research_p1_eval, "P1：因子补齐验收（增量相关 |ρ|<0.6 + A/B 条件门对照）→ p1_*"),
+    "altdata.sync": _tool(altdata_sync, "二线源：同步申万行业分类变迁史（消除行业前视偏差）→ dim/industry_sw.json"),
+    "altdata.industry_asof": _tool(altdata_industry_asof, "二线源：PIT 行业查询（取 as_of 前最后一次调整，无前视），含中性化映射"),
+    "research.source": _tool(research_source, "R3 研报来源：东财研报（评级/目标价/EPS预测）+ 同花顺一致预期"),
     "hypothesis.register": _tool(hypothesis_register, "R3：登记研报→假设（来源/可检验命题/预期方向）"),
     "hypothesis.list": _tool(hypothesis_list, "R3：假设列表；--factor 走反向血缘（点回因子来源）"),
     "hypothesis.link": _tool(hypothesis_link, "R3：建立因子↔假设血缘（双向写入，冲突拒绝）"),
     "hypothesis.set_status": _tool(hypothesis_set_status, "R3：假设状态机迁移（proposed→testing→supported/refuted→retired）"),
     "hypothesis.review": _tool(hypothesis_review, "R3：巡检假设复查（weakening/invalid 必答 + healthy 20% 抽查）→ hp_review_*"),
     "factor.activate": _tool(factor_activate, "R3/M5 8.1：draft→active 激活门禁（无 hypothesis_id 拒绝，无旁路）"),
+    "factor.fl_activate": _tool(factor_fl_activate, "M5 8.1：factorlib 中长期因子激活门禁（③④⑤⑥+血缘，fl_* 治理表消费，无旁路）"),
+    "factor.fl_inspect": _tool(factor_fl_inspect, "M5 8.2：季度巡检（三指标三态 + fl_factor_health 落库；drill 演练不落盘）→ fl_inspect_*"),
     "report.read":     _tool(report_read, "读取最近/指定报告 Markdown（供 agent 解读）"),
     "repo.clone":      _tool(R.repo_clone, "远端 main → 本地 sandbox（AKShare 真实数据）"),
     "repo.status":     _tool(R.repo_status, "本地工作区状态（dirty/changed）"),

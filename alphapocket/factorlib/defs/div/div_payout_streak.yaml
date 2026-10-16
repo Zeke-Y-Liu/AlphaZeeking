@@ -1,0 +1,57 @@
+# 连续分红年数（红利可持续性）：年度现金分红序列 gaps-islands + 日频持有口径展开
+id: div_payout_streak
+name: 连续分红年数
+category: F2_fundamental
+factor_type: alpha
+engine: sql
+direction: high
+universe: [CN]
+inputs: [fl_daily_bar, fl_dividend]
+lookback_days: 1300
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  截至 dt 已确认分红年份序列中，自最近一年往回连续分红的最长年数（整数 ≥0）。
+
+  口径（契约）：
+  - 分红年度 = ex_date 所在自然年；同年多笔（中期+年度）合并，min(announce_date)
+    为该年确认日（首笔现金分红公告即确认当年已分红，比「仅年报分红」更宽容，
+    差异如实声明）；
+  - PIT 红线：仅 announce_date ≤ dt 的分红计入（s.ann <= d.dt）；announce_date
+    为 NULL 的分红无法判定可见时点 → 不计入（不编造）；
+  - 值域整数 ≥0；无任何已确认分红史 → 0（LEFT JOIN 无匹配 + COALESCE，
+    不以 NULL 顶替 0——「从未分红」是真实信息）；
+  - 日频展开（持有口径）：年频事件按「最新已确认年份的 streak」持有至下一年
+    确认日，QUALIFY 取 yr 最大行。
+
+  方向 desc（连续越久越可持续，direction=high ↔ eval desc 语义）。
+sql: |
+  WITH dvd AS (
+      SELECT secid, year(ex_date) AS yr, min(announce_date) AS ann
+      FROM fl_dividend
+      WHERE dps > 0 AND announce_date IS NOT NULL
+      GROUP BY 1, 2
+  ),
+  isl AS (
+      SELECT secid, yr, ann,
+             yr - row_number() OVER (PARTITION BY secid ORDER BY yr) AS grp
+      FROM dvd
+  ),
+  stk AS (
+      SELECT secid, yr, ann,
+             row_number() OVER (PARTITION BY secid, grp ORDER BY yr) AS streak
+      FROM isl
+  )
+  SELECT d.dt, d.secid, COALESCE(s.streak, 0) AS value,
+         CAST(NULL AS DATE) AS used_period,
+         CAST(NULL AS DATE) AS used_announce
+  FROM fl_daily_bar d
+  LEFT JOIN stk s ON s.secid = d.secid AND s.ann <= d.dt
+  WHERE d.dt BETWEEN $start AND $end
+  QUALIFY row_number() OVER (PARTITION BY d.dt, d.secid
+                             ORDER BY s.yr DESC NULLS LAST) = 1
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0025

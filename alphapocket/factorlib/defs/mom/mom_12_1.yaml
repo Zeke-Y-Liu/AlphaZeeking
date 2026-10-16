@@ -1,0 +1,30 @@
+# 12-1 月动量（Jegadeesh-Titman）：qlib_expr 引擎，剔除最近 1 月防短期反转
+id: mom_12_1
+name: 12-1月动量
+category: F1_technical
+factor_type: alpha
+engine: qlib_expr
+direction: high
+universe: [CN]
+inputs: [fl_daily_bar]
+lookback_days: 252
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  12-1 月动量 = P(t−21) / P(t−252) − 1（近端/远端；剔除最近 1 个月防短期反转）。
+
+  口径修正（T-F5 据实）：任务契约 T-F5.md 原文写「close_{t-252}/close_{t-21} − 1」，
+  分子分母与 JT（Jegadeesh & Titman 1993）语义颠倒——按字面实现则「过去 12 个月上涨」
+  得负值，与 H-0020《JT 动量》expected_direction=positive 自相矛盾、检验无从对齐假设。
+  按 JT 标准语义实现（近端/远端 − 1），契约笔误在此显式登记。
+
+  direction 由 hypothesis 声明 + M3 directed IC 实证（A 股中期动量有效性存争议，
+  结论反向也如实落档，不预设胜利）。窗口不足（2017-01 拉取 → 2018-02 起有值）→ None。
+  量价因子豁免财务 PIT（used_period/used_announce = NULL，沿 M2 既有豁免纪律）。
+formula: Ref($close,21)/Ref($close,252)-1
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0020
+expr: Ref($close,21)/Ref($close,252)-1

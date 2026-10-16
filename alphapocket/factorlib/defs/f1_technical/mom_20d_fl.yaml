@@ -1,0 +1,21 @@
+# qlib_expr 引擎示例（量价 alpha）：20 日动量
+id: mom_20d_fl
+name: 20日动量
+category: F1_technical
+factor_type: alpha
+engine: qlib_expr
+direction: high
+universe: [CN]
+inputs: [fl_daily_bar]
+lookback_days: 20
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  close / close(20 个交易日前) - 1。窗口基于全量历史计算（物化区间头部不截断）。
+  量价因子无财务 PIT 元数据（used_period / used_announce 为 NULL，审计仅约束财务因子）。
+formula: $close/Ref($close,20)-1
+transform: []
+neutralization: []
+owner: factorlib
+expr: $close/Ref($close,20)-1

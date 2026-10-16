@@ -25,6 +25,7 @@ import time
 from pathlib import Path
 
 from . import factors as F
+from .engines.base import find_factor_entry
 
 HORIZON = 20
 EXEC_POINTS = [("t0_close", "T+0 收盘"), ("t1_open", "T+1 开盘"),
@@ -111,15 +112,27 @@ def _verdict(flag: str, d1: float | None, n: int) -> str:
 
 
 def run_decay(bars: dict, signal_ids: str | list | None = "all", horizon: int = HORIZON,
-              start: str | None = None, end: str | None = None) -> dict:
-    """全历史信号事件 → 延迟衰减报告（只读，不落盘）。``bars``：{secid: [K线]}。"""
+              start: str | None = None, end: str | None = None,
+              signal_specs: list[dict] | None = None) -> dict:
+    """全历史信号事件 → 延迟衰减报告（只读，不落盘）。``bars``：{secid: [K线]}。
+
+    T-R4：信号扫描面 = signal_specs 中 status==active 的 id 集合（经引擎查询；
+    未注入时取 BetaEngine.signal_specs() → 内置四信号，等价于常量全集），且
+    signal_specs 透传 iter_signal_events —— 停用信号不生成事件、报告无该信号行。
+    """
+    from . import engines as E
     ids = None if (signal_ids in (None, "all")) else (
         [signal_ids] if isinstance(signal_ids, str) else list(signal_ids))
+    specs = signal_specs if signal_specs is not None else E.get_engine("beta").signal_specs()
+    if ids is None:
+        active = {s.get("id") for s in specs
+                  if isinstance(s, dict) and s.get("status", "active") == "active"}
+        ids = [s for s in F.ENGINE_B_SIGNAL_IDS if s in active]   # 保持权威常量清单顺序
     events = []
     for secid, arr in bars.items():
-        for sid in (ids or F.ENGINE_B_SIGNAL_IDS):
+        for sid in ids:
             events.extend(F.iter_signal_events(secid, arr, sid, horizon=horizon,
-                                               start=start, end=end))
+                                               start=start, end=end, signal_specs=specs))
     rep = analyze_events(events, horizon)
     rep["start"] = start
     rep["end"] = end
@@ -139,13 +152,17 @@ def run_decay(bars: dict, signal_ids: str | list | None = "all", horizon: int = 
 
 # ── registry 降级 ───────────────────────────────────────
 def apply_registry(reg: dict, rep: dict) -> list[dict]:
-    """把衰减摘要写回 registry signal 条目；fast_decay → 置 weakening + decay_flag（就地修改）。"""
+    """把衰减摘要写回 registry signal 条目；fast_decay → 置 weakening + decay_flag（就地修改）。
+
+    条目按 id 经 find_factor_entry 取**底层引用**（v1 factors / v2 engines.*.metrics·
+    beta.signals 同构），就地写回随 reg 落盘。
+    """
     byrid: dict[str, list] = {}
     for s in rep.get("signals", []):
         byrid.setdefault(SIGNAL_REGISTRY_MAP.get(s["signal_id"], s["signal_id"]), []).append(s)
     changes = []
     for rid, ss in sorted(byrid.items()):
-        f = next((x for x in reg.get("factors", []) if x.get("id") == rid), None)
+        f = find_factor_entry(reg, rid)
         if f is None:
             changes.append({"registry_id": rid, "applied": False, "reason": "未注册（血缘悬空）"})
             continue

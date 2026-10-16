@@ -1,0 +1,38 @@
+# M1 首个因子（SQL 引擎模板）：PE TTM，PIT 红线写在 SQL 内
+id: val_pe_ttm
+name: 市盈率TTM
+category: F2_fundamental
+factor_type: alpha
+engine: sql
+direction: low            # 低 PE 为超配
+universe: [CN]
+inputs: [fl_daily_bar, fl_dws_financial_ttm]
+lookback_days: 0
+pit: true
+version: 1.0.0            # 包内静态基线（版本冻结守卫锚点）；运行时真源在状态文件（m7-tf2 bump 至 1.1.0）
+status: draft
+description: |
+  PE TTM = 收盘价 / 最近四个单季 EPS 之和（TTM 阶梯见 prepare）。
+  报告可用性以公告日为准：join 条件 announce_date <= 交易日（PIT 红线，篡改测试对象）。
+  亏损公司（ttm_eps <= 0）PE 无意义，记缺失（NULL 不落行）。
+  参数绑定使用 DuckDB 命名参数 $start / $end。
+  v1.1.0（M7 T-F2，经注册面 bump_version）：TTM 阶梯改累计口径（每报告期一行，
+  依赖缺失 → NULL 行），消费端显式过滤 ttm_eps IS NOT NULL → 截面回退最近可算报告期。
+formula: close / TTM(eps)
+transform: []
+neutralization: []
+owner: factorlib
+sql: |
+  WITH latest AS (
+      SELECT d.dt, d.secid, d.close,
+             t.period AS used_period, t.announce_date AS used_announce, t.ttm_eps
+      FROM fl_daily_bar d
+      JOIN fl_dws_financial_ttm t
+        ON t.secid = d.secid AND t.announce_date <= d.dt AND t.ttm_eps IS NOT NULL
+      WHERE d.dt BETWEEN $start AND $end
+  )
+  SELECT dt, secid,
+         CASE WHEN ttm_eps > 0 THEN close / ttm_eps END AS value,
+         used_period, used_announce
+  FROM latest
+  QUALIFY row_number() OVER (PARTITION BY dt, secid ORDER BY used_period DESC) = 1

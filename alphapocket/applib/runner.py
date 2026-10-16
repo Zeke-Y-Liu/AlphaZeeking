@@ -2,9 +2,12 @@
 
 V4-α 真实数据验证流水线（§15.2：全绿才允许 push）：
   ① pit_audit        财务因子 PIT 红线（used_announce ≤ as_of 且为最新可用报告期）
-  ② golden_test      pandas 独立重算引擎 A/B 因子 vs DuckDB 存值（双实现交叉）
+  ② golden_test      pandas 独立重算引擎 A/B 因子 vs DuckDB 存值（双实现交叉；
+                       引擎A对账清单 registry active 驱动，T-R5）
   ③ cross_source     新浪 vs 腾讯 两独立行情源收盘价一致
   ④ calendar_check   K线日期 ⊆ 交易日历，末根K线 = 最近交易日，无缺失
+                     （末根豁免分类：腾讯有更新 → 上游发布滞后豁免；腾讯亦无 → 尾部
+                       无行情豁免（停牌）；豁免透明计数，单一标的不连坐全市场）
   ⑤ adjust_check     qfq 前复权 vs raw 不复权涨跌幅一致（除权除息日外）
   ⑥ provenance_check 数据集 sha256 与溯源登记一致（clone 完整性）
 """
@@ -15,7 +18,17 @@ import duckdb
 from pathlib import Path
 from .ctx import Ctx, new_run_id, sha256_file
 from .tools import call_tool, checkpoint_save
-from .factors import ENGINE_A_FACTORS, ENGINE_B_FACTORS
+
+
+def _alpha_active_ids(ctx: Ctx) -> set[str]:
+    """引擎A对账因子清单（T-R5）：registry active 白名单驱动。
+
+    registry 缺失/损坏/版本不符 → load_registry 透明降级为内置默认（16 因子全
+    active，对账面与历史一致）；registry 合法且某因子 inactive → 该因子退出对账
+    （预期行为：停用即退出评估面，对账面同步收敛）。临时实例加载，不污染单例。
+    """
+    from .engines import AlphaEngine
+    return AlphaEngine().load(ctx.local_repo).active_ids()
 
 
 def _pit_audit(ctx: Ctx) -> dict:
@@ -47,6 +60,7 @@ def _golden_test(ctx: Ctx) -> dict:
         con.close()
 
     bad, checked = [], 0
+    active_a = _alpha_active_ids(ctx)          # T-R5：引擎A对账清单 registry 驱动
 
     def cmp(secid, fid, mine):
         nonlocal checked
@@ -57,6 +71,11 @@ def _golden_test(ctx: Ctx) -> dict:
         if not math.isclose(mine, dbv[key], rel_tol=1e-9, abs_tol=1e-12):
             bad.append(f"{secid}.{fid} {mine:.6g}≠{dbv[key]:.6g}")
         checked += 1
+
+    def cmp_a(secid, fid, mine):
+        """引擎A因子对账：registry inactive 因子跳过（停用即退出评估面，对账面同步收敛）"""
+        if fid in active_a:
+            cmp(secid, fid, mine)
 
     for secid, arr in bars.items():
         df = pd.DataFrame(arr).dropna(subset=["close"]).reset_index(drop=True)
@@ -70,6 +89,7 @@ def _golden_test(ctx: Ctx) -> dict:
         cmp(secid, "dist_high20", c.iloc[-1] / df["high"].iloc[-20:].max() - 1)
         # 引擎 A（逐报告期字典法独立重算：TTM=上年FY+本年YTD−上年同期YTD）
         # 基金/指数类不在 fundamental_values 中（无财报）→ 空报告集，仅价格类因子对账
+        # 清单 registry 驱动（T-R5）：inactive 因子跳过对账（预期行为，非缺失）
         fd = fund.get(secid, {})
         reps = sorted(fd.get("reports", []), key=lambda r: r["period"])
         by_p = {r["period"]: r for r in reps}
@@ -95,28 +115,28 @@ def _golden_test(ctx: Ctx) -> dict:
         t = df["dt"].iloc[-1]
         e = ttm_at(t)
         if e and e > 0:
-            cmp(secid, "val_pe_ttm", c.iloc[-1] / e)
+            cmp_a(secid, "val_pe_ttm", c.iloc[-1] / e)
         R_now = max((r for r in reps if r["announce_date"] <= t), key=lambda r: r["period"], default=None)
         if R_now and R_now.get("bps"):
-            cmp(secid, "val_pb", c.iloc[-1] / R_now["bps"])
+            cmp_a(secid, "val_pb", c.iloc[-1] / R_now["bps"])
         if R_now and R_now.get("rev_g") is not None:
-            cmp(secid, "grow_rev_yoy", R_now["rev_g"])
+            cmp_a(secid, "grow_rev_yoy", R_now["rev_g"])
         if R_now and R_now.get("np_g") is not None:
-            cmp(secid, "grow_np_yoy", R_now["np_g"])
+            cmp_a(secid, "grow_np_yoy", R_now["np_g"])
         if R_now and R_now.get("margin") is not None:
-            cmp(secid, "qua_margin", R_now["margin"])
+            cmp_a(secid, "qua_margin", R_now["margin"])
         if R_now and R_now.get("bps"):
             ee = ttm_at(t)
             if ee:
-                cmp(secid, "qua_roe_ttm", ee / R_now["bps"] * 100)
-        cmp(secid, "mom_12_1", c.iloc[-21] / c.iloc[-252] - 1)
-        cmp(secid, "vol_250", c.pct_change().iloc[-250:].std(ddof=1) * math.sqrt(252))
+                cmp_a(secid, "qua_roe_ttm", ee / R_now["bps"] * 100)
+        cmp_a(secid, "mom_12_1", c.iloc[-21] / c.iloc[-252] - 1)
+        cmp_a(secid, "vol_250", c.pct_change().iloc[-250:].std(ddof=1) * math.sqrt(252))
         dvd = fd.get("dividends", [])
         lo = (pd.Timestamp(t) - pd.Timedelta(days=365)).strftime("%Y-%m-%d")
         s = sum(d["dps"] for d in dvd if lo <= d["ex_date"] <= t)
         if s:
-            cmp(secid, "div_yield_ttm", s / c.iloc[-1])
-        # PE/PB 五年分位（独立窗口重算；P0-4：补齐 val_pe_pct/val_pb_pct，16 因子全覆盖）
+            cmp_a(secid, "div_yield_ttm", s / c.iloc[-1])
+        # PE/PB 五年分位（独立窗口重算；P0-4 补齐 val_pe_pct/val_pb_pct）
         dts = pd.to_datetime(df["dt"])
         pe_series, pb_series = [], []
         for i in range(len(df)):
@@ -134,12 +154,12 @@ def _golden_test(ctx: Ctx) -> dict:
             vals = [v for d, v in pe_series if d >= w5]
             cur = c.iloc[-1] / e
             if vals:
-                cmp(secid, "val_pe_pct", (sum(1 for v in vals if v < cur) + 0.5 * sum(1 for v in vals if v == cur)) / len(vals))
+                cmp_a(secid, "val_pe_pct", (sum(1 for v in vals if v < cur) + 0.5 * sum(1 for v in vals if v == cur)) / len(vals))
         if R_now and R_now.get("bps") and R_now["bps"] > 0:
             pb_vals = [v for d, v in pb_series if d >= w5]
             cur_pb = c.iloc[-1] / R_now["bps"]
             if pb_vals:
-                cmp(secid, "val_pb_pct", (sum(1 for v in pb_vals if v < cur_pb) + 0.5 * sum(1 for v in pb_vals if v == cur_pb)) / len(pb_vals))
+                cmp_a(secid, "val_pb_pct", (sum(1 for v in pb_vals if v < cur_pb) + 0.5 * sum(1 for v in pb_vals if v == cur_pb)) / len(pb_vals))
     return {"golden_test": f"pass({checked} 项对账)" if not bad else f"FAIL({'; '.join(bad[:5])})"}
 
 
@@ -182,7 +202,7 @@ def _calendar_check(ctx: Ctx) -> dict:
                 pass
 
     bad = []
-    lasts_by_mkt: dict[str, set] = {}
+    last_by_secid: dict[str, str | None] = {}
     susp_n = 0
     for secid, arr in bars.items():
         mkt = classify_secid(secid) or "A"
@@ -203,19 +223,45 @@ def _calendar_check(ctx: Ctx) -> dict:
             if real_missing:
                 bad.append(f"{secid} 缺交易日{len(real_missing)}根（腾讯有而新浪缺）{real_missing[:3]}")
             susp_n += len(missing) - len(real_missing)
-        lasts_by_mkt.setdefault(mkt, set()).add(dts[-1] if dts else None)
-    # 末根校验：各市场内所有标的末根一致，且 = 本市场最近交易日
+        last_by_secid[secid] = dts[-1] if dts else None
+    # 末根校验（T-fix 尾部豁免）：末根 < 本市场最近交易日的标的先按腾讯交叉源分类——
+    # 腾讯有更新行情且仅落后 1 个交易日 → 上游发布滞后（新浪港股个别标的收盘后延迟
+    # 发布，实测可达数小时），豁免并透明登记；腾讯亦无更新 → 尾部无行情（停牌），豁免
+    # 计数；落后 ≥2 个交易日且腾讯有更新 → 真缺失（持续上游故障），不豁免。
+    # 末根一致性仅对非豁免标的校验，单一标的滞后不再连坐全市场。
+    _sorted_cal = {m: sorted(d for d in (cal_by_mkt.get(m) or cal) if d <= today)
+                   for m in {classify_secid(s) or "A" for s in bars}}
+    last_td_by_mkt = {m: (c[-1] if c else None) for m, c in _sorted_cal.items()}
+    prev_td_by_mkt = {m: (c[-2] if len(c) >= 2 else None) for m, c in _sorted_cal.items()}
+    lag_exempt: list[str] = []
+    susp_tail_n = 0
+    lasts_by_mkt: dict[str, set] = {}
+    for secid, last in last_by_secid.items():
+        mkt = classify_secid(secid) or "A"
+        last_td = last_td_by_mkt.get(mkt)
+        if last and last_td and last < last_td:
+            tx_last = max((r["dt"] for r in txs.get(secid, [])), default=None)
+            prev_td = prev_td_by_mkt.get(mkt)
+            if tx_last and tx_last > last and (not prev_td or last >= prev_td):
+                lag_exempt.append(f"{secid}@{last}")
+            elif not tx_last or tx_last <= last:
+                susp_tail_n += 1
+            else:
+                lasts_by_mkt.setdefault(mkt, set()).add(last)   # 真缺失：不豁免
+        else:
+            lasts_by_mkt.setdefault(mkt, set()).add(last)
     for mkt, lasts in lasts_by_mkt.items():
-        mcal = cal_by_mkt.get(mkt) or cal
-        last_td = max((d for d in mcal if d <= today), default=None)
+        last_td = last_td_by_mkt.get(mkt)
         if lasts != {last_td}:
             bad.append(f"{mkt} 末根K线{sorted(lasts)} ≠ 最近交易日{last_td}")
     susp_note = f"·无行情豁免{susp_n}日(停牌/份额折算)" if susp_n else ""
+    lag_note = f"·发布滞后豁免{len(lag_exempt)}只({','.join(lag_exempt[:3])})" if lag_exempt else ""
+    susp_tail_note = f"·尾部无行情豁免{susp_tail_n}只" if susp_tail_n else ""
     cal_total = sum(len(cal_by_mkt.get(m) or cal) for m in lasts_by_mkt)
     mkt_note = "·" + "+".join(f"{m}:{len(c)}日" for m, c in sorted(cal_by_mkt.items()))
     last_note = "{" + ", ".join(
         f"{m}:{max(x for x in v if x)}" for m, v in sorted(lasts_by_mkt.items())) + "}"
-    msg = f"pass(末根={last_note}·日历{cal_total}日{mkt_note}{susp_note})" if not bad \
+    msg = f"pass(末根={last_note}·日历{cal_total}日{mkt_note}{susp_note}{lag_note}{susp_tail_note})" if not bad \
         else f"FAIL({'; '.join(bad[:4])})"
     return {"calendar_check": msg}
 

@@ -1,0 +1,40 @@
+# M7 T-F3 质量族：现金流/净利比（盈利含金量），PIT 红线写在 SQL 内
+id: qua_ocf_to_np
+name: 经营现金流净额比净利
+category: F2_fundamental
+factor_type: alpha
+engine: sql
+direction: high           # 高含金量（利润有现金流支撑）为超配
+universe: [CN]
+inputs: [fl_daily_bar, fl_dws_financial_ttm]
+lookback_days: 0
+pit: true
+version: 1.0.0
+status: draft
+description: |
+  现金流含金量 = 经营现金流净额 TTM / 归母净利 TTM（双 TTM 累计口径，见 prepare）。
+  - PIT：announce_date <= 交易日（PIT 红线）；
+  - 净利 TTM ≤0 → 比率无经济意义（分子正负皆反直觉）→ NULL 不落行（契约 c 边界，
+    单测锁定；此时负 ROE / 负应计仍由各自因子如实承载，不重复补救）；
+  - ttm_ocf / ttm_np 任一缺失 → 该报告期 NULL；
+  - 假设：H-0014（高含金量截面未来 1-6 月收益占优，Sloan 1996 现金流面）。
+formula: TTM(ocf) / TTM(net_profit)
+transform: []
+neutralization: []
+owner: factorlib
+hypothesis_id: H-0014
+sql: |
+  WITH tt AS (
+      SELECT d.dt, d.secid, t.ttm_np, t.ttm_ocf,
+             t.period AS used_period, t.announce_date AS used_announce
+      FROM fl_daily_bar d
+      JOIN fl_dws_financial_ttm t
+        ON t.secid = d.secid AND t.announce_date <= d.dt
+       AND t.ttm_np IS NOT NULL AND t.ttm_ocf IS NOT NULL
+      WHERE d.dt BETWEEN $start AND $end
+      QUALIFY row_number() OVER (PARTITION BY d.dt, d.secid ORDER BY t.period DESC) = 1
+  )
+  SELECT dt, secid,
+         CASE WHEN ttm_np > 0 THEN ttm_ocf / ttm_np END AS value,
+         used_period, used_announce
+  FROM tt
