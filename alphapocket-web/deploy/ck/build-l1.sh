@@ -12,8 +12,11 @@ mkdir -p "$STAGE"
 cd "$CK_REPO"
 
 # ---------- ① PG dump ----------
+# pg_dump 优先用 embedded（ap-bin），apt 版仅作兜底——系统盘重置后 /usr/bin 版会消失
+PG_DUMP="$AP_BIN/pg16/lib/bin/pg_dump"
+[ -x "$PG_DUMP" ] || PG_DUMP=/usr/bin/pg_dump
 say "pg_dump ap → ap.dump …"
-if ! PGPASSWORD=ap /usr/bin/pg_dump -Fc -h 127.0.0.1 -U ap ap > "$STAGE/ap.dump" 2>"$STAGE/dump.err"; then
+if ! PGPASSWORD=ap "$PG_DUMP" -Fc -h 127.0.0.1 -U ap ap > "$STAGE/ap.dump" 2>"$STAGE/dump.err"; then
   say "ERR: pg_dump 失败：$(tail -2 "$STAGE/dump.err")"
   exit 1
 fi

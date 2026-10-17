@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # T2.1 — 从本地缓存恢复 L0（前置：pull-l0.sh 或 build-l0.sh 已产出 cache/l0）
 # 用法：restore-l0.sh [--with-chromium]
-# 安全语义：manifest 全量 sha256 校验通过才开始解压；任何不一致 → 退出 2，不做部分恢复。
+# 语义：
+#   - 已就位（venv/node/infra 自检全过）→ 跳过解压（暖启动关键路径）
+#   - 否则 manifest 全量 sha 校验通过后解压；任何不一致 → 退出 2，不做部分恢复
 set -uo pipefail
 CK_SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=ck-env.sh
@@ -12,7 +14,27 @@ OUT_DIR=$CACHE/l0
 MANIFEST=$OUT_DIR/manifest-L0.json
 [ -f "$MANIFEST" ] || { say "ERR: manifest 缺失（先 pull-l0.sh）"; exit 1; }
 
-# ---------- 全量校验（先校验后动手）----------
+# ---------- 自检函数 ----------
+selfcheck() {
+  FAIL=0
+  "$CK_ROOT/core/.venv/bin/python" -c "import fastapi,pandas,duckdb,akshare" >/dev/null 2>&1 \
+    || { say "FAIL: venv import"; FAIL=1; }
+  LD_LIBRARY_PATH="$AP_BIN/libs" "$AP_BIN/redis-server" --version >/dev/null 2>&1 \
+    || { say "FAIL: redis"; FAIL=1; }
+  "$AP_BIN/minio" --version >/dev/null 2>&1 || { say "FAIL: minio"; FAIL=1; }
+  "$AP_BIN/pg16/lib/bin/initdb" --version >/dev/null 2>&1 || { say "FAIL: initdb"; FAIL=1; }
+  pnpm -C "$CK_ROOT/web" exec vite --version >/dev/null 2>&1 || { say "FAIL: web 工具链"; FAIL=1; }
+  return $FAIL
+}
+
+# ---------- 已就位探测（暖启动：跳过解压）----------
+if install_ok && selfcheck; then
+  say "L0 已就位（venv/node/infra 自检全过），跳过解压"
+  exit 0
+fi
+say "L0 未就位或自检不过 → 执行完整恢复"
+
+# ---------- manifest 全量校验（先校验后动手）----------
 say "校验 manifest 与本地 asset …"
 python3.12 - "$MANIFEST" "$OUT_DIR" "$WITH_CHROMIUM" <<'PY' || exit 2
 import hashlib, json, os, sys
@@ -55,13 +77,5 @@ if [ -d "$AP_BIN/bin" ]; then
 fi
 
 # ---------- 恢复后自检 ----------
-say "自检 …"
-FAIL=0
-"$CK_ROOT/core/.venv/bin/python" -c "import fastapi,pandas,duckdb,akshare" 2>/dev/null \
-  || { say "FAIL: venv import"; FAIL=1; }
-LD_LIBRARY_PATH="$AP_BIN/libs" "$AP_BIN/redis-server" --version >/dev/null 2>&1 \
-  || { say "FAIL: redis"; FAIL=1; }
-"$AP_BIN/minio" --version >/dev/null 2>&1 || { say "FAIL: minio"; FAIL=1; }
-"$AP_BIN/pg16/lib/bin/initdb" --version >/dev/null 2>&1 || { say "FAIL: initdb"; FAIL=1; }
-pnpm -C "$CK_ROOT/web" exec vite --version >/dev/null 2>&1 || { say "FAIL: web 工具链"; FAIL=1; }
-[ "$FAIL" -eq 0 ] && say "L0 恢复完成，自检全过" || { say "L0 自检失败"; exit 2; }
+say "恢复后自检 …"
+selfcheck && say "L0 恢复完成，自检全过" || { say "L0 自检失败"; exit 2; }

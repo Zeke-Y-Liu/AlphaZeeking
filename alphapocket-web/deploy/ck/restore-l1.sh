@@ -10,8 +10,8 @@ STAGE=$CK_DIR/l1-restore
 cd "$CK_REPO"
 
 say "拉取 ap-state …"
-# 显式 refspec：普通 fetch 只更新 FETCH_HEAD，不产 origin/ap-state remote-tracking
-git fetch -q origin ap-state:refs/remotes/origin/ap-state 2>/dev/null \
+# 显式 refspec + --force：ap-state 为整体替换语义（孤儿分支），非快进属常态
+git fetch --force -q origin ap-state:refs/remotes/origin/ap-state 2>/dev/null \
   || { say "ERR: ap-state 分支不可达（无状态快照，走 alembic+seed 慢路径）"; exit 3; }
 mkdir -p "$STAGE"
 git show origin/ap-state:ap.dump > "$STAGE/ap.dump" || { say "ERR: ap.dump 不在分支中"; exit 1; }
