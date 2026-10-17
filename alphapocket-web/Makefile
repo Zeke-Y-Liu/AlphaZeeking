@@ -132,6 +132,12 @@ ck-push:
 ck-pull:
 	@echo "[ck] not implemented — 见 docs/CHECKPOINT-PLAN.md T2.3"; exit 0
 
-## ck-probe: 重置语义哨兵（T0.3；mark 写入 / report 报告）
+## ck-probe: 重置语义哨兵（T0.3；make ck-probe mark / make ck-probe report）
+ifeq ($(filter ck-probe,$(MAKECMDGOALS)),ck-probe)
+CK_PROBE_SUBCMD := $(filter-out ck-probe,$(MAKECMDGOALS))
+# 让子命令（mark/report）不被 make 当作缺失目标
+.DEFAULT:
+	@:
+endif
 ck-probe:
-	@bash deploy/ck/ck-probe.sh $(filter-out $@,$(MAKECMDGOALS))
+	@bash deploy/ck/ck-probe.sh $(CK_PROBE_SUBCMD)
