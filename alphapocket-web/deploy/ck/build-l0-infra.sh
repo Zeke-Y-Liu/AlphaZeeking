@@ -27,26 +27,28 @@ else
   exit 1
 fi
 
-say "捕获 PG16（/usr/lib/postgresql/16 + /usr/share/postgresql/16）…"
+say "捕获 PG16（保持 initdb 的相对 share 推导布局）…"
+# 布局：pg16/lib ← /usr/lib/postgresql/16；pg16/share/postgresql ← /usr/share/postgresql/16
+# initdb 在 pg16/lib/bin/initdb 会推导 ../share/postgresql → pg16/share/postgresql ✓
 [ -d /usr/lib/postgresql/16 ] || { say "ERR: PG16 未安装（先 apt）"; exit 1; }
-mkdir -p "$STAGE/pg"
-cp -r /usr/lib/postgresql/16 "$STAGE/pg/lib16"
-cp -r /usr/share/postgresql/16 "$STAGE/pg/share16"
+mkdir -p "$STAGE/pg16/lib" "$STAGE/pg16/share/postgresql"
+cp -r /usr/lib/postgresql/16/. "$STAGE/pg16/lib/"
+cp -r /usr/share/postgresql/16/. "$STAGE/pg16/share/postgresql/"
 
 # 落 AP_BIN（本机即刻可用）+ 打包
 cp -r "$STAGE/bin/." "$AP_BIN/"
-mkdir -p "$AP_BIN/pg"
-cp -r "$STAGE/pg/lib16" "$STAGE/pg/share16" "$AP_BIN/pg/"
+mkdir -p "$AP_BIN/pg16"
+cp -r "$STAGE/pg16/lib" "$STAGE/pg16/share" "$AP_BIN/pg16/"
 
 tar -C "$STAGE" -czf "$OUT_DIR/redis-minio.tar.gz" bin
-tar -C "$STAGE" -czf "$OUT_DIR/pg-embedded.tar.gz" pg
+tar -C "$STAGE" -czf "$OUT_DIR/pg-embedded.tar.gz" pg16
 ( cd "$OUT_DIR" && sha256sum redis-minio.tar.gz pg-embedded.tar.gz > infra.sha256 )
 
 # 恢复端可用性预检：pg 二进制动态依赖是否全部可解析（同款沙箱应全过）
 say "预检 postgres 动态依赖…"
-if ldd "$AP_BIN/pg/lib16/bin/postgres" 2>/dev/null | grep -q "not found"; then
+if ldd "$AP_BIN/pg16/lib/bin/postgres" 2>/dev/null | grep -q "not found"; then
   say "WARN: postgres 存在未解析依赖（恢复端需重验，失败则降级 apt）"
-  ldd "$AP_BIN/pg/lib16/bin/postgres" | grep "not found" || true
+  ldd "$AP_BIN/pg16/lib/bin/postgres" | grep "not found" || true
 else
   say "预检通过：postgres 依赖全可解析"
 fi

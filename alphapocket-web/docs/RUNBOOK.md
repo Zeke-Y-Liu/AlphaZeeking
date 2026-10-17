@@ -381,3 +381,30 @@ MCP factor.macro # 工具面：读同一 payload → compute_macro_liquidity（�
   web 黄条 / 引擎C unavailable 灰条同语义消费。与行情门禁 data_risk 的失败语义
   （可阻断、可 FAIL）显式区别：数据缺失 → 提示可见 + 结果标注 unavailable/降级，流程继续。
 - **全量缺失也安全**：空仓/全缺场景返回结构化结果（summary 计数 + semantics 自描述），不失败。
+
+## 13. AP-Checkpoint 快速启动（T2/T3 落地记录）
+
+脚本：`deploy/ck/`（ck-env / pull-l0 / restore-l0 / start-infra / restore-l1 / warm-repo / build-l0* / build-l1）。
+
+### 13.1 冷启动恢复链（实测通过，2026-10-17）
+
+```
+pull-l0.sh（Release 253MB，sha 校验）→ restore-l0.sh（venv/node/infra 解压+自检）
+→ start-infra.sh（embedded PG16 initdb + redis + minio，零 apt）
+→ restore-l1.sh（ap-state pg_restore，数据 1/15/3）→ 起三件套 → warm-repo.sh（增量）
+```
+
+### 13.2 已知边界（实测发现，诚实登记）
+
+1. **港股 qfq 前复权漂移 × 增量合并**：qfq 序列随最新价动态漂移，incremental 合并
+   新旧 qfq 后 adjust_check 会对历史点报红（如 `00700.HK@2022-01-20`）。
+   处置：增量同步后若 adjust_check fail → 跑一次 bootstrap 全量重建（qfq/raw 同源即绿）。
+   根治方向：datasource 对 HK 的 qfq 增量改为整序列替换。
+2. **redis 非基础动态库**：apt redis 依赖 liblzf/jemalloc/libsystemd 等 14 个非基础
+   .so，重置即丢——L0 打包时必须带 `libs/` 并在启动时设 `LD_LIBRARY_PATH`（已内置）。
+3. **Debian PG 硬编码路径**：initdb/postgres 编译期指向 `/usr/{lib,share}/postgresql/16`，
+   embedded 布局经 `ln -sfn` 接回（start-infra 内置），另 initdb 需 `-L` 或链接先行。
+4. **gh 认证**：hosts.yml 随系统盘丢失，ck_ensure_gh_token 从 `/run/shared/git/credentials`
+   恢复 GH_TOKEN（git push 一直可用的原因即此共享挂载）。
+5. **gh release download 产空文件**：脚本环境下偶发静默空文件（实测），pull-l0 改用
+   `gh api` 列元数据 + `curl -H "Accept: application/octet-stream"` 直下，稳定。

@@ -22,6 +22,20 @@ AP_PY_VERSION="${AP_PY_VERSION:-3.12.3}"
 # ---------- 日志 ----------
 say() { echo "[ck $(date +%H:%M:%S)] $*"; }
 
+# ---------- gh 认证（hosts.yml 随系统盘丢失 → 从 git 共享凭证恢复）----------
+# git credential helper = store --file=/run/shared/git/credentials（/run 重置不丢）。
+# 提取其中的 GitHub token 导出为 GH_TOKEN，gh 自动化即恢复可用；幂等可重复调用。
+ck_ensure_gh_token() {
+  if command -v gh >/dev/null 2>&1 && ! gh auth status >/dev/null 2>&1; then
+    local cred="/run/shared/git/credentials" tok=""
+    [ -f "$cred" ] && tok=$(sed -n 's|^https://[^:]*:\([^@]*\)@github.com.*|\1|p' "$cred" | head -1)
+    if [ -n "$tok" ]; then
+      export GH_TOKEN="$tok"
+      say "gh 认证已从 git 共享凭证恢复"
+    fi
+  fi
+}
+
 # ---------- deps_key：L0 镜像的有效性绑定键 ----------
 # 公式：sha256( pyproject ‖ bff-lock ‖ web-lock ‖ e2e-pkg ‖ AP_PY_VERSION )[:12]
 # 任一依赖清单变更 → key 变更 → L0 需重建；数据/代码改动不影响（L0 只绑依赖）。
