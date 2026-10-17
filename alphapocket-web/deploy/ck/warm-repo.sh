@@ -43,13 +43,40 @@ for _ in $(seq 1 60); do
   sleep 5
 done
 
-# 终验：as_of 与六项验证
-curl -s -m 5 localhost:8082/api/v1/data/status -H "Authorization: Bearer $TOK" \
+# 终验：as_of 与六项验证；数据不全（incremental 截断等）→ 自动 bootstrap 自愈
+CHECK=$(curl -s -m 5 localhost:8082/api/v1/data/status -H "Authorization: Bearer $TOK" \
   | "$CK_ROOT/core/.venv/bin/python" -c "
 import sys,json
 d=json.load(sys.stdin)
 hb=sum(1 for s in d['securities'] if s['has_bars'])
-print(f\"[ck] as_of={d['as_of']} bars={hb}/{len(d['securities'])}\")"
+print(f\"{d['as_of']} {hb} {len(d['securities'])}\")" 2>/dev/null)
+AS_OF=$(echo "$CHECK" | awk '{print $1}')
+HB=$(echo "$CHECK" | awk '{print $2}')
+TOT=$(echo "$CHECK" | awk '{print $3}')
+echo "[ck] as_of=$AS_OF bars=$HB/$TOT"
+if [ "${HB:-0}" -lt "${TOT:-99}" ]; then
+  echo "[ck] WARN: 增量后数据不全（$HB/$TOT，已知增量截断边界）→ 自动 bootstrap 自愈 …"
+  JOB2=""
+  for _ in $(seq 1 24); do  # 锁释放有延迟：最多重试 2 分钟
+    JOB2=$(curl -s -m 5 -X POST localhost:8082/api/v1/data/sync -H "Authorization: Bearer $TOK" \
+      -H 'Content-Type: application/json' -d '{"mode":"bootstrap"}' \
+      | "$CK_ROOT/core/.venv/bin/python" -c "import sys,json;print(json.load(sys.stdin).get('job_id',''))" 2>/dev/null)
+    [ -n "$JOB2" ] && break
+    sleep 5
+  done
+  [ -n "$JOB2" ] || { echo "[ck] ERR: bootstrap 提交失败（sync 锁持续占用）"; exit 1; }
+  for _ in $(seq 1 120); do
+    ST=$(curl -s -m 5 "localhost:8082/api/v1/jobs/$JOB2" -H "Authorization: Bearer $TOK" \
+      | "$CK_ROOT/core/.venv/bin/python" -c "import sys,json;d=json.load(sys.stdin);print(d.get('status'))" 2>/dev/null)
+    case "$ST" in
+      done) echo "[ck] bootstrap 自愈完成"; break ;;
+      failed) echo "[ck] ERR: bootstrap 自愈失败"; exit 1 ;;
+    esac
+    sleep 5
+  done
+fi
+
+# 终验：六项验证
 curl -s -m 5 "localhost:8082/api/v1/data/verifications?limit=6" -H "Authorization: Bearer $TOK" \
   | "$CK_ROOT/core/.venv/bin/python" -c "
 import sys,json
