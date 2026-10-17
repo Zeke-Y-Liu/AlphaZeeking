@@ -31,22 +31,22 @@ _mark() {
 }
 
 _report() {
-  local t_exists u_exists t_head u_head cur_head verdict
+  local t_exists u_exists t_ts u_ts cur_head verdict
   t_exists="no"; u_exists="no"
-  [ -f "$TRACKED_MARKER" ] && t_exists="yes" && t_head=$(awk -F'|' '{print $4}' "$TRACKED_MARKER")
-  [ -f "$UNTRACKED_MARKER" ] && u_exists="yes" && u_head=$(awk -F'|' '{print $4}' "$UNTRACKED_MARKER")
+  [ -f "$TRACKED_MARKER" ] && t_exists="yes" && t_ts=$(awk -F'|' '{print $2}' "$TRACKED_MARKER")
+  [ -f "$UNTRACKED_MARKER" ] && u_exists="yes" && u_ts=$(awk -F'|' '{print $2}' "$UNTRACKED_MARKER")
   cur_head=$(git -C "$CK_REPO" rev-parse --short HEAD 2>/dev/null || echo "no-git")
 
-  say "git 跟踪内容  : $t_exists（marker HEAD=${t_head:-n/a}，当前 HEAD=$cur_head）"
+  say "git 跟踪内容  : $t_exists（当前 HEAD=$cur_head）"
   say "gitignored 内容: $u_exists"
+  # 判定只看两个 marker 的存活：HEAD 漂移属分支正常演进（同会话提交也会前进），
+  # 不作为重置信号。untracked 丢而 tracked 在 = 重置（方案核心前提的实证）。
   if [ "$t_exists" = "no" ]; then
     verdict="严重：连 git 跟踪内容都丢失（全新 clone 或更狠的清理）"
   elif [ "$u_exists" = "no" ]; then
     verdict="已重置：gitignored/系统盘被清，仅 git 跟踪内容存活（Checkpoint 方案的核心前提成立）"
-  elif [ "$t_head" = "$u_head" ] && [ "$t_head" = "$cur_head" ]; then
-    verdict="未重置：同一会话延续"
   else
-    verdict="分支切换或部分清理：两个 marker 都在但 HEAD 漂移（marker HEAD=$t_head vs 当前=$cur_head）"
+    verdict="未重置：同一会话延续（marker ts: tracked=$t_ts untracked=$u_ts）"
   fi
   say "结论          : $verdict"
 }
