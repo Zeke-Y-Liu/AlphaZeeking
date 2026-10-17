@@ -25,6 +25,12 @@ alphapocket/sandbox/
 .screenshots/
 .trae-html-share-packages/
 
+# ===== AP-Checkpoint（大件走 Release/数据分支，本地缓存不进库）=====
+.ck/
+ap-bin/
+ap-data/
+.ck-probe-untracked/
+
 # ===== Playwright =====
 e2e/test-results/
 e2e/playwright-report/

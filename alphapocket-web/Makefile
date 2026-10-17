@@ -112,3 +112,26 @@ seed-local:
 ## psql-local: 本地连接 PG（无 docker）
 psql-local:
 	PGPASSWORD=$${PGPASSWORD:-ap} psql -h 127.0.0.1 -U ap -d ap
+
+# ---------------- AP-Checkpoint（docs/CHECKPOINT-PLAN.md）----------------
+.PHONY: ck-build ck-restore ck-push ck-pull ck-probe
+
+## ck-build: 构建 L0/L1 checkpoint 镜像（T1.4/T3.1 实现）
+ck-build:
+	@echo "[ck] not implemented — 见 docs/CHECKPOINT-PLAN.md T1.4/T3.1"; exit 0
+
+## ck-restore: 从 checkpoint 恢复 L0/L1（T2.1/T3.2 实现）
+ck-restore:
+	@echo "[ck] not implemented — 见 docs/CHECKPOINT-PLAN.md T2.1/T3.2"; exit 0
+
+## ck-push: 推送 L0 到 GitHub Release / L1 到 ap-state 分支（T2.3/T3.1 实现）
+ck-push:
+	@echo "[ck] not implemented — 见 docs/CHECKPOINT-PLAN.md T2.3/T3.1"; exit 0
+
+## ck-pull: 从 Release 拉取 L0 并恢复（T2.3 实现）
+ck-pull:
+	@echo "[ck] not implemented — 见 docs/CHECKPOINT-PLAN.md T2.3"; exit 0
+
+## ck-probe: 重置语义哨兵（T0.3；mark 写入 / report 报告）
+ck-probe:
+	@bash deploy/ck/ck-probe.sh $(filter-out $@,$(MAKECMDGOALS))
