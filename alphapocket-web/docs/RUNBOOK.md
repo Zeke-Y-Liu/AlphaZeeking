@@ -381,3 +381,86 @@ MCP factor.macro # 工具面：读同一 payload → compute_macro_liquidity（�
   web 黄条 / 引擎C unavailable 灰条同语义消费。与行情门禁 data_risk 的失败语义
   （可阻断、可 FAIL）显式区别：数据缺失 → 提示可见 + 结果标注 unavailable/降级，流程继续。
 - **全量缺失也安全**：空仓/全缺场景返回结构化结果（summary 计数 + semantics 自描述），不失败。
+
+## 14. AP-Checkpoint 快速启动（T2/T3/T4 落地记录）
+
+脚本：`deploy/ck/`（ck-env / pull-l0 / restore-l0 / start-infra / restore-l1 / warm-repo / build-l0* / build-l1）。
+
+### 14.1 冷启动恢复链（实测通过，2026-10-17）
+
+```
+pull-l0.sh（Release 253MB，sha 校验）→ restore-l0.sh（venv/node/infra 解压+自检）
+→ start-infra.sh（embedded PG16 initdb + redis + minio，零 apt）
+→ restore-l1.sh（ap-state pg_restore，数据 1/15/3）→ 起三件套 → warm-repo.sh（增量）
+```
+
+### 14.2 已知边界（实测发现，诚实登记）
+
+1. **港股 qfq 前复权漂移 × 增量合并**：qfq 序列随最新价动态漂移，incremental 合并
+   新旧 qfq 后 adjust_check 会对历史点报红（如 `00700.HK@2022-01-20`）。
+   处置：增量同步后若 adjust_check fail → 跑一次 bootstrap 全量重建（qfq/raw 同源即绿）。
+   根治方向：datasource 对 HK 的 qfq 增量改为整序列替换。
+2. **redis 非基础动态库**：apt redis 依赖 liblzf/jemalloc/libsystemd 等 14 个非基础
+   .so，重置即丢——L0 打包时必须带 `libs/` 并在启动时设 `LD_LIBRARY_PATH`（已内置）。
+3. **Debian PG 硬编码路径**：initdb/postgres 编译期指向 `/usr/{lib,share}/postgresql/16`，
+   embedded 布局经 `ln -sfn` 接回（start-infra 内置），另 initdb 需 `-L` 或链接先行。
+4. **gh 认证**：hosts.yml 随系统盘丢失，ck_ensure_gh_token 从 `/run/shared/git/credentials`
+   恢复 GH_TOKEN（git push 一直可用的原因即此共享挂载）。
+5. **gh release download 产空文件**：脚本环境下偶发静默空文件（实测），pull-l0 改用
+   `gh api` 列元数据 + `curl -H "Accept: application/octet-stream"` 直下，稳定。
+
+### 14.3 常用命令速查
+
+```bash
+# 一键启动（自动选路：FAST-LOCAL → FAST-PULL → SLOW 兜底）
+bash deploy/start-local-sandbox.sh
+bash deploy/start-local-sandbox.sh --slow        # 强制全量安装路径
+
+# checkpoint 构建 / 推送 / 拉取
+make ck-build        # build-l0-venv/node/infra + manifest + build-l1（ap-state）
+make ck-push         # L0 → GitHub Release（tag ck-l0-<deps_key>）；L1 → ap-state 分支
+make ck-pull         # Release → 本地缓存（--with-chromium 需 E2E 时加）
+make ck-restore      # 从缓存恢复 L0/L1（一般由 start 脚本自动调用）
+
+# 数据链路（启动后数据不绿时）
+bash deploy/ck/warm-repo.sh        # 基线数据就位 + incremental（数据不全自动 bootstrap 自愈）
+
+# 计时对比（产出 docs/BENCH.md）
+bash deploy/ck/bench.sh              # FAST 实测 + SLOW 引用值
+bash deploy/ck/bench.sh --slow       # 破坏性真跑 SLOW（评测专用，会清 venv/node_modules）
+
+# 重置语义哨兵（下次沙箱重置后先跑这个）
+make ck-probe report                 # 报告本次重置清了什么
+```
+
+### 14.4 分层模型与键
+
+| 层 | 内容 | 键 | 通道 | 重建时机 |
+|---|---|---|---|---|
+| L0 依赖镜像 | venv / node_modules / chromium / redis-minio-libs / pg16-embedded | `deps_key = sha256(pyproject ‖ bff-lock ‖ web-lock ‖ e2e-pkg ‖ AP_PY_VERSION)[:12]` | GitHub Release `ck-l0-<deps_key>` | 任一依赖清单变更（key 自动漂移 → cache 失效重拉） |
+| L1 状态快照 | ap.dump（PG 全量）+ minio artifacts + state-manifest | `state_key = <git HEAD> + <as_of>` | git 孤儿分支 `ap-state`（force push 整体替换） | 每次成功启动后自动更新；手动 `make ck-build` |
+| L2 配置 | `.env`（MinIO 9100 等） | — | `.env.example` 模板 + warm-repo 自动重建 | 丢即重建 |
+
+- manifest：`~/.ck/cache/l0/manifest-L0.json`——恢复前逐 asset sha256 校验，失败只作废该层、绝不全恢复。
+- Release asset 清单：core-venv(122M) / node-all(71M) / chromium(279M, 按需) / redis-minio+libs(44M) / pg-embedded(21M)。
+
+### 14.5 故障排查 FAQ
+
+| 症状 | 处置 |
+|---|---|
+| `gh: set the GH_TOKEN environment variable` | `ck_ensure_gh_token` 应自动从 `/run/shared/git/credentials` 恢复；若仍失败手动 `export GH_TOKEN=$(sed -n 's\|^https://[^:]*:\([^@]*\)@github.com.*\|\1\|p' /run/shared/git/credentials)` |
+| redis `liblzf.so.1 not found` | 启动须带 `LD_LIBRARY_PATH=$AP_BIN/libs`（start-infra 已内置）；手动跑 redis 时同样加 |
+| `initdb: postgres.bki does not exist` | Debian PG 硬编码 share 路径——start-infra 的 `ln -sfn` 符号链接缺失，重跑 start-infra |
+| `pg_ctl: could not start` + 日志「lock file /var/run/postgresql」 | unix socket 目录缺失——start-infra 已改 `-c unix_socket_directories=$PGDATA`；旧进程先 `su postgres -c "$AP_BIN/pg16/lib/bin/pg_ctl -D $AP_DATA/pg stop"` |
+| `git fetch ap-state` non-fast-forward rejected | fetch 需 `--force`（ap-state 整体替换语义，restore-l1 已内置） |
+| 同步 409 `JOB_LOCKED` | sync 全局互斥——等当前 job done（`GET /api/v1/jobs/<id>`）再提交；warm-repo 自愈已带 2min 重试 |
+| 增量后 bars 不足（如 6/15）/ adjust_check 报红 | 已知增量截断 + 港股 qfq 漂移边界（§14.2）——warm-repo 自动 bootstrap 自愈；手动则直接跑 bootstrap |
+| playwright `libatk-1.0.so.0 not found` | chromium 系统库随系统盘丢失 → `pnpm exec playwright install-deps chromium` |
+
+### 14.6 何时重建 checkpoint
+
+1. **依赖清单变更**（pyproject / 任一 pnpm-lock / e2e package.json）→ deps_key 自动漂移，
+   下次启动 FAST-PULL 会 404 → 需重跑 `make ck-build && make ck-push`（在装好新依赖的环境里）。
+2. **python 版本升级**：AP_PY_VERSION 常量与实际 venv 版本须一致（ck-env.sh）。
+3. **日常数据变化不需要重建 L0**；L1 由启动尾钩自动常新。
+4. Release asset 单文件上限 2GB；当前最大 chromium 279M，远未触顶。
