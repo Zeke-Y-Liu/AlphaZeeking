@@ -43,7 +43,7 @@ for _ in $(seq 1 60); do
   sleep 5
 done
 
-# 终验：as_of 与六项验证；数据不全（incremental 截断等）→ 自动 bootstrap 自愈
+# 终验：bars 数 + 六项验证；任一不达标（bars 不足 / 验证非全绿）→ bootstrap 自愈
 CHECK=$(curl -s -m 5 localhost:8082/api/v1/data/status -H "Authorization: Bearer $TOK" \
   | "$CK_ROOT/core/.venv/bin/python" -c "
 import sys,json
@@ -53,9 +53,14 @@ print(f\"{d['as_of']} {hb} {len(d['securities'])}\")" 2>/dev/null)
 AS_OF=$(echo "$CHECK" | awk '{print $1}')
 HB=$(echo "$CHECK" | awk '{print $2}')
 TOT=$(echo "$CHECK" | awk '{print $3}')
-echo "[ck] as_of=$AS_OF bars=$HB/$TOT"
-if [ "${HB:-0}" -lt "${TOT:-99}" ]; then
-  echo "[ck] WARN: 增量后数据不全（$HB/$TOT，已知增量截断边界）→ 自动 bootstrap 自愈 …"
+VFAIL=$(curl -s -m 5 "localhost:8082/api/v1/data/verifications?limit=6" -H "Authorization: Bearer $TOK" \
+  | "$CK_ROOT/core/.venv/bin/python" -c "
+import sys,json
+items=json.load(sys.stdin)['items']
+print(sum(1 for i in items if i.get('status')!='pass'))" 2>/dev/null)
+echo "[ck] as_of=$AS_OF bars=$HB/$TOT 验证失败项=$VFAIL"
+if [ "${HB:-0}" -lt "${TOT:-99}" ] || [ "${VFAIL:-6}" -gt 0 ]; then
+  echo "[ck] WARN: 增量质量不达标（已知增量截断 + 港股 qfq 漂移边界）→ 自动 bootstrap 自愈 …"
   JOB2=""
   for _ in $(seq 1 24); do  # 锁释放有延迟：最多重试 2 分钟
     JOB2=$(curl -s -m 5 -X POST localhost:8082/api/v1/data/sync -H "Authorization: Bearer $TOK" \
