@@ -252,6 +252,79 @@ def materialize_from_pg(ctx: Ctx) -> dict[str, Any]:
     }
 
 
+def _prune_orphans(ctx: Ctx, universe: list[str]) -> list[str]:
+    """Universe 外孤儿数据清理（Q-fix，§14.2 qfq 漂移根治的配套）。
+
+    背景：git 基线 ``remote/repo`` 为旧版全量 K 线（57 只）；warm-repo 拷入 sandbox 后，
+    增量合并 ``new_nonempty`` 的「old 里 new 缺失 → 保旧」语义令 universe 外标的
+    （如 002407.SZ）永生，其旧基准 qfq 在除权日与 raw 背离 → adjust_check 恒红，
+    VERIFY_GATE 拦截一切计算任务，只能靠 bootstrap 反复自愈。
+
+    清理面：market 域 secid 级 dict（daily_bars / daily_bars_raw / cross_check_tx /
+    adjust_ex_dates）+ factors/fundamental_values + dim/security（list，按 secid 过滤）。
+    清理时机：物化（PG/DuckDB 全量重建）之前 → 下游自然干净。
+    """
+    allowed = set(universe)
+    pruned: list[str] = []
+
+    def _prune_dict(rel: str) -> None:
+        p = ctx.local_repo / rel
+        if not p.exists():
+            return
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(data, dict):
+            return
+        drop = [s for s in data if s not in allowed]
+        if not drop:
+            return
+        for s in drop:
+            data.pop(s, None)
+        p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        pruned.extend(f"{rel}:{s}" for s in drop)
+
+    for rel in ("market/daily_bars.json", "market/daily_bars_raw.json",
+                "market/cross_check_tx.json", "market/adjust_ex_dates.json",
+                "factors/fundamental_values.json"):
+        _prune_dict(rel)
+
+    dim_path = ctx.local_repo / "dim" / "security.json"
+    if dim_path.exists():
+        try:
+            rows = json.loads(dim_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            rows = []
+        if isinstance(rows, list):
+            kept = [r for r in rows if isinstance(r, dict) and r.get("secid") in allowed]
+            if len(kept) != len(rows):
+                dropped = len(rows) - len(kept)
+                dim_path.write_text(json.dumps(kept, ensure_ascii=False), encoding="utf-8")
+                pruned.append(f"dim/security.json:×{dropped}")
+
+    # 同步重算 provenance 登记哈希（clone 完整性校验以 sha256 对账；文件被改写后
+    # 登记必须跟随，否则 provenance_check 恒红）
+    prov_path = ctx.local_repo / "market" / "provenance.json"
+    if pruned and prov_path.exists():
+        try:
+            import hashlib
+
+            prov = json.loads(prov_path.read_text(encoding="utf-8"))
+            changed = False
+            touched = {x.split(":")[0] for x in pruned}
+            for s in prov.get("sources", []):
+                p = ctx.local_repo / s.get("file", "")
+                if s.get("file") in touched and p.exists():
+                    s["sha256"] = hashlib.sha256(p.read_bytes()).hexdigest()
+                    changed = True
+            if changed:
+                prov_path.write_text(json.dumps(prov, ensure_ascii=False, indent=2), encoding="utf-8")
+        except (OSError, ValueError):
+            logger.warning("provenance 登记重算失败（provenance_check 将如实报红）")
+    return pruned
+
+
 def build_duckdb(ctx: Ctx) -> dict[str, Any]:
     """``sandbox/repo`` JSON → ``sandbox/data/ap.duckdb`` 并计算 A/B 引擎因子。
 
@@ -390,6 +463,13 @@ def sync_workspace(
 
     _report(progress, 70, "clone remote → sandbox")
     cloned_files = _clone_to_sandbox(ctx)
+
+    # Q-fix：按权威 universe（PG securities）清理孤儿数据（git 基线/L1 快照携带的
+    # 旧版标的），随后物化层（PG/DuckDB 全量重建）自然收敛——不再依赖 bootstrap 兜底。
+    _report(progress, 84, "孤儿数据清理（universe 外）")
+    pruned = _prune_orphans(ctx, list(universe))
+    if pruned:
+        logger.info("孤儿清理 %d 项：%s", len(pruned), ", ".join(pruned[:8]))
 
     _report(progress, 85, "materialize PG → sandbox/repo")
     materialized = materialize_from_pg(ctx)

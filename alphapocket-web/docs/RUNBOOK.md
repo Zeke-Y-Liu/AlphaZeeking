@@ -396,10 +396,14 @@ pull-l0.sh（Release 253MB，sha 校验）→ restore-l0.sh（venv/node/infra �
 
 ### 14.2 已知边界（实测发现，诚实登记）
 
-1. **港股 qfq 前复权漂移 × 增量合并**：qfq 序列随最新价动态漂移，incremental 合并
-   新旧 qfq 后 adjust_check 会对历史点报红（如 `00700.HK@2022-01-20`）。
-   处置：增量同步后若 adjust_check fail → 跑一次 bootstrap 全量重建（qfq/raw 同源即绿）。
-   根治方向：datasource 对 HK 的 qfq 增量改为整序列替换。
+1. **港股 qfq 前复权漂移 × 增量合并（✅ 2026-10-18 已根治，无需 bootstrap）**：
+   根治三件套（Q-fix）：
+   ① applib/datasource——A 股 qfq 恒全量拉取（不受增量窗口限制）、HK qfq 起始切片
+   改用全量起点（此前按 s0 切片后与旧序列拼接正是病灶）；raw 不复权不漂移仍增量；
+   ② daily_bars merge_policy bars_union → new_nonempty（qfq 面全量自洽 + 拉取失败保旧）；
+   ③ core/data_sync `_prune_orphans`——按权威 universe 清理 git 基线/L1 快照携带的
+   孤儿标的（如旧版基线的 002407.SZ，57 只 → 15 只），provenance sha 同步重算。
+   实测：incremental 后六项验证 6/6 全绿，e2e_real 16/16，回测不再被 VERIFY_GATE 拦截。
 2. **redis 非基础动态库**：apt redis 依赖 liblzf/jemalloc/libsystemd 等 14 个非基础
    .so，重置即丢——L0 打包时必须带 `libs/` 并在启动时设 `LD_LIBRARY_PATH`（已内置）。
 3. **Debian PG 硬编码路径**：initdb/postgres 编译期指向 `/usr/{lib,share}/postgresql/16`，

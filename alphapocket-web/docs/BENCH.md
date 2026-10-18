@@ -18,3 +18,19 @@
 - FAST-LOCAL「三件套就绪」实测 28s；「数据增量完成」实测 339s（含港股 qfq 全序列外网拉取）。
 - 冷启动（FAST-PULL）额外 +Release 下载 ~180-240s（253MB，不含 chromium）。
 - 提速关键：L0 依赖镜像消除 apt/pip/pnpm（~7min）；L1 状态快照消除 bootstrap 外网全量（~4min）。
+
+## 冷启动实录（2026-10-18 · FAST-PULL 全路径）
+
+模拟沙箱重置：停服务 → 清空 gitignored 运行时（venv/node_modules×3/ap-bin/ap-data）+ L0 本地缓存（.ck）+ Playwright 浏览器 → 哨兵标记 T0=13:27:42 → 一键启动。
+
+| 阶段 | 累计耗时 | 说明 |
+|---|---|---|
+| 路径决策 | 28s | 无本地缓存 → FAST-PULL；Release manifest + 256MB L0 下载 |
+| L0 恢复 | 53s | venv/node/infra 解压 + sha256 校验 + 自检 |
+| infra 就绪 | 58s | embedded PG16 initdb + redis + minio（零 apt）|
+| L1 恢复 | 63s | ap-state pg_restore + alembic 对齐 + 行数校验 |
+| 三件套就绪 | **69s** | core :8082 / bff :8081 / web :5173 |
+| 数据增量完成 | **377s（6.3min）** | warm-repo 基线就位 + incremental；六项验证 6/6 |
+
+对比：SLOW 全量安装路径 ~14min；FAST-PULL 全冷 6.3min（提速 ~55%）；FAST-LOCAL（缓存幸存）1.3min。
+L0 Release 体积 256M（缓存实际 256M + ap-bin 169M 解压后）。

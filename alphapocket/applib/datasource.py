@@ -1336,7 +1336,9 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
     universe_failed: list[str] = []          # 上游整体失败（0 根 K 线）的标的：不入库、透明登记
     for u in a_stocks:
         s0 = _start_for(u["secid"])       # T0.3：增量时自次日；否则 = start（默认不变）
-        qfq = _retry(lambda: ak.stock_zh_a_daily(symbol=u["sina"], start_date=s0.replace("-", ""),
+        # Q-fix（§14.2 qfq 漂移根治）：qfq 前复权基准随最新价漂移，增量窗口拼接必自相矛盾
+        # ——qfq 恒全量拉取（自当前基准重算整条序列）；raw 不复权不漂移，仍按增量窗口。
+        qfq = _retry(lambda: ak.stock_zh_a_daily(symbol=u["sina"], start_date=start.replace("-", ""),
                                                  end_date=today.replace("-", ""), adjust="qfq"))
         raw = _retry(lambda: ak.stock_zh_a_daily(symbol=u["sina"], start_date=s0.replace("-", ""),
                                                  end_date=today.replace("-", ""), adjust=""))
@@ -1426,7 +1428,9 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                          "volume": int(v) if v is not None else None,
                          "amount": _num(r["amount"]), "pct": pct})
             prev = c
-        recs = [r for r in recs if r["dt"] and r["dt"] >= s0]   # 全量历史 → 起始日切片（pct 链完整保留）
+        # Q-fix：qfq 全量保留（新浪港股接口本身全量，起始切片改用全量起点 start 而非增量 s0
+        # ——按 s0 切片后与旧序列拼接正是 §14.2 qfq 漂移的病灶；raw 仍按 s0 增量）
+        recs = [r for r in recs if r["dt"] and r["dt"] >= start]
         bars_qfq[u["secid"]] = recs
         bars_raw[u["secid"]] = [{"dt": _iso(r["date"]), "close": _num(r["close"])}
                                 for _, r in raw.iterrows() if _iso(r["date"]) and _iso(r["date"]) >= s0]
