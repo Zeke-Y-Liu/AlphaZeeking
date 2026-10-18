@@ -1464,7 +1464,7 @@
           "market"
         ],
         "summary": "Get Quotes",
-        "description": "批量实时行情 + 汇率（Redis 5s 缓存；上游双源，失败条目带 error 不阻断整体）。",
+        "description": "批量实时行情 + 汇率（Redis 5s 缓存；上游双源，失败条目带 error 不阻断整体）。\n\n无法识别的 secid 不再整体 422（M2-3 人工验证偏差修正）：有效条目正常返回，\n无效条目汇入响应 `errors` 数组（{secid, error}），其余不受影响。",
         "operationId": "get_quotes_api_v1_market_quotes_get",
         "parameters": [
           {
