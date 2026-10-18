@@ -9,6 +9,8 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
+from sqlalchemy import func, select
+
 from app.models import Portfolio, Position, Security, User
 from app.seed import run_seed
 
@@ -44,7 +46,11 @@ def test_seed_contents_and_idempotency(pg_engine: Engine, alembic_config: Config
     with SessionLocal() as session:
         assert _count(session, User) == 1
         assert _count(session, Security) == 15
-        assert _count(session, Portfolio) == 3
+        assert (
+            session.execute(
+                select(func.count()).select_from(Portfolio).where(Portfolio.status == "active")
+            ).scalar_one() == 3
+        )  # 生效组合恰为 seed 的 3 个；归档（archived）组合不计入
         assert _count(session, Position) == 15
 
         multi5_id = session.scalar(
@@ -84,5 +90,9 @@ def test_seed_contents_and_idempotency(pg_engine: Engine, alembic_config: Config
     with SessionLocal() as session:
         assert _count(session, User) == 1
         assert _count(session, Security) == 15
-        assert _count(session, Portfolio) == 3
+        assert (
+            session.execute(
+                select(func.count()).select_from(Portfolio).where(Portfolio.status == "active")
+            ).scalar_one() == 3
+        )  # 生效组合恰为 seed 的 3 个；归档（archived）组合不计入
         assert _count(session, Position) == 15

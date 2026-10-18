@@ -62,12 +62,12 @@ echo "[ck] as_of=$AS_OF bars=$HB/$TOT 验证失败项=$VFAIL"
 if [ "${HB:-0}" -lt "${TOT:-99}" ] || [ "${VFAIL:-6}" -gt 0 ]; then
   echo "[ck] WARN: 增量质量不达标（已知增量截断 + 港股 qfq 漂移边界）→ 自动 bootstrap 自愈 …"
   JOB2=""
-  for _ in $(seq 1 24); do  # 锁释放有延迟：最多重试 2 分钟
+  for _ in $(seq 1 60); do  # 锁释放有延迟且 incremental 本身 ~5min：最长等待 10 分钟
     JOB2=$(curl -s -m 5 -X POST localhost:8082/api/v1/data/sync -H "Authorization: Bearer $TOK" \
       -H 'Content-Type: application/json' -d '{"mode":"bootstrap"}' \
       | "$CK_ROOT/core/.venv/bin/python" -c "import sys,json;print(json.load(sys.stdin).get('job_id',''))" 2>/dev/null)
     [ -n "$JOB2" ] && break
-    sleep 5
+    sleep 10
   done
   [ -n "$JOB2" ] || { echo "[ck] ERR: bootstrap 提交失败（sync 锁持续占用）"; exit 1; }
   for _ in $(seq 1 120); do
@@ -77,7 +77,7 @@ if [ "${HB:-0}" -lt "${TOT:-99}" ] || [ "${VFAIL:-6}" -gt 0 ]; then
       done) echo "[ck] bootstrap 自愈完成"; break ;;
       failed) echo "[ck] ERR: bootstrap 自愈失败"; exit 1 ;;
     esac
-    sleep 5
+    sleep 10
   done
 fi
 
