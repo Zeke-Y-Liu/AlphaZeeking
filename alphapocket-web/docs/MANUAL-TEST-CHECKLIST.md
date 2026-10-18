@@ -5,7 +5,7 @@
 > 账号：`demo` / `alphapocket`
 > 自动化基线：真实链路 API E2E 17/17 PASS · Playwright UI E2E 7/7 passed · core pytest 189 passed（本清单为人工复核补充）
 > v2 变更：新增 M9 引擎 C 宏观流动性；M3 补充宏观卡检查；注意事项补充降级语义。
-> **2026-10-18 执行记录**：41 条全部验证完成——40 ✅ / 1 ❌（M7-1 前端 runs 页为占位页，数据 API 完整；2 条偏差已随用例注明）。执行方式：API 批脚本（/tmp/manual_api_batch.py）+ 浏览器三轮（localhost:5173 直连）。
+> **2026-10-18 执行记录**：41 条全部验证完成——40 ✅ / 1 ❌ → **41 ✅**（同日修复回填：M2-3 quotes 部分返回容错、M7-1 RunsView 前端实现；偏差注记已更新）。执行方式：API 批脚本（/tmp/manual_api_batch.py）+ 浏览器三轮（localhost:5173 直连）。
 
 ## 结果记录约定
 

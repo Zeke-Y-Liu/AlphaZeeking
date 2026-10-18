@@ -129,7 +129,11 @@ def _fetch_quotes_uncached(secids: list[str]) -> dict[str, Any]:
 def get_quotes(
     secids: str = Query(description="逗号分隔的 secid 列表（A股/港股/美股混合）"),
 ) -> dict[str, Any]:
-    """批量实时行情 + 汇率（Redis 5s 缓存；上游双源，失败条目带 error 不阻断整体）。"""
+    """批量实时行情 + 汇率（Redis 5s 缓存；上游双源，失败条目带 error 不阻断整体）。
+
+    无法识别的 secid 不再整体 422（M2-3 人工验证偏差修正）：有效条目正常返回，
+    无效条目汇入响应 `errors` 数组（{secid, error}），其余不受影响。
+    """
     id_list = [s.strip().upper() for s in secids.split(",") if s.strip()]
     if not id_list:
         raise AppError(ErrorCode.VALIDATION_ERROR, "secids 不能为空", detail={"field": "secids"})
@@ -140,24 +144,28 @@ def get_quotes(
             detail={"field": "secids", "max": MAX_QUOTES, "got": len(id_list)},
         )
     unknown = [s for s in id_list if _classify(s) is None]
-    if unknown:
-        raise AppError(
-            ErrorCode.VALIDATION_ERROR,
-            f"无法识别的 secid：{unknown[:3]}（需 .SH/.SZ/.HK/.US 后缀）",
-            detail={"field": "secids", "unknown": unknown[:10]},
-        )
+    valid = [s for s in id_list if _classify(s) is not None]
+    quote_errors = [
+        {"secid": s, "error": "unknown_secid（需 .SH/.SZ/.HK/.US 后缀）"} for s in unknown
+    ]
+    if not valid:
+        return {"quotes": [], "fx": {}, "cached": False, "errors": quote_errors}
 
-    key = _cache_key(id_list)
+    key = _cache_key(valid)
     try:
         cached = get_redis().get(key)
         if cached:
             payload = json.loads(cached)
             payload["cached"] = True
+            if quote_errors:
+                payload["errors"] = quote_errors
             return payload
     except Exception as exc:  # noqa: BLE001 - Redis 不可达 fail-open
         logger.warning("行情缓存读取失败（fail-open 直拉）：%s", type(exc).__name__)
 
-    payload = _fetch_quotes_uncached(id_list)
+    payload = _fetch_quotes_uncached(valid)
+    if quote_errors:
+        payload["errors"] = quote_errors
     try:
         get_redis().set(key, json.dumps(payload, ensure_ascii=False), ex=QUOTE_CACHE_TTL)
     except Exception as exc:  # noqa: BLE001 - 缓存写失败不影响响应
