@@ -128,15 +128,32 @@ def test_quotes_unavailable_flagged(api_client, offline_quotes) -> None:
 
 
 def test_quotes_validation(api_client, offline_quotes) -> None:
-    """空 secids / 未知后缀 / 超 50 只 → 422。"""
+    """空 secids / 超 50 只 → 422；未知后缀不再整体拒绝（M2-3：部分返回 + errors）。"""
     assert api_client.get("/api/v1/market/quotes", params={"secids": ""}).status_code == 422
-    assert (
-        api_client.get("/api/v1/market/quotes", params={"secids": "FOO.XX"}).status_code == 422
-    )
     too_many = ",".join(f"S{i:05d}.HK" for i in range(51))
     assert (
         api_client.get("/api/v1/market/quotes", params={"secids": too_many}).status_code == 422
     )
+
+
+def test_quotes_unknown_secid_partial_return(api_client, offline_quotes) -> None:
+    """M2-3：无效 secid 汇入 errors 数组，有效条目照常返回；全无效 → 200 空列表。"""
+    r = api_client.get(
+        "/api/v1/market/quotes", params={"secids": "FOO.XX"}
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["quotes"] == []
+    assert body["errors"] and body["errors"][0]["secid"] == "FOO.XX"
+
+    r2 = api_client.get(
+        "/api/v1/market/quotes",
+        params={"secids": "600519.SH,FOO.XX"},
+    )
+    assert r2.status_code == 200
+    body2 = r2.json()
+    assert [q["secid"] for q in body2["quotes"]] == ["600519.SH"]
+    assert [e["secid"] for e in body2["errors"]] == ["FOO.XX"]
 
 
 def test_ggt_endpoint(api_client, monkeypatch) -> None:
