@@ -18,7 +18,7 @@ from .base import DatasetSpec, SourceRef
 SPECS: list[DatasetSpec] = [
     DatasetSpec(
         name="daily_bars", path="market/daily_bars.json", category="market",
-        merge_policy="bars_union", always=True, duckdb_table="dwd_daily_bar",
+        merge_policy="new_nonempty", always=True, duckdb_table="dwd_daily_bar",
         verifications=["golden_test", "cross_source", "calendar_check", "adjust_check"],
         sources=[SourceRef("sina", "primary",
                            "ak.stock_zh_a_daily/stock_hk_daily(qfq) + 腾讯usK线(raw口径) "

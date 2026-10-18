@@ -103,7 +103,8 @@ def test_duckdb_tables_match_data_py():
 # ── 查询面（DoD③）────────────────────────────────────────────
 
 def test_get_spec_and_active_filter():
-    assert get_spec("daily_bars").merge_policy == "bars_union"
+    # Q-fix（§14.2 qfq 漂移根治）：qfq 面改为全量自洽 + new_nonempty（拉取失败保旧）
+    assert get_spec("daily_bars").merge_policy == "new_nonempty"
     with pytest.raises(KeyError, match="未知数据集"):
         get_spec("ghost_ds")
 
