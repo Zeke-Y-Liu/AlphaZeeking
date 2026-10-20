@@ -271,7 +271,7 @@ def render_html(review, plan, ctx: Ctx, run_id: str, code_ver, ds_commit, verify
     upstreams = " · ".join(sorted({s["upstream"] for s in prov["sources"]}))
     has_fund_pos = any(not p["alpha"].get("used_period") for p in positions)
     has_stock = any(p.get("asset_type") == "STOCK" for p in positions)
-    qdii = [p["name"] for p in positions if "QDII" in p.get("industry", "")]
+    qdii = [p["name"] for p in positions if "QDII" in (p.get("industry") or "")]
     pe_ps = [p for p in positions if p["alpha"].get("val_pe_pct") is not None]
     amix = {}
     for p in positions:
@@ -425,7 +425,7 @@ TTM EPS = 上年FY + 本年YTD − 上年同期YTD（摊薄口径，未逐笔校
 
 def render_md(review, plan, run_id, code_ver, ds_commit, verify) -> str:
     n_pos = len(review["positions"])
-    qdii = [p["name"] for p in review["positions"] if "QDII" in p.get("industry", "")]
+    qdii = [p["name"] for p in review["positions"] if "QDII" in (p.get("industry") or "")]
     L = []
     L.append(f"# 「{review['name']}」组合复盘报告\n")
     L.append(f"RUN `{run_id}` · CODE `{code_ver}` · DATASET `{ds_commit}` · AS_OF `{review['as_of']}` · 下一交易日 `{review['next_trade_date']}`\n")
