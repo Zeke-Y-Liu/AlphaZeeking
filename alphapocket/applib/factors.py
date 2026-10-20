@@ -193,6 +193,14 @@ def compute_alpha(secid: str, bars: list[dict], reports: list[dict], dividends: 
     （无 inactive 因子时不产生该键——默认输出与历史版本逐位一致，锚点纪律）。
     """
     closes = [(b["dt"], b["close"]) for b in bars if b["close"]]
+    # 空序列透明降级（Q-fix）：无任何收盘 → 全字段 None + insufficient_history，评估不崩溃
+    if not closes:
+        return {
+            "as_of": as_of, "close": None, "dims": {}, "grades": {},
+            "composite": None, "composite_grade": None,
+            "used_period": None, "used_announce": None, "staleness_days": None,
+            "flags": ["insufficient_history（无可用行情序列）"],
+        }
     as_of = as_of or closes[-1][0]
     hist = [(d, c) for d, c in closes if d <= as_of]
     close = hist[-1][1]
@@ -397,26 +405,42 @@ def compute_beta(secid: str, bars: list[dict], as_of: str | None = None,
 
     默认参数下既有字段（mom_20d/vol_20d/ma20_break/…/state）与历史版本逐位一致（锚点纪律）。
     """
-    n = int(win)
+    n_req = int(win)
     closes = [(b["dt"], b["close"]) for b in bars if b["close"]]
     highs = [(b["dt"], b["high"]) for b in bars if b.get("high")]
-    as_of = as_of or closes[-1][0]
+    as_of = as_of or (closes[-1][0] if closes else None)
     hist_c = [c for d, c in closes if d <= as_of]
     hist_h = [h for d, h in highs if d <= as_of]
     hist_l = [b["low"] for b in bars if b["dt"] <= as_of and b.get("low")]
     hist_amt = [b.get("amount") for b in bars if b.get("close") and b["dt"] <= as_of]   # 与 hist_c 同序对齐
     close = hist_c[-1]
 
+    # 短序列透明降级（Q-fix：新上市/夹具标的 bars < 2 根无法构成任何收益窗口）：
+    # 输出结构与正常一致（字段置 None + insufficient_history 标记），评估继续不崩溃。
+    if len(hist_c) < 2:
+        return {
+            "as_of": as_of, "close": close, "mom_20d": None, "vol_20d": None,
+            "ma20": None, "ma20_break": None, "state": "insufficient_history",
+            "high20_touch": 0, "dist_high20": None, "high20_intra": None, "low20": None,
+            "turnover_pct": None, "vol_price_corr": None, "sigma_daily": None,
+            "band_low": None, "band_high": None, "vol_stop": False,
+            "ma_window": 0, "band": band, "band_sigma": band_sigma,
+            "bias_thresh": bias_thresh, "vpd_thresh": vpd_thresh, "pct_window": int(pct_window),
+            "window_requested": n_req, "insufficient_history": True, "signals": [],
+        }
+    # 窗口自适应：n_eff = min(请求窗口, 可用收益点数)（Q-fix——夹具/新上市 ETF 仅 6 根
+    # 历史时按 5 日收益计算而非越界崩溃；正常标的 n_eff == n_req，行为逐位不变）
+    n = min(n_req, len(hist_c) - 1)
     w = hist_c[-n:]
     ma20 = sum(w) / n
     ratio = close / ma20 - 1
     mom = close / w[0] - 1
     rets20 = [hist_c[i] / hist_c[i - 1] - 1 for i in range(len(hist_c) - n, len(hist_c))]
     mu = sum(rets20) / len(rets20)
-    vol20 = (sum((r - mu) ** 2 for r in rets20) / (len(rets20) - 1)) ** 0.5 * (252 ** 0.5)
+    vol20 = (sum((r - mu) ** 2 for r in rets20) / (len(rets20) - 1)) ** 0.5 * (252 ** 0.5) if len(rets20) > 1 else 0.0
     high20_close = max(w)
-    high20_intra = max(hist_h[-n:])
-    low20 = min(hist_l[-n:])
+    high20_intra = max(hist_h[-n:]) if hist_h else close   # 无 high 列（夹具/降级源）→ 以收盘代
+    low20 = min(hist_l[-n:]) if hist_l else close
     high20_touch = 1 if close >= high20_close else 0
     dist_high20 = close / high20_intra - 1
     band_pct = f"±{band * 100:g}%"
@@ -490,6 +514,7 @@ def compute_beta(secid: str, bars: list[dict], as_of: str | None = None,
         "band_low": ma20 * (1 - band_sigma * sd), "band_high": ma20 * (1 + band_sigma * sd),
         "vol_stop": bool(close < ma20 * (1 - band_sigma * sd)),
         "ma_window": n, "band": band, "band_sigma": band_sigma,
+        "window_requested": n_req,
         "bias_thresh": bias_thresh, "vpd_thresh": vpd_thresh, "pct_window": int(pct_window),
         "signals": sigs,
     }
