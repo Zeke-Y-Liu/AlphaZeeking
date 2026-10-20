@@ -283,6 +283,10 @@ def portfolio_review(args, ctx):
                  else [f"{p.get('asset_type', '基金')}（无财报期，估值/质量/成长不适用）"])
         if staleness is not None and staleness > 150:
             flags.append("数据陈旧")
+        # Q-fix 短序列透明标注：动量窗口自适应降级时（历史不足 20 日），如实告知实际窗口
+        if b.get("ma_window") is not None and b.get("window_requested") is not None \
+                and b["ma_window"] < b["window_requested"]:
+            flags.append(f"历史不足 {b['window_requested']} 日：动量/波动按 {b['ma_window']} 日窗计算")
         positions.append({
             "secid": secid, "name": p["name"], "industry": dims[secid]["industry"], "weight": p["weight"],
             "asset_type": p.get("asset_type", "STOCK"),
