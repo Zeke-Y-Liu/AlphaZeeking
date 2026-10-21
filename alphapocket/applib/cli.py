@@ -1174,7 +1174,7 @@ def main():
     st.add_argument("--valid-months", type=int, default=6, help="valid 窗口长度（月），默认 6")
     st.add_argument("--step-months", type=int, default=6, help="fold 前滚步长（月），默认 6")
     st.add_argument("--sensitivity", action="store_true",
-                    help="附参数 ±30% 敏感性网格（top_n/slippage/method；slippage 轴需 exec=next_day_vwap）")
+                    help="附参数 ±30%% 敏感性网格（top_n/slippage/method；slippage 轴需 exec=next_day_vwap）")
     st.set_defaults(fn=cmd_strategy)
 
     args = p.parse_args()
