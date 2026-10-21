@@ -1037,6 +1037,121 @@ def _retry(fn, n=3, wait=2.0):
     raise RuntimeError(f"akshare 重试 {n} 次仍失败：{last}")
 
 
+# ── 单公司分析辅助数据集（行业现状 / 个股新闻）────────────────────
+
+# 人工确认的除权除息/拆股日（上游事件元数据缺失时的兜底；bootstrap 重建也不丢）。
+# 与 adjust_ex_dates 的 set_union 合并：fetched ∪ 本表。仅对 universe 内标的生效。
+_KNOWN_EX_DATES: dict[str, list[str]] = {
+    # DAVE.US 2023-01-06：1:28 反向拆股（$0.295→$8.16，双源价格一致，持股价值不变）。
+    # 腾讯 qfq 未对该拆股做前复权、且 qfq 事件元数据缺该日 → adjust_check 逐点对账背离，
+    # 人工确认为公司行动日后登记豁免（根治需在复权层补拆股因子，属独立改造）。
+    "DAVE.US": ["2023-01-06"],
+}
+
+
+def _cninfo_industry_of_stock(ak, code: str) -> str | None:
+    """巨潮个股档案「所属行业」（证监会行业门类）。
+
+    东财 push2 域名在沙箱出口不可达（``stock_individual_info_em`` 与
+    ``stock_board_industry_*`` 实测 ProxyError），故行业描述取巨潮；
+    与静态标注一起交给 ``industry.match_sw_l1`` 归一为申万一级。
+    """
+    try:
+        df = ak.stock_profile_cninfo(symbol=code)
+    except Exception:                     # noqa: BLE001 - 行业名缺失不阻断同步
+        return None
+    try:
+        if df is None or len(df) == 0 or "所属行业" not in df.columns:
+            return None
+        return str(df.iloc[0]["所属行业"] or "").strip() or None
+    except Exception:                     # noqa: BLE001 - 上游结构变更容错
+        return None
+
+
+def _fetch_industry_index(ak, stocks, start: str, window: int = 250) -> dict:
+    """行业现状数据集：申万一级行业指数日线（近 ``window`` 根）。
+
+    结构 ``{行业名: [{"dt","close","pct","amount"}, …]}``；行业由标的静态标注 /
+    巨潮「所属行业」经 ``industry.match_sw_l1`` 归一（无法归一 → 跳过该标的）。
+    表达行业现状的数据面：指数动量（20/60 日收益）+ 成交额趋势（5 日均值/60 日均值）。
+
+    单行业失败跳过（增量 ``fill_missing`` 用旧值兜底）；``amount`` 单位亿元
+    （申万指数接口口径）。pct 由收盘价递推。
+    """
+    from .industry import code_of, match_sw_l1
+    names: list[str] = []
+    for u in stocks:
+        ind = match_sw_l1(u.get("industry"))
+        if ind is None:
+            ind = match_sw_l1(_cninfo_industry_of_stock(ak, u["code"]))
+        if ind and ind not in names:
+            names.append(ind)
+    out: dict[str, list] = {}
+    for name in names:
+        code = code_of(name)
+        if code is None:                  # 常量表缺该行业 → 跳过（不猜代码）
+            continue
+        try:
+            df = _retry(lambda code=code: ak.index_hist_sw(symbol=code, period="day"))
+        except Exception as e:            # noqa: BLE001 - 单行业失败不阻断整批
+            print(f"  ⚠ 申万行业 {name}({code}) 指数拉取失败：{e}")
+            continue
+        if df is None or len(df) == 0:
+            continue
+        recs, prev = [], None
+        for _, r in df.iterrows():
+            c, d = _num(r.get("收盘")), _iso(r.get("日期"))
+            if c is None or d is None or d < start:
+                continue
+            recs.append({"dt": d, "close": c,
+                         "pct": (c / prev - 1) if (prev and c) else None,
+                         "amount": _num(r.get("成交额"))})
+            prev = c
+        if recs:
+            out[name] = recs[-window:]
+    print(f"  ✓ 行业指数（申万一级）：{len(out)}/{len(names)} 个行业"
+          f"（{start} 起·近 {window} 根）")
+    return out
+
+
+def _news_dt(v) -> str | None:
+    """新闻发布时间归一（"YYYY-MM-DD HH:MM:SS"；不足 10 位 → None）。"""
+    s = str(v or "").strip()
+    return s[:19] if len(s) >= 10 else (s or None)
+
+
+def _fetch_stock_news(ak, stocks, limit: int = 30) -> dict:
+    """个股新闻数据集：东财 ``stock_news_em`` → ``{secid: [{dt,title,content,source,url}]}``。
+
+    仅 A 股有公开接口（港股/美股不登记，分析层按市场降级提示）；每标的保留最新
+    ``limit`` 条。单标的失败跳过（增量 ``fill_missing`` 用旧值兜底）。
+    """
+    out: dict[str, list] = {}
+    for u in stocks:
+        try:
+            df = _retry(lambda u=u: ak.stock_news_em(symbol=u["code"]))
+        except Exception as e:            # noqa: BLE001 - 单标的失败不阻断整批
+            print(f"  ⚠ {u['secid']} 新闻拉取失败：{e}")
+            continue
+        if df is None or len(df) == 0:
+            continue
+        recs = []
+        for _, r in df.iterrows():
+            title = str(r.get("新闻标题") or "").strip()
+            if not title:
+                continue
+            recs.append({"dt": _news_dt(r.get("发布时间")), "title": title,
+                         "content": str(r.get("新闻内容") or "").strip()[:500],
+                         "source": str(r.get("文章来源") or "").strip(),
+                         "url": str(r.get("新闻链接") or "").strip()})
+        recs.sort(key=lambda x: x["dt"] or "", reverse=True)
+        if recs:
+            out[u["secid"]] = recs[:limit]
+    print(f"  ✓ 个股新闻：{len(out)}/{len(stocks)} 只（各近 {limit} 条）")
+    return out
+
+
+
 # ── 增量合并（T-fix：增量窗口不再整体覆盖历史）──────────────────
 
 # 可合并数据集 → repo 相对路径（快照/合并面；其余数据集全量重写语义不变）
@@ -1381,7 +1496,6 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
     tq8 = (dt.date.today() - dt.timedelta(days=120)).isoformat().replace("-", "")
     corp_actions = []   # 份额折算/拆分登记（价格断层保护）
     for u in a_funds:
-        s0 = _start_for(u["secid"])       # T0.3：增量时自次日；否则 = start（默认不变）
         hist = _retry(lambda: ak.fund_etf_hist_sina(symbol=u["sina"]))
         has_amt = "amount" in getattr(hist, "columns", [])
         recs, prev = [], None
@@ -1400,7 +1514,10 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                          "low": _num(r["low"]), "close": c, "volume": int(v) if v is not None else None,
                          "amount": _num(r["amount"]) if has_amt else None, "pct": pct})
             prev = c
-        recs = [r for r in recs if r["dt"] and r["dt"] >= s0]   # 全量历史 → 起始日切片（pct 链完整保留）
+        # 基金无复权接口（主序列即 raw，无 qfq 漂移）→ 与 A股 qfq 同口径按 **全量起点**
+        # 切片而非增量 s0：daily_bars 的 new_nonempty 语义是「新非空整体替换」，
+        # 按 s0 切片会让增量窗口（常仅数根）覆盖整段历史（ETF 序列被截断 → golden_test 越界）。
+        recs = [r for r in recs if r["dt"] and r["dt"] >= start]
         bars_qfq[u["secid"]] = recs                                # 基金无复权接口：主序列即 raw
         tx = _retry(lambda: ak.stock_zh_a_hist_tx(symbol=u["sina"], start_date=tq8,
                                                   end_date=today.replace("-", "")))
@@ -1515,6 +1632,17 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
         print(f"  ✓ {u['name']} {u['secid']}：us bars={len(recs)}(tx:{tx_sym}) raw={len(sina_raw)}(sina) "
               f"tx_cross={len(cross_tx[u['secid']])} 除息日={len(ex_dates_us)} 报告期={len(us_reports)}")
 
+    # ── ②''''' 单公司分析辅助：行业现状（东财板块指数）+ 个股新闻（东财，仅A股）──
+    # 两数据集均 fill_missing：单板块/单标的失败 → 旧值兜底，不进对账口径（无 verify 关联）。
+    industry_index = _fetch_industry_index(ak, a_stocks, start)
+    stock_news = _fetch_stock_news(ak, a_stocks)
+    # 人工确认豁免（见 _KNOWN_EX_DATES）：bootstrap 会整体重建 repo，仅靠增量 set_union
+    # 无法保住上游缺失的公司行动日 → 每次拉取后强制并入。判定用 requested 而非 bars_qfq：
+    # 本标的双源同时拉取失败时 bars_qfq 无键，但豁免仍须保留给后续增量使用。
+    for s, days in _KNOWN_EX_DATES.items():
+        if s in requested and classify_secid(s) in ("HK", "US"):
+            adjust_ex_dates[s] = sorted(set(adjust_ex_dates.get(s, [])) | set(days))
+
     # ── ②'''' 增量合并（T-fix → T-R10 策略化）：旧快照 + 新拉取按 merge_policy 分派 ──
     # 语义真源在 datasets/merge.py（逐行为对拍迁移）：行情类按 dt 并集（重叠日新胜 +
     # 窗口首根 pct 边界修复）；滚动窗口（腾讯交叉源）新非空用新、否则携带旧；
@@ -1528,6 +1656,10 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                                        merge_base.get("adjust_ex_dates"), adjust_ex_dates)
         fundamentals = apply_policy(get_spec("fundamental_values"),
                                     merge_base.get("fundamental_values"), fundamentals)
+        industry_index = apply_policy(get_spec("industry_index"),
+                                      merge_base.get("industry_index"), industry_index)
+        stock_news = apply_policy(get_spec("stock_news"),
+                                  merge_base.get("stock_news"), stock_news)
 
     _reg("dwd_daily_bar",
          {"start": start, "end": today, "note": "A股/港股 qfq 前复权；美股 腾讯序列（raw 口径，新浪美股qfq部分标的存在噪声，弃用）；ETF/LOF 无复权接口（raw）"}, bars_qfq, "market/daily_bars.json")
@@ -1549,6 +1681,17 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                   "A股三表科目（D5/P1.2）：revenue/net_profit/total_assets/total_liab/ocf/capex 按报告期并入，"
                   "PIT 同 report 时点（报告期+披露窗口），供品质族 qua_leverage/qua_accrual/qua_fcf"},
          fundamentals, "factors/fundamental_values.json")
+    if industry_index:
+        # 单公司分析「行业趋势」模块的数据面：板块指数动量 + 成交额趋势（表达行业现状）
+        _reg("industry_index",
+             {"window": 250, "note": "东财行业板块指数日线（近250根）；板块名与个股行业同源"
+                                     "（stock_individual_info_em），供行业趋势/行业现状表达"},
+             industry_index, "industry/industry_index.json")
+    if stock_news:
+        # 单公司分析「最新消息」模块：仅 A 股有公开接口（港股/美股不登记，分析层降级提示）
+        _reg("stock_news",
+             {"limit": 30, "note": "东财个股新闻（A股，每标的近30条）；港美无公开接口"},
+             stock_news, "news/stock_news.json")
 
     # ── ③ 维度表 / 组合 / 因子注册中心 / 港股通名单 / 汇率 / 港美日历 ──
 

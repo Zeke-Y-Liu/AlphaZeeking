@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+from app.models.analysis import AnalysisProfile
 from app.models.audit import AuditLog
 from app.models.base import Base
 from app.models.job import Job
@@ -26,4 +27,5 @@ __all__ = [
     "RebalancePlan",
     "ExecOrder",
     "AuditLog",
+    "AnalysisProfile",
 ]

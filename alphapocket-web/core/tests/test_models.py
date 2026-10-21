@@ -4,6 +4,7 @@ from __future__ import annotations
 from sqlalchemy import CheckConstraint, UniqueConstraint
 
 from app.models import (
+    AnalysisProfile,
     AuditLog,
     Base,
     ExecOrder,
@@ -28,11 +29,13 @@ EXPECTED_TABLES = {
     "rebalance_plans",
     "exec_orders",
     "audit_log",
+    "analysis_profiles",
 }
 
 MODELS = [
     User, Security, Portfolio, Position, Job,
     Run, VerifyResult, RebalancePlan, ExecOrder, AuditLog,
+    AnalysisProfile,
 ]
 
 

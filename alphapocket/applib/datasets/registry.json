@@ -160,5 +160,29 @@
       {"id": "hk_usdcnh", "market": "HK", "dim": "D4", "name": "港汇 USD/CNH", "unit": "pct",
        "institution": "香港金管局/财资市场公会", "interface": "hk_rates_file", "requires": "H-0006"}
     ]
+  },
+  "industry_index": {
+    "path": "industry/industry_index.json",
+    "merge_policy": "fill_missing",
+    "sources": [
+      {"interface": "ak.index_hist_sw(period=day) + applib.industry.match_sw_l1(静态标注/巨潮所属行业归一)",
+       "upstream": "申万宏源/巨潮资讯",
+       "role": "primary"}
+    ],
+    "fetch_params": {"window": 250},
+    "validation": {"min_keys": 1},
+    "note": "行业现状数据面（申万一级指数动量/成交额趋势，成交额单位亿元）：单公司分析「行业趋势」模块；2026-10-21 实测东财 push2 在沙箱出口不可达，改走申万一级"
+  },
+  "stock_news": {
+    "path": "news/stock_news.json",
+    "merge_policy": "fill_missing",
+    "sources": [
+      {"interface": "ak.stock_news_em(symbol=code)",
+       "upstream": "东方财富",
+       "role": "primary"}
+    ],
+    "fetch_params": {"limit": 30},
+    "validation": {"min_keys": 1},
+    "note": "个股新闻：单公司分析「最新消息」模块；仅 A 股有公开接口，港美不登记（分析层降级提示）"
   }
 }

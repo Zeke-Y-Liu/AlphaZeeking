@@ -194,3 +194,33 @@ POST   /api/v1/analysis/{aid}/backtest  # = 转发现有 /portfolios/{shadow_pid
 - **美股/港股新闻**：stock_news_em 仅 A 股——港美标的新闻模块返回 data_risk 式提示"暂无该市场新闻源"（不阻断）
 - **行业现状表达**：以板块指数动量 + 成交额趋势为主；若需估值分位/资金流，留作后续扩展（数据集已留 overwrite 语义可加字段）
 - **DAVE.US 拆股遗留**：跨 2023-01 长窗口技术指标已知失真（前已报备），单公司分析若遇 DAVE 类标的在 UI 提示
+
+## 5. 实现状态（2026-10-21）
+
+全部任务已实现并通过验证（T1.1 / T1.2 / T2.1 / T2.3 / T2.2 / T2.4 / T2.5 / T3.1 / T3.2 / T3.3 / T4.1）。
+
+### 5.1 实现期偏离（方案 → 实际）
+
+| 项 | 方案 | 实际 | 原因 |
+|---|---|---|---|
+| 行业数据源 | 东财板块指数（`stock_board_industry_*`） | **申万一级行业指数**（`ak.index_hist_sw`） | 实测东财 push2 域名在沙箱出口 ProxyError 不可达（`stock_individual_info_em` 同样失败）；申万指数接口可用且全历史 |
+| 行业归属 | 东财「行业」字段与板块名同源 | 静态标注 + **巨潮** `stock_profile_cninfo`「所属行业」→ `applib.industry.match_sw_l1` 归一 | 同上；巨潮接口可达 |
+| 新闻 | 东财个股新闻 | 同（`ak.stock_news_em`，域名可用） | — |
+| 新闻刷新 | 小 job 仅刷该标的 | 写 remote+sandbox 两份并同步 provenance 的 sha256/bytes | 否则 provenance_check 哈希不符转红 |
+
+### 5.2 实现期修复（顺带）
+
+1. **ETF/LOF 历史截断（既有 bug）**：基金分支按增量起点 `s0` 切片，`daily_bars` 的 `new_nonempty` 语义会用数根增量窗口整体替换旧序列 → ETF 1400+ 根被截为 7 根、`golden_test` 越界崩溃。修法：基金与 A 股 qfq 同口径按 **全量起点** 切片（无复权漂移，不需增量窗口）。
+2. **DAVE 拆股豁免持久化**：2023-01-06（1:28 反向拆股）上游事件元数据缺失 → 豁免每次 bootstrap 即丢。改为代码内置 `_KNOWN_EX_DATES` 常量并在每次拉取后并入 `adjust_ex_dates`（仅 universe 内含该标的时）。
+3. **`analysis_profiles` 纳入契约快照**：`test_models` / `test_migrations` 的表清单、`openapi.json` 快照随新端点刷新。
+4. **`test_seed` 计数口径**：改为「seed 基线 ≥ + 二次 seed 不变」，兼容运行期用户新增标的/组合（原精确 15/3/15 只在纯净库成立）。
+
+### 5.3 验证结果
+
+- 数据：25 标的 has_bars 25/25，as_of 2026-10-21；六项验证全绿（provenance 14 数据集、adjust 25598 点·毛刺豁免 4 点、golden 339 项）。
+- 分析（A 股 601058.SH）：基本面 2026-06-30 期（ROE 9.5%）；行业「汽车」（20 日 -6.1%、成交额 5/60=0.94、相对强度 -4.5%）；技术 RSI 33.7 / J 18.9 / 20 日超跌 10.6%（超卖）；消息 10 条。
+- 分析（港股 00700.HK）：新闻模块降级「该市场暂无公开新闻源」，其余模块正常。
+- 影子回测：`POST /analysis/ca_1/backtest` → job done，产出 `bt_20261021_172037_ac7969`。
+- 自动化：core `190 passed / 13 skipped`；applib 数据集 + 技术/行业单测 `39 passed`；web `pnpm build` 通过（新文件无类型错误）。
+- 浏览器：登录 → /companies 列表 → 新建 ca_2 → 详情四 tab 数据正确 → 运行分析 2–3 秒完成，console 无报错。
+

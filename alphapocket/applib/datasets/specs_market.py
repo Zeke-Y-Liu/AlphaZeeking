@@ -120,4 +120,26 @@ SPECS: list[DatasetSpec] = [
                            "增量合并 carry_old 防丢历史）",
                            "中国人民银行/全国银行间同业拆借中心/中债/美联储/BLS")],
         note="引擎C 市场级条件变量（与持仓 universe 无关，恒拉取）"),
+    DatasetSpec(
+        name="industry_index", path="industry/industry_index.json", category="market",
+        merge_policy="fill_missing", always=False, duckdb_table=None,
+        verifications=[],
+        sources=[SourceRef("sw_index", "primary",
+                           "ak.index_hist_sw(symbol=801xxx, period=day) + 行业归一 "
+                           "(applib.industry.match_sw_l1：静态标注/巨潮 stock_profile_cninfo 所属行业)",
+                           "2026-10-21 实测：东财 push2（stock_individual_info_em / "
+                           "stock_board_industry_*）在沙箱出口 ProxyError 不可达 → 行业维度改走"
+                           "申万一级指数；单行业失败跳过，增量 fill_missing 用旧行业兜底；"
+                           "分析用数据面，不进六项对账",
+                           "申万宏源/巨潮资讯")],
+        note="行业现状（申万一级指数日线近250根，成交额单位亿元）：单公司分析「行业趋势」模块数据面"),
+    DatasetSpec(
+        name="stock_news", path="news/stock_news.json", category="market",
+        merge_policy="fill_missing", always=False, duckdb_table=None,
+        verifications=[],
+        sources=[SourceRef("em_news", "primary", "ak.stock_news_em(symbol=code)",
+                           "仅 A 股有公开接口（港股/美股不登记）；每标的近 30 条；"
+                           "单标的失败跳过（fill_missing 用旧值兜底）；分析用数据面，不进六项对账",
+                           "东方财富")],
+        note="个股新闻：单公司分析「最新消息」模块数据面（港美无公开接口）"),
 ]

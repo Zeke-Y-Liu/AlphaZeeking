@@ -524,6 +524,40 @@ export interface JobAccepted {
   data_risk?: DataRisk | null;
 }
 
+/* ── 单公司分析（M10） ─────────────────────────────── */
+/** 分析档案；`shadow_pid` 为单标的 100% 影子组合（供回测/评估复用）。 */
+export interface AnalysisProfile {
+  id: number;
+  aid: string;
+  secid: string;
+  name: string;
+  note?: string | null;
+  modules: Record<string, boolean>;
+  status: PortfolioStatus;
+  shadow_pid: string;
+  created_at: string;
+  updated_at: string;
+  latest_run?: RunSummary | null;
+}
+
+/** 个股新闻条目（东财；dt 为 "YYYY-MM-DD HH:MM:SS"）。 */
+export interface AnalysisNewsItem {
+  dt?: string | null;
+  title: string;
+  content?: string;
+  source?: string;
+  url?: string;
+}
+
+/** GET /analysis/{aid}/news 响应；无数据时 available=false + note。 */
+export interface AnalysisNews {
+  secid: string;
+  available: boolean;
+  count?: number;
+  note?: string;
+  items: AnalysisNewsItem[];
+}
+
 /* ── 认证（T5.2 · BFF 契约，冻结） ─────────────────── */
 export interface AuthUser {
   id: number;

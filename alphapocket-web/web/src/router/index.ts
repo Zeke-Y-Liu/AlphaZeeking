@@ -51,6 +51,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '调仓' },
   },
   {
+    path: '/companies',
+    name: 'companies',
+    component: () => import('../views/CompaniesView.vue'),
+    meta: { title: '公司分析' },
+  },
+  {
+    path: '/companies/:aid',
+    name: 'company-detail',
+    component: () => import('../views/CompanyDetailView.vue'),
+    meta: { title: '公司分析详情' },
+  },
+  {
     path: '/engines',
     name: 'engines',
     component: () => import('../views/EnginesView.vue'),

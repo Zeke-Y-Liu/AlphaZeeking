@@ -13,6 +13,10 @@ const navGroups = [
     ],
   },
   {
+    key: '公司',
+    items: [{ to: '/companies', label: '单公司分析' }],
+  },
+  {
     key: '引擎',
     items: [{ to: '/engines', label: '引擎与因子' }],
   },

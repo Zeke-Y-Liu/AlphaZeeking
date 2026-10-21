@@ -5,6 +5,8 @@
  */
 import { apiClient } from './client';
 import type {
+  AnalysisNews,
+  AnalysisProfile,
   AssetType,
   AuthTokens,
   AuthUser,
@@ -73,6 +75,13 @@ export const API_PATHS = {
   engineMetric: (mid: string) => `/v1/engines/metrics/${mid}`,
   enginesDescribe: '/v1/engines/describe',
   enginesDatasets: '/v1/engines/datasets',
+  // 单公司分析（M10）
+  analyses: '/v1/analysis',
+  analysis: (aid: string) => `/v1/analysis/${aid}`,
+  analysisRun: (aid: string) => `/v1/analysis/${aid}/run`,
+  analysisNews: (aid: string) => `/v1/analysis/${aid}/news`,
+  analysisNewsRefresh: (aid: string) => `/v1/analysis/${aid}/news/refresh`,
+  analysisBacktest: (aid: string) => `/v1/analysis/${aid}/backtest`,
 } as const;
 
 /* ── 已实现 ─────────────────────────────────────── */
@@ -392,5 +401,78 @@ export async function removeEngineMetric(
   const { data } = await apiClient.delete<MetricRemoveResponse>(API_PATHS.engineMetric(mid), {
     data: body,
   });
+  return data;
+}
+
+/* ── 单公司分析（M10） ──────────────────────────── */
+/** GET /v1/analysis：档案列表（默认 active）。 */
+export async function listAnalyses(params?: {
+  include_archived?: boolean;
+}): Promise<AnalysisProfile[]> {
+  const { data } = await apiClient.get<AnalysisProfile[]>(API_PATHS.analyses, { params });
+  return data;
+}
+
+/** POST /v1/analysis：建档案（自动建影子组合 shadow_{aid}）。 */
+export async function createAnalysis(body: {
+  secid: string;
+  name?: string;
+  note?: string;
+  aid?: string;
+  modules?: Record<string, boolean>;
+}): Promise<AnalysisProfile> {
+  const { data } = await apiClient.post<AnalysisProfile>(API_PATHS.analyses, body);
+  return data;
+}
+
+/** GET /v1/analysis/{aid}：档案详情。 */
+export async function getAnalysis(aid: string): Promise<AnalysisProfile> {
+  const { data } = await apiClient.get<AnalysisProfile>(API_PATHS.analysis(aid));
+  return data;
+}
+
+/** PUT /v1/analysis/{aid}：更新（name/note/modules）。 */
+export async function updateAnalysis(
+  aid: string,
+  body: { name?: string; note?: string; modules?: Record<string, boolean> },
+): Promise<AnalysisProfile> {
+  const { data } = await apiClient.put<AnalysisProfile>(API_PATHS.analysis(aid), body);
+  return data;
+}
+
+/** DELETE /v1/analysis/{aid}：软删 + 影子组合归档。 */
+export async function deleteAnalysis(aid: string): Promise<void> {
+  await apiClient.delete(API_PATHS.analysis(aid));
+}
+
+/** POST /v1/analysis/{aid}/run：触发四模块分析 job（202）。 */
+export async function runAnalysis(aid: string): Promise<JobAccepted> {
+  const { data } = await apiClient.post<JobAccepted>(API_PATHS.analysisRun(aid));
+  return data;
+}
+
+/** GET /v1/analysis/{aid}/news?limit=：最近消息（直读数据集）。 */
+export async function getAnalysisNews(aid: string, limit = 10): Promise<AnalysisNews> {
+  const { data } = await apiClient.get<AnalysisNews>(API_PATHS.analysisNews(aid), {
+    params: { limit },
+  });
+  return data;
+}
+
+/** POST /v1/analysis/{aid}/news/refresh：刷新该标的新闻（小 job，202）。 */
+export async function refreshAnalysisNews(aid: string): Promise<JobAccepted> {
+  const { data } = await apiClient.post<JobAccepted>(API_PATHS.analysisNewsRefresh(aid));
+  return data;
+}
+
+/** POST /v1/analysis/{aid}/backtest：影子组合回测（复用组合回测链路，202）。 */
+export async function backtestAnalysis(
+  aid: string,
+  body?: BacktestRequest,
+): Promise<JobAccepted & { pid?: string }> {
+  const { data } = await apiClient.post<JobAccepted & { pid?: string }>(
+    API_PATHS.analysisBacktest(aid),
+    body ?? {},
+  );
   return data;
 }

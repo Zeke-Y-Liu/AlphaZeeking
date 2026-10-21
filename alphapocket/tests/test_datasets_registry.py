@@ -22,6 +22,7 @@ from applib.datasets import (CATEGORIES, MERGE_POLICIES, NON_SNAPSHOT_POLICIES,
                              active_specs, all_specs, get_spec)
 
 # 改造前硬编码的快照合并面（锚点：派生结果必须逐项相等）
+# 2026-10-21 扩展：industry_index / stock_news（单公司分析辅助数据集，fill_missing）
 _LEGACY_MERGEABLE = {
     "daily_bars": "market/daily_bars.json",
     "daily_bars_raw": "market/daily_bars_raw.json",
@@ -30,6 +31,8 @@ _LEGACY_MERGEABLE = {
     "fundamental_values": "factors/fundamental_values.json",
     "market_cap": "dim/market_cap.json",
     "macro_liquidity": "market/macro_liquidity.json",
+    "industry_index": "industry/industry_index.json",
+    "stock_news": "news/stock_news.json",
 }
 
 # data.py 的实际建表名（duckdb_table 登记面与建表对拍）

@@ -54,6 +54,13 @@ IMPLEMENTED_PATHS = {
     "/api/v1/engines/metrics/{mid}",
     "/api/v1/engines/describe",
     "/api/v1/engines/datasets",
+    # 单公司分析（M10）：档案 CRUD + 四模块 job + 消息 + 影子回测
+    "/api/v1/analysis",
+    "/api/v1/analysis/{aid}",
+    "/api/v1/analysis/{aid}/run",
+    "/api/v1/analysis/{aid}/news",
+    "/api/v1/analysis/{aid}/news/refresh",
+    "/api/v1/analysis/{aid}/backtest",
 }
 
 

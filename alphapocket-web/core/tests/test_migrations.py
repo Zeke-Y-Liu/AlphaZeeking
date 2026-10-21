@@ -22,6 +22,7 @@ EXPECTED_TABLES = {
     "rebalance_plans",
     "exec_orders",
     "audit_log",
+    "analysis_profiles",
 }
 
 

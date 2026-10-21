@@ -18,7 +18,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.data import RunnerDep
@@ -139,11 +139,19 @@ def _detail(db: Session, portfolio: Portfolio) -> PortfolioOut:
 def list_portfolios(
     db: DbDep,
     include_archived: bool = False,
+    include_shadow: bool = False,
 ) -> list[PortfolioOut]:
-    """组合列表：默认仅 active（归档不返回）；含持仓数与最近一次 run 摘要。"""
+    """组合列表：默认仅 active（归档不返回）；含持仓数与最近一次 run 摘要。
+
+    ``include_shadow``：单公司分析的影子组合（``strategy.kind=analysis_shadow``）
+    默认**不出现**在组合列表（分析域单独入口）；显式传 True 才返回。
+    """
     stmt = select(Portfolio).order_by(Portfolio.id)
     if not include_archived:
         stmt = stmt.where(Portfolio.status == "active")
+    if not include_shadow:
+        kind = Portfolio.strategy["kind"].astext
+        stmt = stmt.where(or_(kind.is_(None), kind != "analysis_shadow"))
     rows = db.execute(stmt).scalars().all()
     return [
         PortfolioOut(
