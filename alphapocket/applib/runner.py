@@ -276,7 +276,7 @@ def _adjust_check(ctx: Ctx) -> dict:
     ex_path = ctx.local_repo / "market" / "adjust_ex_dates.json"
     hkus_ex = json.loads(ex_path.read_text(encoding="utf-8")) if ex_path.exists() else {}
     from applib.datasource import classify_secid
-    bad, max_diff, n, fund_n, hkus_n = [], 0.0, 0, 0, 0
+    bad, max_diff, n, fund_n, hkus_n, glitch_n = [], 0.0, 0, 0, 0, 0
     for secid, arr in bars.items():
         if secid not in raws:
             fund_n += 1     # ETF/LOF：sina 无复权接口，无 qfq/raw 对（价格真实性由 cross_source 双源覆盖）
@@ -293,15 +293,35 @@ def _adjust_check(ctx: Ctx) -> dict:
                if d["ex_date"] >= arr[0]["dt"]}
               | {d for d in hkus_ex.get(secid, []) if d >= arr[0]["dt"]})
         prev_dt = None
-        for r in arr:
+        glitch_prev = False  # 前一共同交易日为双源毛刺日（价差 >1¢）→ 当日点是其回声
+        for i, r in enumerate(arr):
+            # 双源当日价差 ≤1¢（与末日锚定同常数）视为一致；>1¢ 为毛刺日
+            agree = r["dt"] in raw and abs(r["close"] - raw[r["dt"]]) <= 0.011
             if prev_dt and r["dt"] not in ex and r.get("pct") is not None and prev_dt in raw and r["dt"] in raw:
                 rp = raw[r["dt"]] / raw[prev_dt] - 1
                 d = abs(r["pct"] - rp)
-                max_diff = max(max_diff, d)
-                n += 1
-                if d > 0.005:
-                    bad.append(f"{secid}@{r['dt']} qfq{r['pct']:.4f} vs raw{rp:.4f}")
-            prev_dt = r["dt"]
+                # V4-β 价格感知容差：双源收盘价一个最小报价单位的舍入差（≤1¢）在低价区
+                # 会放大成大 pct 偏差（DAVE.US 2022 年 <$1 区间半美分差 → 0.5–0.9%），
+                # 固定 0.5% 容差失真 → 容差取 max(0.5%, 0.011/前收)。
+                tol = max(0.005, 0.011 / raw[prev_dt])
+                exempt = False
+                if d > tol:
+                    # 双源孤立毛刺豁免（仅越界点启用）：当日价差 >1¢ 且下一共同交易日
+                    # 收敛 ≤1¢ → 单源单日数据毛刺（复权因子错误会持续发散，不会自愈）；
+                    # 毛刺日的次日点因 rp 用了错误前收而越界（回声），一并豁免。
+                    nxt = next((x for x in arr[i + 1:] if x["dt"] in raw), None)
+                    recon = nxt is not None and abs(nxt["close"] - raw[nxt["dt"]]) <= 0.011
+                    exempt = (not agree and recon) or (glitch_prev and agree)
+                if exempt:
+                    glitch_n += 1  # 移出对账总体，透明计数
+                else:
+                    n += 1
+                    max_diff = max(max_diff, d)
+                    if d > tol:
+                        bad.append(f"{secid}@{r['dt']} qfq{r['pct']:.4f} vs raw{rp:.4f}")
+            if r["dt"] in raw:
+                prev_dt = r["dt"]
+                glitch_prev = not agree
         # 末日锚定：主序列末根在 raw 有同日数据时须相等（qfq 前复权锚定当下；美股腾讯
         # 序列含当日盘中K线而新浪 raw 收盘后更新 → 取最后共同交易日比较）
         common = [r["dt"] for r in arr if r["dt"] in raw]
@@ -312,7 +332,8 @@ def _adjust_check(ctx: Ctx) -> dict:
                 bad.append(f"{secid} 末日({last_dt}) qfq {last_close} ≠ raw {raw[last_dt]}（复权因子≠1）")
     fund_note = f"·无复权对豁免{fund_n}只" if fund_n else ""
     hkus_note = f"·港美对账{hkus_n}只" if hkus_n else ""
-    return {"adjust_check": f"pass({n} 点·最大偏差{max_diff:.4%}{hkus_note}{fund_note})" if not bad else f"FAIL({'; '.join(bad[:4])})"}
+    glitch_note = f"·毛刺豁免{glitch_n}点" if glitch_n else ""
+    return {"adjust_check": f"pass({n} 点·最大偏差{max_diff:.4%}{hkus_note}{fund_note}{glitch_note})" if not bad else f"FAIL({'; '.join(bad[:4])})"}
 
 
 def _provenance_check(ctx: Ctx) -> dict:
