@@ -24,6 +24,12 @@ describe('router 路由表（§8）', () => {
     expect(paths).toContain('/:pathMatch(.*)*');
   });
 
+  it('包含单公司分析路由（M10）', () => {
+    expect(paths).toContain('/companies');
+    expect(paths).toContain('/companies/:aid');
+    expect(router.resolve('/companies/ca_1').name).toBe('company-detail');
+  });
+
   it('根路径重定向到 /portfolios', () => {
     expect(router.resolve('/').redirectedFrom).toBeUndefined();
     expect(router.resolve('/')).toBeDefined();

@@ -217,10 +217,17 @@ POST   /api/v1/analysis/{aid}/backtest  # = 转发现有 /portfolios/{shadow_pid
 
 ### 5.3 验证结果
 
-- 数据：25 标的 has_bars 25/25，as_of 2026-10-21；六项验证全绿（provenance 14 数据集、adjust 25598 点·毛刺豁免 4 点、golden 339 项）。
-- 分析（A 股 601058.SH）：基本面 2026-06-30 期（ROE 9.5%）；行业「汽车」（20 日 -6.1%、成交额 5/60=0.94、相对强度 -4.5%）；技术 RSI 33.7 / J 18.9 / 20 日超跌 10.6%（超卖）；消息 10 条。
+- 数据：25 标的 has_bars 25/25，as_of 2026-10-22；六项验证全绿（provenance 14 数据集、adjust 22126 点、golden 339 项）。
+- 分析（A 股 601058.SH，2026-10-22 run）：基本面 2026-06-30 期（ROE 9.53%）；行业「汽车」（20 日 -6.49%、相对强度 -4.74%）；技术 RSI 30.25 / 20 日超跌 11.23%（超卖）；消息 10 条。
 - 分析（港股 00700.HK）：新闻模块降级「该市场暂无公开新闻源」，其余模块正常。
+- 降级语义：数据未就绪时运行分析 → 四模块均 `available=false` + 原因提示，job 照常 done（M10 顺带验证）。
 - 影子回测：`POST /analysis/ca_1/backtest` → job done，产出 `bt_20261021_172037_ac7969`。
-- 自动化：core `190 passed / 13 skipped`；applib 数据集 + 技术/行业单测 `39 passed`；web `pnpm build` 通过（新文件无类型错误）。
+- 自动化：core `190 passed / 13 skipped`；applib 数据集 + 技术/行业单测 `39 passed`；web 全量 `116 passed`（20 文件，含 CompaniesView 6 用例 + 路由断言）。
 - 浏览器：登录 → /companies 列表 → 新建 ca_2 → 详情四 tab 数据正确 → 运行分析 2–3 秒完成，console 无报错。
+
+### 5.4 收尾补遗（2026-10-22）
+
+1. **H5 入口**：AppLayoutH5 的 4-item tabbar 为 §8 设计约束不可扩项 → 「我的」页加「快捷入口」卡（单公司分析 / 引擎与因子），H5 视口由此进入（PC 端仍有侧栏「公司 → 单公司分析」）。浏览器实测：/me → 点击 → /companies → 详情 → 四 tab 正常，console 无错。
+2. **前端测试补全**：`CompaniesView.spec.ts` 6 用例（列表渲染/空态/错误重试/创建归一 trim+大写/禁用态/删除确认）；`router.spec.ts` 增 `/companies` 路由断言。web 全量 116 passed。
+3. **L1 状态**：`1/25/7`（用户/标的/组合，含 sa26 与 shadow_ca_1），重置恢复后 ca_1 档案、模块开关、最近 run 记录完整回归；启动基线 WARN（与 seed 1/15/3 不符）属用户运行期新增数据，非异常。
 
