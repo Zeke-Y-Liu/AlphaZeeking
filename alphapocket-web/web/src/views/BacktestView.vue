@@ -295,6 +295,12 @@ function renderChart(): void {
   const p = payload.value;
   if (!el || !p || !p.series || p.series.length === 0) return;
   try {
+    // 守卫：chart 绑定的容器若已不是当前 el（v-if 卸载重挂/组件复用），旧实例
+    // 指向脱离文档的节点 → 重建；否则净曲线会画到「看不见的 DOM」上。
+    if (chart && chart.getDom() !== el) {
+      chart.dispose();
+      chart = null;
+    }
     if (!chart) chart = echarts.init(el);
     const series: Record<string, unknown>[] = [
       {
@@ -340,7 +346,12 @@ function onResize(): void {
   }
 }
 
-watch(payload, async () => {
+// 渲染触发盯双源：payload（换 run）+ chartEl（ref 绑定）。
+// 修复关键：图表卡片在 v-if="loading" 的 v-else 分支内——load() 的时序是
+// payload 先赋值（flush #1，loading 仍 true → 卡片未渲染）→ finally 置
+// loading=false（flush #2 → 卡片渲染、ref 才绑定）。只盯 payload 会在 flush #1
+// 后空跑且不再触发，图表永不绘制；chartEl 从 null→el 的跳变补上第二次触发。
+watch([payload, chartEl], async () => {
   await nextTick();
   renderChart();
 });

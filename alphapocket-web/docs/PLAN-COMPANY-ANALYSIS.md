@@ -231,3 +231,15 @@ POST   /api/v1/analysis/{aid}/backtest  # = 转发现有 /portfolios/{shadow_pid
 2. **前端测试补全**：`CompaniesView.spec.ts` 6 用例（列表渲染/空态/错误重试/创建归一 trim+大写/禁用态/删除确认）；`router.spec.ts` 增 `/companies` 路由断言。web 全量 116 passed。
 3. **L1 状态**：`1/25/7`（用户/标的/组合，含 sa26 与 shadow_ca_1），重置恢复后 ca_1 档案、模块开关、最近 run 记录完整回归；启动基线 WARN（与 seed 1/15/3 不符）属用户运行期新增数据，非异常。
 
+### 5.5 回测净值曲线不显示修复（2026-10-22 晚）
+
+**现象**：影子组合回测页（及所有组合，含 cn4）净值曲线区域空白；指标卡/历史列表正常，backtest.json 产物 series 完整（1404 点），请求全 200。
+
+**根因**（普遍性 bug，非影子组合特有；此前 M4 检验未覆盖曲线渲染）：图表卡片在 `v-if="loading"` 的 `v-else` 分支内。`load()` 时序为 payload 先赋值（flush #1 时 loading 仍 true → 卡片未渲染）→ `finally` 才置 loading=false（flush #2 卡片渲染、`chartEl` ref 才绑定）。`watch(payload)` 在 flush #1 后空跑一次（el=null）后**不再触发**，ECharts 永不初始化。
+
+**修复**（[BacktestView.vue](file:///workspace/alphapocket-web/web/src/views/BacktestView.vue)）：
+1. 渲染触发改盯双源 `watch([payload, chartEl])`——chartEl 从 null→el 的绑定跳变补上第二次触发（null→null、el→el 不触发，幂等安全）。
+2. `renderChart` 增加守卫：`chart.getDom() !== el`（v-if 卸载重挂/组件复用时旧实例指向脱离文档的节点）→ dispose 重建，防止画到「看不见的 DOM」。
+
+**验证**：浏览器实测 shadow_ca_1 与 cn4 两页 canvas 均渲染（canvasN=1）；web 全量 116 passed；typecheck 无新错误。
+
