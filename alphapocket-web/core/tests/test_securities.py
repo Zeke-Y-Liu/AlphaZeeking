@@ -193,17 +193,21 @@ def _patch_offline(monkeypatch, ggt_codes: set[str] | None = None) -> None:
 
 
 def test_register_new_stock(api_client, pg_ready, cleanup, monkeypatch) -> None:
-    """注册 600519（股票）→ STOCK / 600519.SH / 缺省 settle&cost / 写审计。"""
-    _patch_offline(monkeypatch)
-    _force_clean("600519.SH", cleanup)
+    """注册 600941（股票）→ STOCK / 600941.SH / 缺省 settle&cost / 写审计。
 
-    resp = api_client.post("/api/v1/securities/register", json={"code": "600519"})
+    刻意避开 seed/运行态标的（同 test_register_us_stock 注：force_clean+cleanup
+    硬删行，共库缺陷下会误删运行库数据；此前用 600519 会删掉用户真实注册的行）。
+    """
+    _patch_offline(monkeypatch)
+    _force_clean("600941.SH", cleanup)
+
+    resp = api_client.post("/api/v1/securities/register", json={"code": "600941"})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["secid"] == "600519.SH"
-    assert body["code"] == "600519"
+    assert body["secid"] == "600941.SH"
+    assert body["code"] == "600941"
     assert body["asset_type"] == "STOCK"
-    assert body["sina_symbol"] == "sh600519"
+    assert body["sina_symbol"] == "sh600941"
     assert body["settle"] == "A股 T+1"
     assert body["cost"] == "印花税卖出0.05%+佣金"
     assert body["market"] == "A"
@@ -211,12 +215,13 @@ def test_register_new_stock(api_client, pg_ready, cleanup, monkeypatch) -> None:
     assert body["hk_connect"] is None
     assert body["source"] == "user"
     # 名称无本地来源 → 按约定回退为 code（不伪造）
-    assert body["name"] == "600519"
-    assert _count_audit("600519.SH") >= 1
+    assert body["name"] == "600941"
+    assert _count_audit("600941.SH") >= 1
 
 
-def test_register_existing_is_idempotent(api_client, pg_ready, monkeypatch) -> None:
-    """注册 510300（seed 已存在）→ 幂等返回既有记录、无新增行、不触发探测。"""
+def test_register_existing_is_idempotent(api_client, pg_ready, monkeypatch,
+                                         _no_auto_sync) -> None:
+    """注册 510300（seed 已存在）→ 幂等返回既有记录、无新增行、不触发探测与自动同步。"""
     existing = _get("510300.SH")
     if existing is None:
         pytest.skip("seed 未灌入 510300.SH，跳过幂等用例")
@@ -234,6 +239,45 @@ def test_register_existing_is_idempotent(api_client, pg_ready, monkeypatch) -> N
     assert body["name"] == existing.name
     assert body["asset_type"] == existing.asset_type
     assert _count_securities() == before, "幂等命中不应新增 securities 行"
+    assert _no_auto_sync == [], "幂等命中不应触发自动同步"
+
+
+# ── 自动数据同步触发（M11：新注册 → 尽力而为增量同步）─────────
+
+
+def test_register_new_triggers_bg_sync(api_client, pg_ready, cleanup, monkeypatch,
+                                       _no_auto_sync) -> None:
+    """新注册 → 恰好提交一次增量同步 job（conftest 桩 runner 记录，不触外网）。"""
+    _patch_offline(monkeypatch)
+    _force_clean("601398.SH", cleanup)
+
+    resp = api_client.post("/api/v1/securities/register", json={"code": "601398"})
+
+    assert resp.status_code == 200, resp.text
+    assert len(_no_auto_sync) == 1, "新注册应触发一次自动同步（幂等注册则不触发）"
+    job = _no_auto_sync[0]
+    assert job["type"] == "data_sync"
+    assert job["params"] == {"mode": "incremental", "secid": None}
+    assert job["lock"] == "sync"
+
+
+def test_register_survives_bg_sync_failure(api_client, pg_ready, cleanup, monkeypatch,
+                                           _no_auto_sync) -> None:
+    """触发链路异常（runner 未初始化等）→ 静默吞掉，注册响应不受影响（红线）。"""
+    _patch_offline(monkeypatch)
+    _force_clean("601988.SH", cleanup)
+
+    import app.main as main_mod
+
+    def _raise(*_args, **_kwargs):
+        raise RuntimeError("job runner 未初始化（lifespan 未启动）")
+
+    monkeypatch.setattr(main_mod, "get_job_runner_sync", _raise)
+
+    resp = api_client.post("/api/v1/securities/register", json={"code": "601988"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["secid"] == "601988.SH"
+    assert _get("601988.SH") is not None, "同步失败不应回滚已注册标的"
 
 
 def test_register_new_fund_defaults_etf(api_client, pg_ready, cleanup, monkeypatch) -> None:
@@ -302,21 +346,27 @@ def test_register_hk_non_ggt_stock(api_client, pg_ready, cleanup, monkeypatch) -
 
 
 def test_register_us_stock(api_client, pg_ready, cleanup, monkeypatch) -> None:
-    """注册 NVDA（美股）→ US / USD / hk_connect=None / 美股缺省费用。"""
-    _patch_offline(monkeypatch)
-    _force_clean("NVDA.US", cleanup)
+    """注册 TSLA（美股）→ US / USD / hk_connect=None / 美股缺省费用。
 
-    resp = api_client.post("/api/v1/securities/register", json={"code": "nvda"})
+    刻意避开 seed 标的（NVDA.US 等）：_force_clean + cleanup 会硬删该 secid 的
+    securities/audit 行——测试与运行共库的既有隔离缺陷下会误删运行库数据
+    （此前用 nvda 每跑一轮套件就删掉运行库的 NVDA.US 行，连带数据同步
+    _prune_orphans 清掉其 bars）。
+    """
+    _patch_offline(monkeypatch)
+    _force_clean("TSLA.US", cleanup)
+
+    resp = api_client.post("/api/v1/securities/register", json={"code": "tsla"})
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["secid"] == "NVDA.US"
-    assert body["sina_symbol"] == "gb_nvda"
+    assert body["secid"] == "TSLA.US"
+    assert body["sina_symbol"] == "gb_tsla"
     assert body["market"] == "US"
     assert body["asset_type"] == "STOCK"
     assert body["currency"] == "USD"
     assert body["hk_connect"] is None
     assert body["settle"] == "美股 T+0"
-    assert _count_audit("NVDA.US") >= 1
+    assert _count_audit("TSLA.US") >= 1
 
 
 def test_register_hk_rejects_non_stock(api_client, pg_ready, monkeypatch) -> None:

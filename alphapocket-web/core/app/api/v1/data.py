@@ -93,6 +93,48 @@ def create_sync(payload: SyncIn, runner: RunnerDep) -> JSONResponse:
     )
 
 
+class SyncSecidIn(BaseModel):
+    """单标的数据拉取入参（标的页/组合页手动入口）。"""
+
+    secid: str
+
+
+@router.post("/sync-secid")
+def create_sync_secid(payload: SyncSecidIn, db: Annotated[Session, Depends(get_db)],
+                      runner: RunnerDep) -> JSONResponse:
+    """手动拉取**单个标的**的数据（refresh：近 5 日窗口增量合并，sync 互斥 409）。
+
+    与 ``POST /data/sync {mode: refresh}`` 同链路，区别仅两点：
+    - 入参只传 ``secid``（语义化入口，供组合/公司页面「拉取该标的数据」按钮）；
+    - 前置校验标的已注册（未注册 422，提示先到数据页注册）。
+    """
+    from sqlalchemy import select
+
+    from app.models import Security
+
+    secid = payload.secid.strip().upper()
+    exists = db.execute(select(Security.secid).where(Security.secid == secid)).scalar_one_or_none()
+    if not exists:
+        raise AppError(
+            ErrorCode.SECURITY_NOT_FOUND,
+            "标的不存在或未注册，请先在数据页注册",
+            detail={"missing_secids": [secid]},
+        )
+    if circuit_open():
+        raise AppError(ErrorCode.UPSTREAM_RATE_LIMITED, "上游数据源熔断中，请稍后重试")
+    job_id = runner.submit(
+        type="data_sync",
+        params={"mode": "refresh", "secid": secid},
+        portfolio_id=None,
+        fn=_run_sync,
+        lock="sync",
+    )
+    return JSONResponse(
+        status_code=SYNC_ACCEPTED,
+        content={"job_id": job_id, "poll": f"/api/v1/jobs/{job_id}", "secid": secid},
+    )
+
+
 # ── T1.5 数据状态 API（§6.2 / §9.2）──────────────────────────────
 
 

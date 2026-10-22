@@ -12,6 +12,7 @@ import {
   listRuns,
   refreshAnalysisNews,
   runAnalysis,
+  syncSecid,
   updateAnalysis,
 } from '../api';
 import type { AnalysisNews, AnalysisProfile } from '../api/types';
@@ -31,6 +32,7 @@ const error = ref('');
 const running = ref(false);
 const progress = ref(0);
 const refreshing = ref(false);
+const syncingSec = ref(false);
 const tab = ref('fundamental');
 const toast = useToast();
 
@@ -151,6 +153,25 @@ async function toggleModule(key: string): Promise<void> {
   }
 }
 
+async function syncNow(): Promise<void> {
+  if (syncingSec.value || !profile.value) return;
+  syncingSec.value = true;
+  try {
+    const { job_id } = await syncSecid(profile.value.secid);
+    await pollJob(job_id, 120);
+    await Promise.all([loadReport(), loadNews()]);
+    toast.success(`${profile.value.secid} 行情已更新`);
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('已有')) {
+      toast.info('已有同步任务在运行，完成后数据自动覆盖该标的');
+    } else {
+      toast.error(err instanceof Error ? err.message : '拉取失败');
+    }
+  } finally {
+    syncingSec.value = false;
+  }
+}
+
 function fundRows(): Record<string, any>[] {
   return (fundamental.value.reports ?? []) as Record<string, any>[];
 }
@@ -178,6 +199,9 @@ onMounted(load);
           </p>
         </div>
         <div class="cd-actions">
+          <ApButton variant="ghost" :loading="syncingSec" @click="syncNow" data-test="cd-sync-secid">
+            拉取行情
+          </ApButton>
           <ApButton variant="primary" :loading="running" @click="runNow" data-test="cd-run">
             运行分析
           </ApButton>

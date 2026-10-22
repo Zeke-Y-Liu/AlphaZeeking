@@ -28,6 +28,12 @@ def data_sync(args: dict, ctx) -> dict:
               "dwd_financial_report", "dwd_dividend", "dwd_mktcap_daily", "dim_security",
               "factor_value_daily", "factor_pit_meta"):
         con.execute(f"DROP TABLE IF EXISTS {t}")
+
+    def _insert_many(sql, rows):
+        # executemany 空列表防御：DuckDB 对空参数抛 Invalid Input Error，而空是
+        # 合法状态（如纯港/美股 universe 无 A 股财报与分红）→ 跳过，表保持空。
+        if rows:
+            con.executemany(sql, rows)
     con.execute("""CREATE TABLE dwd_daily_bar (secid TEXT, dt DATE, open DOUBLE, high DOUBLE,
                    low DOUBLE, close DOUBLE, volume BIGINT, amount DOUBLE, pct DOUBLE)""")
     con.execute("CREATE TABLE dwd_daily_bar_raw (secid TEXT, dt DATE, close DOUBLE)")
@@ -45,14 +51,14 @@ def data_sync(args: dict, ctx) -> dict:
     con.execute("""CREATE TABLE factor_pit_meta (dt DATE, secid TEXT, factor_id TEXT,
                    used_period DATE, used_announce DATE)""")
 
-    con.executemany("INSERT INTO dwd_daily_bar VALUES (?,?,?,?,?,?,?,?,?)",
-                    [(s, r["dt"], r["open"], r["high"], r["low"], r["close"], r["volume"], r["amount"], r["pct"])
-                     for s, arr in bars.items() for r in arr])
-    con.executemany("INSERT INTO dwd_daily_bar_raw VALUES (?,?,?)",
-                    [(s, r["dt"], r["close"]) for s, arr in raws.items() for r in arr])
-    con.executemany("INSERT INTO cross_check_tx VALUES (?,?,?)",
-                    [(s, r["dt"], r["close"]) for s, arr in txs.items() for r in arr])
-    con.executemany("INSERT INTO dwd_trade_calendar VALUES (?)", [(d,) for d in cal])
+    _insert_many("INSERT INTO dwd_daily_bar VALUES (?,?,?,?,?,?,?,?,?)",
+                 [(s, r["dt"], r["open"], r["high"], r["low"], r["close"], r["volume"], r["amount"], r["pct"])
+                  for s, arr in bars.items() for r in arr])
+    _insert_many("INSERT INTO dwd_daily_bar_raw VALUES (?,?,?)",
+                 [(s, r["dt"], r["close"]) for s, arr in raws.items() for r in arr])
+    _insert_many("INSERT INTO cross_check_tx VALUES (?,?,?)",
+                 [(s, r["dt"], r["close"]) for s, arr in txs.items() for r in arr])
+    _insert_many("INSERT INTO dwd_trade_calendar VALUES (?)", [(d,) for d in cal])
     # V4-β 多市场：港股/美股日历（由 K 线日期并集推导；文件缺失时跳过，保持向后兼容）
     synced_extra = {}
     for mkt in ("hk", "us"):
@@ -66,17 +72,17 @@ def data_sync(args: dict, ctx) -> dict:
         t = f"dwd_trade_calendar_{mkt}"
         con.execute(f"DROP TABLE IF EXISTS {t}")
         con.execute(f"CREATE TABLE {t} (dt DATE)")
-        con.executemany(f"INSERT INTO {t} VALUES (?)", [(d,) for d in mcal])
+        _insert_many(f"INSERT INTO {t} VALUES (?)", [(d,) for d in mcal])
         synced_extra[t] = len(mcal)
-    con.executemany("INSERT INTO dim_security VALUES (?,?,?,?,?)",
-                    [(d["secid"], d["name"], d["market"], d["asset_type"], d["industry"]) for d in dims])
+    _insert_many("INSERT INTO dim_security VALUES (?,?,?,?,?)",
+                 [(d["secid"], d["name"], d["market"], d["asset_type"], d["industry"]) for d in dims])
     # M2：总市值日度（dim/market_cap.json，百度估值抽样粒度 8~13 天一格 → 因子侧 asof 对齐）
     mcap_path = ctx.local_repo / "dim" / "market_cap.json"
     n_mcap = 0
     if mcap_path.exists():
         mcap = _load_json(mcap_path)
         mrows = [(s, dt_, float(mv)) for s, arr in mcap.items() for dt_, mv in arr]
-        con.executemany("INSERT INTO dwd_mktcap_daily VALUES (?,?,?)", mrows)
+        _insert_many("INSERT INTO dwd_mktcap_daily VALUES (?,?,?)", mrows)
         n_mcap = len(mrows)
     frep, fdiv = [], []
     for s, v in fund.items():
@@ -88,8 +94,8 @@ def data_sync(args: dict, ctx) -> dict:
                          r.get("cash"), r.get("interest_debt")))
         for d in v["dividends"]:
             fdiv.append((s, d["ex_date"], d["announce"], d["dps"]))
-    con.executemany("INSERT INTO dwd_financial_report VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", frep)
-    con.executemany("INSERT INTO dwd_dividend VALUES (?,?,?,?)", fdiv)
+    _insert_many("INSERT INTO dwd_financial_report VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", frep)
+    _insert_many("INSERT INTO dwd_dividend VALUES (?,?,?,?)", fdiv)
     con.close()
     as_of = max(r["dt"] for arr in bars.values() for r in arr)
     return {"synced": {"dwd_daily_bar": sum(len(a) for a in bars.values()),

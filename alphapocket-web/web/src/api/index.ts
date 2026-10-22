@@ -82,6 +82,8 @@ export const API_PATHS = {
   analysisNews: (aid: string) => `/v1/analysis/${aid}/news`,
   analysisNewsRefresh: (aid: string) => `/v1/analysis/${aid}/news/refresh`,
   analysisBacktest: (aid: string) => `/v1/analysis/${aid}/backtest`,
+  // 单标的手动数据拉取（组合/公司页面入口）
+  dataSyncSecid: '/v1/data/sync-secid',
 } as const;
 
 /* ── 已实现 ─────────────────────────────────────── */
@@ -401,6 +403,17 @@ export async function removeEngineMetric(
   const { data } = await apiClient.delete<MetricRemoveResponse>(API_PATHS.engineMetric(mid), {
     data: body,
   });
+  return data;
+}
+
+/** POST /v1/data/sync-secid：手动拉取单个标的数据（refresh 近5日，202）。
+ * 未注册 422；已有同步在跑 409 JOB_LOCKED；上游熔断 503。
+ */
+export async function syncSecid(secid: string): Promise<JobAccepted & { secid?: string }> {
+  const { data } = await apiClient.post<JobAccepted & { secid?: string }>(
+    API_PATHS.dataSyncSecid,
+    { secid },
+  );
   return data;
 }
 

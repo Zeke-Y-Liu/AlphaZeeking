@@ -64,6 +64,7 @@ async def lifespan(app: FastAPI):
     runner = JobRunner(workspace)
     app.state.workspace_manager = workspace
     app.state.job_runner = runner
+    stash_job_runner(app)               # 进程级登记：非请求上下文的后台 job 触发可用
     # 启动自愈：上次进程异常退出遗留的超时 running job 置 failed（PG 不可达则降级不阻断）
     try:
         recovered = runner.recover_stale()
@@ -80,6 +81,22 @@ def get_job_runner(request: Request) -> JobRunner:
     供后续任务（T2.3/T3.2/T4.1）提交 job 使用：``runner.submit(...)``。
     """
     return request.app.state.job_runner
+
+
+_runner_holder: dict[str, JobRunner] = {}
+
+
+def stash_job_runner(app: FastAPI) -> None:
+    """lifespan 内登记进程级 runner（后台触发用，如 securities 注册后的自动同步）。"""
+    _runner_holder["runner"] = app.state.job_runner
+
+
+def get_job_runner_sync() -> JobRunner:
+    """非请求上下文取 runner（注册等后台路径）；未初始化 → RuntimeError（调用方降级）。"""
+    try:
+        return _runner_holder["runner"]
+    except KeyError as exc:
+        raise RuntimeError("job runner 未初始化（lifespan 未启动）") from exc
 
 
 def create_app() -> FastAPI:

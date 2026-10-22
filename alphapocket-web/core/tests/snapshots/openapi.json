@@ -992,6 +992,20 @@
         "title": "SyncIn",
         "type": "object"
       },
+      "SyncSecidIn": {
+        "description": "单标的数据拉取入参（标的页/组合页手动入口）。",
+        "properties": {
+          "secid": {
+            "title": "Secid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secid"
+        ],
+        "title": "SyncSecidIn",
+        "type": "object"
+      },
       "TokenOut": {
         "properties": {
           "access": {
@@ -1802,6 +1816,46 @@
           }
         },
         "summary": "Create Sync",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/v1/data/sync-secid": {
+      "post": {
+        "description": "手动拉取**单个标的**的数据（refresh：近 5 日窗口增量合并，sync 互斥 409）。\n\n与 ``POST /data/sync {mode: refresh}`` 同链路，区别仅两点：\n- 入参只传 ``secid``（语义化入口，供组合/公司页面「拉取该标的数据」按钮）；\n- 前置校验标的已注册（未注册 422，提示先到数据页注册）。",
+        "operationId": "create_sync_secid_api_v1_data_sync_secid_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncSecidIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Sync Secid",
         "tags": [
           "data"
         ]

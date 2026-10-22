@@ -17,11 +17,15 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
+from applib.ctx import Ctx, new_run_id
+from applib.industry import match_sw_l1
+from applib.technical import oversold_score
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -31,9 +35,6 @@ from app.db.session import session_scope
 from app.models import AnalysisProfile, AuditLog, Portfolio, Position, Run, Security
 from app.services import portfolios as pf_svc
 from app.services.artifacts import put_run_artifacts
-from applib.ctx import Ctx, new_run_id
-from applib.industry import match_sw_l1
-from applib.technical import oversold_score
 
 logger = logging.getLogger("app.analysis")
 
@@ -180,7 +181,25 @@ def create_profile(
 
     secmap = pf_svc.validate_securities(db, [secid])
     pf_svc.materialize(portfolio, [(secid, Decimal("100"))], secmap, settings)
+    _trigger_bg_sync()                   # 新建档案：标的行情自动拉取（尽力而为）
     return profile
+
+
+def _trigger_bg_sync() -> None:
+    """新建分析档案后自动触发一次增量同步（尽力而为，绝不阻断创建响应）。
+
+    与 portfolios.create 的后台同步同款：universe=PG securities 全集，
+    sync 互斥/熔断 → 静默跳过（详情页「拉取行情」与数据页手动入口兜底）。
+    """
+    try:
+        from app.api.v1.data import _run_sync
+        from app.main import get_job_runner_sync
+
+        runner = get_job_runner_sync()
+        runner.submit(type="data_sync", params={"mode": "incremental", "secid": None},
+                      portfolio_id=None, fn=_run_sync, lock="sync")
+    except Exception:                    # noqa: BLE001 - 尽力而为，创建成功是红线
+        pass
 
 
 def update_profile(

@@ -464,10 +464,13 @@ def sync_workspace(
     _report(progress, 70, "clone remote → sandbox")
     cloned_files = _clone_to_sandbox(ctx)
 
-    # Q-fix：按权威 universe（PG securities）清理孤儿数据（git 基线/L1 快照携带的
-    # 旧版标的），随后物化层（PG/DuckDB 全量重建）自然收敛——不再依赖 bootstrap 兜底。
-    _report(progress, 84, "孤儿数据清理（universe 外）")
-    pruned = _prune_orphans(ctx, list(universe))
+    # Q-fix：按**权威 PG universe 全集**清理孤儿数据（git 基线/L1 快照携带的旧版
+    # 标的），随后物化层（PG/DuckDB 全量重建）自然收敛——不再依赖 bootstrap 兜底。
+    # 必须与 fetch 的请求子集解耦：refresh 单标的时 universe=[secid]，若按子集清理
+    # 会把 repo 中其余标的数据（bars/财报/日历/dim）全部误删——sync-secid 美股标的
+    # 曾因此在 DuckDB 物化 frep=[] 处炸于 88%，A 股标的则静默毁掉数据面。
+    _report(progress, 84, "孤儿数据清理（PG 权威 universe 外）")
+    pruned = _prune_orphans(ctx, universe_pg)
     if pruned:
         logger.info("孤儿清理 %d 项：%s", len(pruned), ", ".join(pruned[:8]))
 

@@ -170,6 +170,22 @@ def test_create_multi5_replica_materializes_like_alpha(api_client, ws_root, trac
         assert got_pos["hk_connect"] is None
 
 
+def test_create_portfolio_triggers_bg_sync(api_client, tracked, _no_auto_sync) -> None:
+    """M11：新建组合 → 自动提交一次增量同步 job（conftest 桩 runner 记录，不触外网）。"""
+    pid = _rand_pid("pf")
+    resp = api_client.post(
+        "/api/v1/portfolios",
+        json={"name": "自动同步触发", "pid": pid,
+              "positions": [{"secid": "510300.SH", "weight": 60},
+                            {"secid": "518880.SH", "weight": 40}]},
+    )
+    assert resp.status_code == 201, resp.text
+    tracked.append(pid)
+    assert len(_no_auto_sync) == 1, "新建组合应触发一次自动同步"
+    assert _no_auto_sync[0]["type"] == "data_sync"
+    assert _no_auto_sync[0]["params"] == {"mode": "incremental", "secid": None}
+
+
 def test_weight_window_boundaries_rejected_with_suggestion(api_client) -> None:
     """用例 2：权重和 99 / 101 → 422 WEIGHT_NOT_NORMALIZED，detail 含归一建议。"""
     for weights in ([{"secid": "510300.SH", "weight": 50}, {"secid": "518880.SH", "weight": 49}],

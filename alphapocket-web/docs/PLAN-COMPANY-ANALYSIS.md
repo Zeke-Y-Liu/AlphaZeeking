@@ -243,3 +243,26 @@ POST   /api/v1/analysis/{aid}/backtest  # = 转发现有 /portfolios/{shadow_pid
 
 **验证**：浏览器实测 shadow_ca_1 与 cn4 两页 canvas 均渲染（canvasN=1）；web 全量 116 passed；typecheck 无新错误。
 
+### 5.6 数据获取逻辑重设计（2026-10-23）
+
+**需求**（用户）：单公司分析需事先构建标的数据（Universe 数据状态页痛点）——1）注册标的 / 新建组合 / 新建分析档案后自动纳入数据面并拉取行情；2）组合页与公司页提供手动拉取入口；3）完整功能 + 回归测试。
+
+**实现**（注册/建档/建组合三入口自动同步 + 单标的手动入口）：
+1. **进程级 runner 登记**（[main.py](file:///workspace/alphapocket-web/core/app/main.py)）：`get_job_runner_sync()`——非请求上下文（CRUD 尾部后台触发）取 runner；lifespan 内 `stash_job_runner` 登记。
+2. **自动触发**：`securities.register`（仅新注册路径，幂等命中不触发）/ `portfolios.create` / `analysis.create_profile` 尾部各调 `_trigger_bg_sync()`——提交 `mode=incremental` 全量增量同步（universe=PG 权威全集，新标的天然纳入），`lock="sync"`；409/503/任何异常静默（**创建/注册成功是红线**，同步是增值）。
+3. **手动入口**：`POST /data/sync-secid {secid}`（[data.py](file:///workspace/alphapocket-web/core/app/api/v1/data.py)）——refresh 近 5 日窗口增量合并语义；前置校验已注册（未注册 422 `SECURITY_NOT_FOUND`）；sync 互斥 409；熔断 503。前端 `syncSecid()` + 组合详情「拉取持仓数据」（`data-test="sync-positions-btn"`）+ 公司详情「拉取行情」（`data-test="cd-sync-secid"`），轮询 job 完成后 toast。
+4. **契约**：`IMPLEMENTED_PATHS` 补 `/api/v1/data/sync-secid`，OpenAPI 快照重冻结（sort_keys 同款导出，diff +54 行）。
+
+**回归期发现并修复的缺陷**（本轮测试的真正价值——手动单标的链路此前从未被端到端压过）：
+1. **refresh 子集清理毁面**（严重）：`sync_workspace` 曾把 fetch 的请求子集 `universe=[secid]` 原样传给 `_prune_orphans` → refresh 单标的把 sandbox repo **其余 25 只标的数据整体误删**。美股标的随后在 DuckDB 物化 `frep=[]` 处炸于 88%（`executemany` 空列表）；A 股标的则静默毁面、靠后续全量增量自愈掩盖。修复：prune 一律按 **PG 权威全集**（`universe_pg`），与 fetch 子集解耦；[test_data_sync.py](file:///workspace/alphapocket-web/core/tests/test_data_sync.py) 锁死该语义。
+2. **applib executemany 空列表防御**：`data_sync` 对 frep/fdiv 等空序列（纯港/美 universe 无 A 股财报）直接炸——空是合法状态，`_insert_many` 判空跳过（[data.py](file:///workspace/alphapocket/applib/data.py)）；[test_data_sync_empty.py](file:///workspace/alphapocket/tests/test_data_sync_empty.py) 2 用例。
+3. **港美日历按拉取分组推导**：US-only refresh 时 `hk_stocks=[]` → HK 日历文件不写（provenance 14→12）、US 日历退化为单标的交易日 → `calendar_check` 报 AAPL 2021 年「非交易日K线」。修复：推导源改按**合并后 bars 的市场后缀全集**。
+4. **hk_rates 按 `hk_stocks` 条件拉取**：同族问题，US-only refresh 丢 `hk_rates.json`（provenance 14→13，carry_hk_us/peg_pressure 因子面缺失）。修复：条件扩为「本次分组 **或** 合并后数据面含港股」。
+5. **测试卫生**（既有缺陷放大）：测试与运行共库（`engine` 在模块导入期绑定，conftest 的 `_pg_test_isolation` 从未生效）+ 各 TestClient 自建 runner、`sync` 锁互不相识 → 自动触发在测试进程里跑**真实网络同步**（分钟级/只）且并发争抢真实 workspace 的 DuckDB 单写者（`Transaction conflict` 五连失败、套件 130s→10min）。修复：conftest autouse `_no_auto_sync` 桩 `get_job_runner_sync`（真实触发代码路径仍执行，`submit` 落 spy 列表）+ 六个 spy 用例锁触发语义；`test_register_us_stock`（nvda）/`test_register_new_stock`（600519）撞 seed/运行态标的——`_force_clean` 每轮套件**误删运行库真实行**（NVDA/600519 实害），改用 TSLA/600941。`test_build_status_latest_sync` 断言改时区无关时刻比较（PG 会话时区把 TIMESTAMPTZ 读出 +08:00 属环境行为）。
+
+**验证**：
+- core `196 passed / 13 skipped / 48.59s`（+6 spy 用例；隔离修复后套件从 130s 减半——此前被真实同步拖慢）；applib 新增 4 用例通过，既有 11 个失败（test_fetch_modes/test_multimarket_m7）经基线对照与 HEAD 持平、非本次引入。
+- web `vitest 116 passed`；typecheck 21 个既有错误与 HEAD 持平（0 新增）；`vite build` 成功。
+- 实机（demo 实例）：注册 600519 → 自动增量同步 done → **26/26 has_bars**；`sync-secid PACS.US`（美股，此前必炸）done 100%，数据面完好、provenance 14、calendar/adjust/cross/pit 全绿；浏览器 E2E 两按钮（loading→202→轮询→恢复、四模块 tab 正常、console 无 error）。
+- 收尾：bootstrap 全量同步自愈 L1 基线遗留（50 只孤儿 + PACS 历史烂根 3 根——remote 忠实 merge 保旧无法自愈，golden_test 因 `iloc[-20]` 越界）→ 六项验证全绿。
+

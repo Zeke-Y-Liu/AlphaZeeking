@@ -73,6 +73,32 @@ def settings_override(tmp_path, monkeypatch) -> Iterator[Settings]:
     get_settings.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _no_auto_sync(monkeypatch) -> Iterator[list[dict]]:
+    """自动数据同步（M11：注册标的 / 新建组合 / 新建分析档案后触发）测试打桩。
+
+    真实触发会提交 ``data_sync`` job（fetch_all 触外网 + DuckDB 重建）：测试进程里
+    每次触发分钟级真实拉取拖慢全套件；且各 TestClient 自建 runner，``sync`` 锁互
+    不相识 → 并发 job 争抢真实 workspace 的 DuckDB 单写者（``Transaction conflict``）。
+
+    打桩点选 ``get_job_runner_sync``：三个 ``_trigger_bg_sync`` 的真实代码路径仍
+    会执行（保住 import / 降级逻辑的回归覆盖），仅 ``runner.submit`` 落入本
+    fixture yield 的记录列表（spy 断言提交参数与次数用），不产生真实 job。
+    """
+    import app.main as main_mod
+
+    submitted: list[dict] = []
+
+    class _StubRunner:
+        @staticmethod
+        def submit(*, type, params, portfolio_id, fn, lock):  # noqa: A002 - 与真实签名对齐
+            submitted.append({"type": type, "params": params, "lock": lock})
+            return "job_test_auto_sync"
+
+    monkeypatch.setattr(main_mod, "get_job_runner_sync", lambda: _StubRunner())
+    yield submitted
+
+
 @pytest.fixture
 def client(settings_override: Settings) -> Iterator[TestClient]:
     from app.main import create_app

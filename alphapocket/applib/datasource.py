@@ -1739,9 +1739,17 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                       "供月末再平衡时点取用（按最近可用点前向取值）"},
              market_cap, "dim/market_cap.json")
 
-    # 港股/美股交易日历：本市场 K 线日期并集推导（A股日历来自新浪，见 ①）
-    for mkt, group in (("hk", hk_stocks), ("us", us_stocks)):
-        days = sorted({r["dt"] for u in group for r in bars_qfq.get(u["secid"], []) if r["dt"]})
+    # 港股/美股交易日历：本市场 K 线日期并集推导（A股日历来自新浪，见 ①）。
+    # 推导源用**合并后** bars_qfq 的该市场全部 secid（按后缀扫全集），而非本次
+    # universe 分组——子集增量/refresh（如 sync-secid 仅拉一只美股）时 hk_stocks
+    # 为空，若按分组推导会丢失 HK 日历文件、US 日历退化为单标的交易日（2026-10-23
+    # 实测：PACS.US refresh 后 calendar_check 报 AAPL 2021 年非交易日K线、
+    # provenance 数据集 14→12）。bars_qfq 已经 merge 保旧 → 全集推导子集安全、
+    # 全量行为不变。
+    for mkt in ("hk", "us"):
+        days = sorted({r["dt"] for s, arr in bars_qfq.items()
+                       if classify_secid(s) == mkt.upper() and isinstance(arr, list)
+                       for r in arr if r["dt"]})
         if days:
             _reg(f"dwd_trade_calendar_{mkt}",
                  {"note": "由本市场全部标的 K 线日期并集推导，供日历校验按市场分组"},
@@ -1778,8 +1786,12 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                 "港股通标的实际以港币报价、人民币结算（存在汇率与结算价差）"}, ensure_ascii=False, indent=2),
         encoding="utf-8")
 
-    # 港美利率/汇率（carry_hk_us / peg_pressure，H-0006）：universe 含港股时拉取 regime 数据源
-    if hk_stocks:
+    # 港美利率/汇率（carry_hk_us / peg_pressure，H-0006）：universe **或既有数据面**
+    # 含港股时拉取 regime 数据源——子集增量/refresh（如 sync-secid 仅拉一只美股）
+    # 时 hk_stocks 为空，若仅按本次分组判定会丢失 hk_rates.json（2026-10-23 实测：
+    # provenance 数据集 14→13，carry_hk_us/peg_pressure 因子序列空 → golden_test
+    # 锚定对账 iloc 越界记 fail）。bars_qfq 已 merge 保旧 → 按后缀扫全集安全。
+    if hk_stocks or any(classify_secid(s) == "HK" for s in bars_qfq):
         hk_rates = fetch_hk_rates(start_date=start)
         if hk_rates.get("series"):
             _reg("macro_hk_rates",

@@ -439,4 +439,23 @@ def register_security(payload: RegisterIn, db: DbDep) -> SecurityOut:
         )
     )
     db.commit()
+    _trigger_bg_sync()                  # 新注册标的自动拉取行情（尽力而为，见 docstring）
     return SecurityOut.model_validate(security)
+
+
+def _trigger_bg_sync() -> None:
+    """新标的注册后自动触发一次增量同步（尽力而为，绝不阻断注册响应）。
+
+    - universe 取 PG securities 全集（data_sync._pg_universe）→ 新注册标的天然纳入；
+    - 已有 sync 在跑（409）/上游熔断（503）→ 静默跳过：本次注册无须独占同步，
+      进行中的同步结束时若晚于本注册亦会覆盖；早于则由数据页/标的页手动入口兜底；
+    - 任何异常只记日志（注册成功是红线，同步是增值）。
+    """
+    try:
+        from app.main import get_job_runner_sync
+        runner = get_job_runner_sync()
+        from app.api.v1.data import _run_sync
+        runner.submit(type="data_sync", params={"mode": "incremental", "secid": None},
+                      portfolio_id=None, fn=_run_sync, lock="sync")
+    except Exception:                    # noqa: BLE001 - AppError(JOB_LOCKED/503) 等全部静默
+        pass

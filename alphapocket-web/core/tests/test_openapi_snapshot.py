@@ -26,6 +26,7 @@ IMPLEMENTED_PATHS = {
     "/api/v1/securities/search",
     "/api/v1/securities/register",
     "/api/v1/data/sync",
+    "/api/v1/data/sync-secid",
     "/api/v1/data/status",
     "/api/v1/data/verifications",
     "/api/v1/portfolios",

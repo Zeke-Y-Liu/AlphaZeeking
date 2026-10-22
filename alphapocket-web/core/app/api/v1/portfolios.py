@@ -205,7 +205,25 @@ def create_portfolio(
     db.refresh(portfolio)
 
     svc.materialize(portfolio, weights, secmap, settings)
+    _trigger_bg_sync()                   # 新建组合：标的行情自动拉取（尽力而为）
     return _detail(db, portfolio)
+
+
+def _trigger_bg_sync() -> None:
+    """新建组合后自动触发一次增量同步（尽力而为，绝不阻断创建响应）。
+
+    与 securities.register 的后台同步同款：universe=PG securities 全集（组合标的
+    必已注册），sync 互斥/熔断 → 静默跳过（数据页与组合详情的手动入口兜底）。
+    """
+    try:
+        from app.api.v1.data import _run_sync
+        from app.main import get_job_runner_sync
+
+        runner = get_job_runner_sync()
+        runner.submit(type="data_sync", params={"mode": "incremental", "secid": None},
+                      portfolio_id=None, fn=_run_sync, lock="sync")
+    except Exception:                    # noqa: BLE001 - 尽力而为，创建成功是红线
+        pass
 
 
 @router.get("/{pid}", response_model=PortfolioOut)

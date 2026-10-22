@@ -270,7 +270,12 @@ def test_build_status_verification_pass_then_fail(tmp_path, pg_ready, cleanup) -
 
 
 def test_build_status_latest_sync(tmp_path, pg_ready, cleanup) -> None:
-    """latest_sync 取最近 data_sync job 的 job_id/status/progress/finished_at。"""
+    """latest_sync 取最近 data_sync job 的 job_id/status/progress/finished_at。
+
+    finished_at 按时刻比较而非字符串：PG 会话时区（如 Asia/Shanghai）会把
+    TIMESTAMPTZ 读出为本地偏移（2099-01-01T08:00:00+08:00），fromisoformat
+    解析回 aware datetime 后 == 比较即同一时刻。
+    """
     job_id = _insert_sync_job(cleanup, status="running", progress=42)
 
     with SessionLocal() as db:
@@ -279,7 +284,7 @@ def test_build_status_latest_sync(tmp_path, pg_ready, cleanup) -> None:
     assert status["latest_sync"]["job_id"] == job_id
     assert status["latest_sync"]["status"] == "running"
     assert status["latest_sync"]["progress"] == 42
-    assert status["latest_sync"]["finished_at"] == FUTURE.isoformat()
+    assert datetime.fromisoformat(status["latest_sync"]["finished_at"]) == FUTURE
 
 
 # ── build_verifications ─────────────────────────────────────────

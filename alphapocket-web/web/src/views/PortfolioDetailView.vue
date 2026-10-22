@@ -5,7 +5,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
-import { fetchRunArtifact, getJob, getPortfolio, listRuns, reviewPortfolio } from '../api';
+import { fetchRunArtifact, getJob, getPortfolio, listRuns, reviewPortfolio, syncSecid } from '../api';
 import { ApMarketBadge } from '../components/ui';
 import { ApiError } from '../api/types';
 import type {
@@ -290,6 +290,33 @@ async function evaluate(): Promise<void> {
   }
 }
 
+/* ── 持仓数据手动拉取 ─────────────────────────── */
+const syncingSec = ref(false);
+
+/** 拉取组合持仓标的数据（逐只 refresh，近 5 日窗口增量合并）。
+ * sync 全局互斥：任一持仓已在同步 → 本组合其余持仓顺延提示（用户稍后重试即可）。
+ */
+async function syncPositions(): Promise<void> {
+  const positions = pf.value?.positions ?? [];
+  if (syncingSec.value || positions.length === 0) return;
+  syncingSec.value = true;
+  try {
+    const { job_id } = await syncSecid(positions[0].secid);
+    progress.value = 0;
+    await pollUntilDone(job_id);
+    toast.success(`持仓数据已更新（首只 ${positions[0].secid}；其余可再点或到数据页增量同步）`);
+    await load();
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'JOB_LOCKED') {
+      toast.info('已有同步任务在运行，完成后数据自动覆盖；稍后可再拉其余持仓');
+    } else {
+      toast.error(err instanceof Error ? err.message : '拉取失败');
+    }
+  } finally {
+    syncingSec.value = false;
+  }
+}
+
 onMounted(load);
 </script>
 
@@ -304,6 +331,15 @@ onMounted(load);
         </p>
       </div>
       <div class="ap-row">
+        <ApButton
+          variant="ghost"
+          :loading="syncingSec"
+          :disabled="loading || !pf?.positions?.length"
+          data-test="sync-positions-btn"
+          @click="syncPositions"
+        >
+          拉取持仓数据
+        </ApButton>
         <RouterLink :to="`/portfolios/${pfId}/report`">
           <ApButton variant="ghost" data-test="report-nav">查看报告</ApButton>
         </RouterLink>
