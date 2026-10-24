@@ -9,22 +9,22 @@
 
 ```
 deploy/regression/
-├── suite.yaml     # 四域测试注册表（声明式：每项一个可执行单元）
-├── map.yaml       # 变更路径 → 测试目标 的影响映射（增量模式用）
-├── run.py         # 编排器 CLI（无第三方依赖，stdlib + PyYAML）
+├── suite.py       # 四域测试注册表 + 影响映射 MAP + 核心功能清单 CORE_FUNCTIONS（声明式，零依赖）
+├── run.py         # 编排器 CLI（stdlib 零依赖）
 ├── checks/
 │   ├── data_r1.py       # R1 本地快照六项验证（真实 workspace，离线）
+│   ├── data_r2.py       # R2 实时上游（--with-live）：API 增量同步 → 复跑 R1
 │   └── web_typecheck.py # typecheck 基线对比（既有错误不阻塞，新增才 fail）
 └── reports/last.json    # 最近一次运行的结构化报告
 ```
 
-- **变更后触发**：`python deploy/regression/run.py`（增量，默认）或 `--mode full`；
-  亦可用 `make regression MODE=full`。变更集默认取 `git status --short` + `--changed` 显式指定。
-- **增量模式**：变更文件 → `map.yaml` glob 匹配 → 受影响 suite 项 ∪ **恒定冒烟集**；
+- **变更后触发**：`python deploy/regression/run.py`（增量，默认）或 `--mode full`。
+  变更集默认取 `git status --short` + `--changed` 显式指定。
+- **增量模式**：变更文件 → `suite.py` 的 `MAP` glob 匹配 → 受影响 suite 项 ∪ **恒定冒烟集**；
   未映射文件记 WARN 并兜底进冒烟。**全量模式**：全部 suite 项。
 - **报告**：终端表 + `reports/last.json`（items/status/duration/mode/changes），fail>0 → 退出码 1。
 
-### 1.2 四大域与测试项注册（suite.yaml）
+### 1.2 四大域与测试项注册（suite.py）
 
 | 域 | 级别 | suite 项 | 说明 |
 |---|---|---|---|
@@ -56,7 +56,7 @@ deploy/regression/
 
 ## 2. 任务拆解（RG-*）
 
-- **RG-1** 编排器 `run.py` + `suite.yaml` + `map.yaml` + 报告
+- **RG-1** 编排器 `run.py` + 注册表 `suite.py`（含影响映射 MAP）+ 报告
 - **RG-2** core 域：基准 fixture + `test_core_baseline.py` + smoke marker（pyproject）
 - **RG-3** interaction 域：typecheck 基线脚本 + Playwright e2e 冒烟（chromium）
 - **RG-4** data 域：`data_r1.py` + R2 触发器
@@ -128,3 +128,30 @@ python deploy/regression/run.py --mode full --with-live
 # 仅因子域
 python deploy/regression/run.py --domain factor
 ```
+
+### 3.6 Lint 修复与因子域复跑（2026-10-24 第二轮）
+
+**ruff 修复（12 处，修复后因子套件 6 文件 + `deploy/regression` 全绿）**
+
+- 因子单元集（2，`--fix` 自动修复）：
+  - [tests/test_factor_backtest.py](file:///workspace/alphapocket/tests/test_factor_backtest.py)：I001 import 块格式；
+  - [tests/test_factor_val_m7.py](file:///workspace/alphapocket/tests/test_factor_val_m7.py)：SIM114 两个 `elif` 赋值相同，合并为 `p == "2020-03-31" or p == "2021-03-31"`。
+- RG 框架（10）：
+  - RUF100×3：`data_r1.py`×2、`run.py`×1 删除失效 `noqa`（E402 已非启用规则）；
+  - PLW1510×2：[run.py](file:///workspace/alphapocket-web/deploy/regression/run.py)、[data_r2.py](file:///workspace/alphapocket-web/deploy/regression/checks/data_r2.py) 显式 `check=False`（两处均为有意自行判定 returncode）；
+  - ISC004×1：[suite.py](file:///workspace/alphapocket-web/deploy/regression/suite.py) `requires` 探测命令的隐式字符串拼接加括号；
+  - EXE001×4：`run.py` / `checks/data_r1.py` / `checks/data_r2.py` / `checks/web_typecheck.py` 有 shebang 但不可执行 → `chmod +x`。
+
+**因子域复跑结果**
+
+- `factor.audit`（test_factor_completeness.py）：**5 passed**；
+- `factor.units`（val/gro/qua/mom_lowvol/backtest 5 文件 + 5 个既有 deselect）：
+  **56 passed, 13 skipped**——13 个 skip 全部为「真实库/数据面缺失」设计内环境跳过
+  （CI 只跑合成层），与本次修改无关。
+
+**环境备注与待办**
+
+- 沙箱再次重置：`core/.venv` 消失。本轮复跑改用系统 python3（补装 duckdb/hypothesis）；
+  suite 的 `_PY` 仍指向 core venv，**下次全量回归前需先重建 `core/.venv`**；
+- 两仓库尚余约 270 处存量 ruff 报错（`applib/datasource.py`、`core/app/api/v1/analysis.py`、
+  `core/tests/test_seed.py` 等旧文件），不属因子链路，本轮未动，待另轮清理。
