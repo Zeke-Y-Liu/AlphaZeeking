@@ -44,6 +44,9 @@ pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-ra"
+markers = [
+  "smoke: 恒定冒烟集（回归编排器任何增量都跑；RG 框架）",
+]
 
 [tool.ruff]
 target-version = "py312"

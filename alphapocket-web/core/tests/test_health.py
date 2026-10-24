@@ -5,11 +5,13 @@
 """
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 
 
+@pytest.mark.smoke
 def test_healthz_returns_200_with_three_deps(client: TestClient) -> None:
     resp = client.get("/healthz")
     assert resp.status_code == 200
@@ -28,6 +30,7 @@ def test_healthz_status_consistent_with_dependency_reachability(client: TestClie
     assert body["status"] == ("ok" if all_ok else "degraded")
 
 
+@pytest.mark.smoke
 def test_healthz_degraded_when_dependencies_down(monkeypatch) -> None:
     # 确定性覆盖降级分支：依赖探测全部不可达时必须 200 + degraded（绝不 5xx）
     def _fake_probe(_settings):

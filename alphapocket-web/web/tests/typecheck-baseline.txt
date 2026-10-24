@@ -1,0 +1,21 @@
+src/api/types.ts(405,3): error TS2687: All declarations of 'markets' must have identical modifiers.
+src/api/types.ts(406,3): error TS2687: All declarations of 'global' must have identical modifiers.
+src/api/types.ts(407,3): error TS2687: All declarations of 'global_score' must have identical modifiers.
+src/api/types.ts(408,3): error TS2687: All declarations of 'state' must have identical modifiers.
+src/api/types.ts(409,3): error TS2687: All declarations of 'as_of' must have identical modifiers.
+src/api/types.ts(583,3): error TS2687: All declarations of 'state' must have identical modifiers.
+src/api/types.ts(583,3): error TS2717: Subsequent property declarations must have the same type.  Property 'state' must be of type '"neutral" | "tight_stress" | "easy_froth" | null | undefined', but here has type 'string'.
+src/api/types.ts(585,3): error TS2687: All declarations of 'global' must have identical modifiers.
+src/api/types.ts(585,3): error TS2717: Subsequent property declarations must have the same type.  Property 'global' must be of type 'number | null | undefined', but here has type 'string | number | null'.
+src/api/types.ts(587,3): error TS2687: All declarations of 'markets' must have identical modifiers.
+src/api/types.ts(587,3): error TS2717: Subsequent property declarations must have the same type.  Property 'markets' must be of type 'Record<string, number> | undefined', but here has type '{ A: string | number | null; HK: string | number | null; US: string | number | null; }'.
+src/api/types.ts(589,3): error TS2687: All declarations of 'global_score' must have identical modifiers.
+src/api/types.ts(589,3): error TS2717: Subsequent property declarations must have the same type.  Property 'global_score' must be of type 'number | null | undefined', but here has type 'number | null'.
+src/api/types.ts(591,3): error TS2687: All declarations of 'as_of' must have identical modifiers.
+src/api/types.ts(591,3): error TS2717: Subsequent property declarations must have the same type.  Property 'as_of' must be of type 'string | null | undefined', but here has type 'string | null'.
+src/api/types.ts(596,18): error TS2430: Interface 'MacroLiquidityBlock' incorrectly extends interface 'MacroLiquiditySummary'.
+src/views/EnginesView.vue(359,99): error TS2352: Conversion of type 'Record<string, unknown>' to type 'EngineMetric' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/views/EnginesView.vue(360,105): error TS2352: Conversion of type 'Record<string, unknown>' to type 'EngineMetric' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/views/EnginesView.vue(366,38): error TS2352: Conversion of type 'Record<string, unknown>' to type 'EngineMetric' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/views/EnginesView.vue(385,18): error TS2339: Property 'metrics' does not exist on type '{ dataset: string; synced: boolean; as_of: string | null; series: number; hint?: string | undefined; }'.
+src/views/EnginesView.vue(385,56): error TS2339: Property 'metrics' does not exist on type '{ dataset: string; synced: boolean; as_of: string | null; series: number; hint?: string | undefined; }'.

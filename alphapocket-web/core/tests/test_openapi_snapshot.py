@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from app.main import create_app
 
 SNAPSHOT = Path(__file__).parent / "snapshots" / "openapi.json"
@@ -65,6 +67,7 @@ IMPLEMENTED_PATHS = {
 }
 
 
+@pytest.mark.smoke
 def test_openapi_snapshot_matches() -> None:
     """全量文档与冻结快照逐位一致。"""
     assert SNAPSHOT.exists(), f"缺少契约快照：{SNAPSHOT}（请先冻结）"
@@ -73,6 +76,7 @@ def test_openapi_snapshot_matches() -> None:
     assert spec == frozen
 
 
+@pytest.mark.smoke
 def test_openapi_covers_implemented_paths() -> None:
     """已交付端点全部在文档中（防止路由被误删/改名）。"""
     paths = set(create_app().openapi()["paths"])
