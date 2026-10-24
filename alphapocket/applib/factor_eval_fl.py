@@ -20,7 +20,7 @@ PIT 纪律（与 M2 同源）：
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
@@ -260,7 +260,7 @@ def save_eval_report(rep: dict, db_path: Path) -> dict:
     con = duckdb.connect(str(db_path))
     try:
         _ensure_eval_table(con)
-        created = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        created = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
         saved = []
         for h, r in rep["reports"].items():
             eid = f"EVAL-{rep['factor_id']}-h{h}-{rep['as_of']}"
@@ -317,13 +317,13 @@ def run_market_eval(db_path: Path, repo: Path, factor_id: str, markets: list[str
 def render_md(rep: dict) -> str:
     """检验报告 Markdown（头部可复现四元组 + 逐 horizon 指标表 + 分层表）。"""
     L = [f"# 单因子检验报告 · {rep['factor_id']}\n",
-         f"`factor_id={rep['factor_id']}` · `version={rep['factor_version']}` · "
+         (f"`factor_id={rep['factor_id']}` · `version={rep['factor_version']}` · "
          f"`lineage={rep['lineage_id'][:12]}…` · `as_of={rep['as_of']}` · "
-         f"`code={rep['code_version'] or '—'}`\n",
-         f"- 方向声明：`{rep['direction']}`（{'低值为优' if rep['direction'] == 'asc' else '高值为优'}）"
+         f"`code={rep['code_version'] or '—'}`\n"),
+         (f"- 方向声明：`{rep['direction']}`（{'低值为优' if rep['direction'] == 'asc' else '高值为优'}）"
          f" · 协议：{rep['protocol']['freq']} 截面 · 窗口 {rep['protocol']['window'][0]} ~ "
          f"{rep['protocol']['window'][1]} · universe {rep['protocol']['universe_n']} 标的 · "
-         f"基准 {rep['protocol']['benchmark']}\n",
+         f"基准 {rep['protocol']['benchmark']}\n"),
          "| horizon | 有效期 | IC均值 | 定向IC | IC_IR | NW-t | 胜率 | 多头超额/期 | 定向多空 | 单调性 | 换手 | 覆盖度 |",
          "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for h, r in rep["reports"].items():

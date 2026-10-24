@@ -1,9 +1,14 @@
 """ap CLI —— 命令分发（V4-α 骨架：auth/clone/run/schedule/push/checkpoint/serve/status）"""
 from __future__ import annotations
-import argparse, json, sys, time
+
+import argparse
+import json
+import sys
+import time
 from pathlib import Path
-from .ctx import Ctx
+
 from . import repo as R
+from .ctx import Ctx
 from .hypothesis import DIRECTIONS, SOURCE_TYPES
 from .tools import TOOLS, call_tool, checkpoint_list, checkpoint_restore
 
@@ -323,7 +328,8 @@ def cmd_fl(args):
         ctx = Ctx()
         from applib.ctx import new_run_id
         from applib.factor_inspect import health_rows_from_state
-        from applib.hypothesis import (load as hyp_load, review_items_fl, write_review_fl)
+        from applib.hypothesis import load as hyp_load
+        from applib.hypothesis import review_items_fl, write_review_fl
         res = review_items_fl(ctx.local_repo, hyp_load(ctx.local_repo),
                               health_rows_from_state(ctx.local_repo))
         res["artifacts"] = write_review_fl(res, ctx.artifacts_dir / new_run_id("hp_review_fl"))
@@ -413,7 +419,7 @@ def cmd_strategy(args):
         bars = json.loads((ctx.local_repo / "market" / "daily_bars.json").read_text(encoding="utf-8"))
         dts = sorted({r["dt"] for rows in bars.values() for r in rows})
         month_end = sorted({max(x for x in dts if x[:7] == ym) for ym in {x[:7] for x in dts}})
-        uni, snap = apply_universe(spec["universe"]["filters"], bars,
+        _uni, snap = apply_universe(spec["universe"]["filters"], bars,
                                    month_end[-3:], repo=ctx.local_repo)
         print(f"  universe {spec['universe']['base']} 过滤器预览（近 3 个月末）：")
         for fname, s in snap.items():
@@ -454,7 +460,7 @@ def _strategy_wf(args):
     (run_dir / "report.json").write_text(
         json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    fnum = lambda x, d=4: "—" if x is None else f"{x:.{d}f}"     # noqa: E731
+    fnum = lambda x, d=4: "—" if x is None else f"{x:.{d}f}"
     print(f"✓ 策略 {spec['id']}（{spec['name']}）walk-forward：{res['n_folds']} 折"
           f"（core {res['core_months_n']} 月{('，sample_start=' + res['cfg']['sample_start'])
                 if res['cfg']['sample_start'] else ''}；lockbox 封存 {res['n_sealed']} 月 "
@@ -474,7 +480,7 @@ def _strategy_wf(args):
           f" {lb['n_sealed']} 月：ret={fnum(lb['oos']['total_return'])}"
           f" sharpe={fnum(lb['oos']['sharpe'])} max_dd={fnum(lb['oos']['max_dd'])}"
           f"｜runid={lb['runid']}")
-    print(f"    （重跑须升 strategy version：DSL id 后缀 _v2 —— §11 #4 样本外只验证一次）")
+    print("    （重跑须升 strategy version：DSL id 后缀 _v2 —— §11 #4 样本外只验证一次）")
     if res["sensitivity"]:
         s = res["sensitivity"]
         print(f"  敏感性（{s['window'][0]}..{s['window'][1]}）："
@@ -506,8 +512,8 @@ def _strategy_backtest(args):
     from applib.strategy import StrategyError, load_strategy
     if not args.file:
         sys.exit("✗ backtest 需要策略 YAML 路径")
-    fnum = lambda x, d=4: "—" if x is None else f"{x:.{d}f}"     # noqa: E731
-    pct = lambda v, d=1: "—" if v is None else f"{v * 100:.{d}f}%"   # noqa: E731
+    fnum = lambda x, d=4: "—" if x is None else f"{x:.{d}f}"
+    pct = lambda v, d=1: "—" if v is None else f"{v * 100:.{d}f}%"
     db_path = ctx.sandbox_dir / "data" / "fl.duckdb"
     try:
         from applib.strategy import assert_cn_only
@@ -515,7 +521,7 @@ def _strategy_backtest(args):
         assert_cn_only(spec)                     # T-F9：混合市场回测 M8+ 前显式拒绝
     except StrategyError as e:
         sys.exit(f"✗ {e}")
-    fnum = lambda x, d=4: "—" if x is None else f"{x:.{d}f}"     # noqa: E731
+    fnum = lambda x, d=4: "—" if x is None else f"{x:.{d}f}"
     try:
         bt = run_factor_backtest(db_path, ctx.local_repo, spec,
                                  start=args.start, end=args.end)
@@ -601,7 +607,7 @@ def cmd_risk(args):
           f"｜最大回撤 {b['max_dd']*100:.1f}% → {v['max_dd']*100:.1f}%"
           f"｜{res['p0_1']['dod']['detail']}")
     p2 = res["p0_2"]
-    fnum = lambda x, d=2: "—" if x is None else f"{x:.{d}f}"     # noqa: E731
+    fnum = lambda x, d=2: "—" if x is None else f"{x:.{d}f}"
     print(f"  P0.2 等风险：夏普 {fnum(p2['equal']['sharpe'])} → {fnum(p2['equal_risk']['sharpe'])}"
           f"｜风险贡献方差 {fnum(p2['equal']['rc_var'], 4)} → {fnum(p2['equal_risk']['rc_var'], 4)}")
     p3 = res["p0_3"]
@@ -773,7 +779,7 @@ def cmd_metric(args):
             return
         print(f"{'引擎':<7}{'id':<20}{'dim':<9}{'状态':<14}{'ver':<5}formula")
         for eid, m in rows:
-            print(f"{eid:<7}{m['id']:<20}{str(m.get('dim') or '—'):<9}"
+            print(f"{eid:<7}{m['id']:<20}{m.get('dim') or '—'!s:<9}"
                   f"{m.get('status', 'active'):<14}{m.get('version', 1):<5}{m.get('formula', '')}")
         print(f"共 {len(rows)} 条 ｜ 注册表 {reg_path}（--json 机器可读）")
         return
@@ -906,8 +912,8 @@ def cmd_industry_asof(args):
     print(f"as_of={res['as_of']}  层级={res['level']}  源={res['source']}")
     print(f"  {'secid':<12}{'申万(PIT)':<12}{'自':<12}主源静态标注")
     for r in res["rows"]:
-        print(f"  {r['secid']:<12}{str(r['industry_sw'] or '—'):<12}"
-              f"{str(r['since'] or '—'):<12}{r['industry_static'] or '—'}")
+        print(f"  {r['secid']:<12}{r['industry_sw'] or '—'!s:<12}"
+              f"{r['since'] or '—'!s:<12}{r['industry_static'] or '—'}")
     if res.get("n_no_record"):
         print(f"  注：{res['n_no_record']}/{res['n']} 个标的在该日无申万归属记录（未上市/未收录）")
     print("  中性化映射 industries =", json.dumps(res["industries"], ensure_ascii=False))

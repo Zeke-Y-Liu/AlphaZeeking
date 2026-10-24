@@ -6,8 +6,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from applib import factors as F
-from applib.engines import (ENGINE_REGISTRY_VERSION, EngineWrapper, BETA_SPEC,
-                            beta_engine, engine_config_for, load_engine_config)
+from applib.engines import (
+    BETA_SPEC,
+    ENGINE_REGISTRY_VERSION,
+    EngineWrapper,
+    beta_engine,
+    engine_config_for,
+    load_engine_config,
+)
 
 
 def _bars(n=30, base=10.0):

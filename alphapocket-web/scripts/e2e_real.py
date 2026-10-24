@@ -3,7 +3,9 @@
 用法：core/.venv/bin/python scripts/e2e_real.py
 前置：三件套已启动且数据全绿（六项验证全 pass，否则回测会被 VERIFY_GATE 拦截）。
 """
-import sys, time
+import sys
+import time
+
 import httpx
 
 BASE = "http://localhost:8081"

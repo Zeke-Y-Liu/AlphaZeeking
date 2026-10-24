@@ -65,7 +65,7 @@ def test_status_table_complete():
     ids = [f["factor_id"] for f in doc["factors"]]
     assert len(ids) == len(set(ids)) == 25, \
         "总表应 25 唯一实体（24 注册 + 1 gap，含 demo_clone_f1）"
-    reg_ids = {m.strip() for m in
+    {m.strip() for m in
                (SB_REPO / "factors" / "factor_registry_state.json").read_text(
                    encoding="utf-8").split('"') if m and m[0].isalpha() and "_" in m}
     # 状态文件解析太脆：直接对 V3/存量清单断言（语义基准）

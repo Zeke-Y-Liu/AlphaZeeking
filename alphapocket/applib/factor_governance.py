@@ -22,11 +22,11 @@ import json
 import math
 import shutil
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from statistics import NormalDist
 
 import duckdb
-from statistics import NormalDist
 
 _ND = NormalDist()
 _EULER_GAMMA = 0.5772156649015329
@@ -394,7 +394,7 @@ def save_gate_report(res: dict, db_path: Path) -> list[str]:
             gate_id TEXT, factor_id TEXT, factor_version TEXT, lineage_id TEXT,
             as_of TEXT, code_version TEXT, gate TEXT, pass BOOLEAN,
             detail_json TEXT, created_at TEXT)""")
-        created = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        created = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
         saved = []
         for name, g in res["gates"].items():
             gid = f"GATE-{res['factor_id']}-{name}-{res['as_of']}"

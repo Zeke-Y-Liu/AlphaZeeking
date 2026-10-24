@@ -124,13 +124,13 @@ def test_lineage_stable_and_sensitive(fl_db):
 
 # ── 变换链接入 ────────────────────────────────────────
 def _raw_meta(**kw) -> FactorMeta:
-    base = dict(id="raw_close_z", name="raw", category="F1_technical", factor_type="alpha",
-                engine="sql", direction="high", universe=["CN"], inputs=["fl_daily_bar"],
-                lookback_days=0, pit=True, version="1.0.0", status="draft", description="d",
-                sql="""SELECT dt, secid, close AS value,
+    base = {"id": "raw_close_z", "name": "raw", "category": "F1_technical", "factor_type": "alpha",
+                "engine": "sql", "direction": "high", "universe": ["CN"], "inputs": ["fl_daily_bar"],
+                "lookback_days": 0, "pit": True, "version": "1.0.0", "status": "draft", "description": "d",
+                "sql": """SELECT dt, secid, close AS value,
                               CAST(NULL AS DATE) AS used_period,
                               CAST(NULL AS DATE) AS used_announce
-                       FROM fl_daily_bar WHERE dt BETWEEN $start AND $end""")
+                       FROM fl_daily_bar WHERE dt BETWEEN $start AND $end"""}
     base.update(kw)
     return FactorMeta(**base)
 

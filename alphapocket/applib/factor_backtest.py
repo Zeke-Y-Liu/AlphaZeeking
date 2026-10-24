@@ -17,8 +17,9 @@ from pathlib import Path
 
 import duckdb
 
-from . import backtest as BT
 from factorlib.materialize import latest_version
+
+from . import backtest as BT
 
 _DIRECTIONS = ("asc", "desc")
 
@@ -96,7 +97,7 @@ def _pit_audit(con, picks: list[dict]) -> dict:
     violations = []
     n_checked = n_exempt = 0
     for p in picks:
-        for fid, val in p["factors"].items():
+        for fid in p["factors"]:
             row = con.execute(
                 "SELECT used_announce FROM fl_factor_pit_meta "
                 "WHERE factor_id = ? AND secid = ? AND dt = ?",
@@ -222,8 +223,14 @@ def run_factor_backtest(db_path: Path, repo: Path, spec: dict,
                 raise FactorBacktestError(f"{d}: 因子截面缺失（{[k for k, v in sections.items() if not v]}）"
                                           "——请检查物化区间覆盖")
             if methods:
-                from .composite import (build_lasso_data, composite_multi_meta, gate_consensus,
-                                        gate_weight_drift, load_ic_history, save_snapshot)
+                from .composite import (
+                    build_lasso_data,
+                    composite_multi_meta,
+                    gate_consensus,
+                    gate_weight_drift,
+                    load_ic_history,
+                    save_snapshot,
+                )
                 history = load_ic_history(con, fids, directions, closes, as_of=d, versions=versions)
                 lasso_data = build_lasso_data(con, fids, directions, closes, as_of=d, versions=versions)
                 scores_by_m, comp_meta = composite_multi_meta(

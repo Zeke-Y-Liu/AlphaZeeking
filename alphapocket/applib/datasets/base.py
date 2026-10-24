@@ -70,7 +70,7 @@ class DatasetSpec:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "DatasetSpec":
+    def from_dict(cls, d: dict) -> DatasetSpec:
         d = dict(d)
         d["sources"] = [SourceRef(**s) if isinstance(s, dict) else s
                         for s in d.get("sources", [])]

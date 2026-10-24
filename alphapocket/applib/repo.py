@@ -1,7 +1,10 @@
 """版本面：内容寻址对象库 · commit 链 · clone/push · Change Request（远端=云端替身）"""
 from __future__ import annotations
-import json, time
+
+import json
+import time
 from pathlib import Path
+
 from .ctx import Ctx, sha256_file, sha256_obj
 
 
@@ -139,7 +142,9 @@ def repo_push(args: dict, ctx: Ctx, run_manifest: dict | None = None) -> dict:
 
     # 运行证据：未显式携带时取最近 checkpoint（CLI 与 MCP 共用同一门禁）
     if run_manifest is None:
-        from .tools import checkpoint_list   # 延迟导入（tools 顶层已 import repo，避免环）
+        from .tools import (
+            checkpoint_list,  # 延迟导入（tools 顶层已 import repo，避免环）
+        )
         cps = checkpoint_list({}, ctx)["items"]
         if cps:
             last = cps[-1]

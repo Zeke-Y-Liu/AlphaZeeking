@@ -24,7 +24,6 @@ from applib.engines.base import (
 )
 from applib.tools import call_tool
 
-
 # ── 变更应用器（纯函数）────────────────────────────────────────
 
 def _add_m2(reg=None, **kw):
@@ -131,7 +130,7 @@ def test_changelog_before_after_and_fifo():
                                                       "patch": {"note": f"n{i}"}})
     assert len(reg2["changelog"]) == CHANGELOG_MAX           # FIFO 截断
     assert reg2["changelog"][-1]["after"]["note"] == f"n{CHANGELOG_MAX + 4}"
-    assert reg2["changelog"][0]["after"]["note"] == f"n5"    # 最早的 5 条被挤出
+    assert reg2["changelog"][0]["after"]["note"] == "n5"    # 最早的 5 条被挤出
 
 
 def test_list_filter(tmp_path):
@@ -239,9 +238,9 @@ def test_e2e_add_then_factor_macro_scores(tmp_path):
 # ── CLI metric 冒烟 ─────────────────────────────────────────────
 
 def _ns(**kw):
-    base = dict(action="list", id=None, engine=None, status=None, formula=None, dim=None,
-                market=None, scorer_type=None, scorer_arg=None, params_json=None,
-                set_kv=[], weights_json=None, hypothesis_id=None, reason=None, as_json=False)
+    base = {"action": "list", "id": None, "engine": None, "status": None, "formula": None, "dim": None,
+                "market": None, "scorer_type": None, "scorer_arg": None, "params_json": None,
+                "set_kv": [], "weights_json": None, "hypothesis_id": None, "reason": None, "as_json": False}
     base.update(kw)
     return type("A", (), base)()
 

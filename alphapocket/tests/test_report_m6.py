@@ -347,7 +347,7 @@ def test_vwap_clean_fill_all_vwap(m5):
 # ── 三大内置策略 YAML（池准入 + approx 披露在档）──────────
 def _pkg_yaml(fid: str) -> Path:
     import factorlib.registry as R
-    return sorted((Path(R.__file__).parent / "defs").rglob(f"{fid}.yaml"))[0]
+    return min((Path(R.__file__).parent / "defs").rglob(f"{fid}.yaml"))
 
 
 def _activate(repo: Path, fid: str) -> None:

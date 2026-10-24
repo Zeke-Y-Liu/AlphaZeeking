@@ -4,7 +4,9 @@ V4-α 真实化：数据集来自 AKShare（经 datasource.fetch 落 remote/repo
 同步层幂等（drop+create+insert），全部表可由 repo JSON 重建。
 """
 from __future__ import annotations
+
 import json
+
 import duckdb
 
 

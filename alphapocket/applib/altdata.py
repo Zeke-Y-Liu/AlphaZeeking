@@ -177,9 +177,9 @@ def sw_industry_as_of(records: list[dict], code: str, as_of: str, level: str = "
     key = {"l1": "l1_code", "l2": "l2_code", "l3": "industry_code"}[level]
     hit = None
     for r in records:
-        if r["code"] == c and r["start_date"] <= as_of:
-            if hit is None or r["start_date"] >= hit["start_date"]:
-                hit = r
+        if r["code"] == c and r["start_date"] <= as_of \
+                and (hit is None or r["start_date"] >= hit["start_date"]):
+            hit = r
     if hit is None:
         return None
     return {"code": c, "as_of": as_of, "level": level, "industry": hit[key],
@@ -270,7 +270,7 @@ def eps_consensus(code: str, *, allow_insecure_ssl: bool = True) -> list[dict]:
 def _f(x):
     try:
         v = float(x)
-        return None if v != v else round(v, 4)      # NaN 过滤
+        return None if v != v else round(v, 4)      # noqa: PLR0124 - NaN 过滤（自反比较惯用法）
     except (TypeError, ValueError):
         return None
 

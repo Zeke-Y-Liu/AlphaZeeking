@@ -155,3 +155,47 @@ python deploy/regression/run.py --domain factor
   suite 的 `_PY` 仍指向 core venv，**下次全量回归前需先重建 `core/.venv`**；
 - 两仓库尚余约 270 处存量 ruff 报错（`applib/datasource.py`、`core/app/api/v1/analysis.py`、
   `core/tests/test_seed.py` 等旧文件），不属因子链路，本轮未动，待另轮清理。
+  → **两条待办已于第三轮完成**（见 §3.7：venv 已重建、存量报错已全量清理）。
+
+### 3.7 存量 ruff 清零 + venv 重建（2026-10-24 第三轮）
+
+**目标**：执行 §3.6 登记的两条待办——重建 `core/.venv`、清理两仓库存量 ruff 报错。
+
+**venv 重建**：`.ck` L0 快照随沙箱重置丢失 → 按部署脚本安装清单现场重建
+（[start-local-sandbox.sh](file:///workspace/alphapocket-web/deploy/start-local-sandbox.sh) 依赖面 + hypothesis），
+`import fastapi/pandas/duckdb/akshare` 自检通过；web/bff `node_modules` 同步 `pnpm install` 恢复。
+
+**ruff 清理（277 → 0，两仓库全绿）**
+
+- **自动修复 211 处**（safe `--fix` 123+8、审阅 diff 后 `--unsafe-fixes` 80）：
+  I001/ISC004/C408/F541/F401/F841/RUF059/RUF100/RUF010/RUF022/FURB192/UP031/032/037/PERF102
+  /RUF007/SIM114 等，均为行为等价改写；
+- **配置豁免 25 处（DTZ011/DTZ005）**：新建 [alphapocket/ruff.toml](file:///workspace/alphapocket/ruff.toml)
+  ——金融数据面（交易日界/as_of）刻意使用本地时区，改 timezone-aware 会变更语义且破坏
+  naive 比较口径；顺带显式固化基线（ruff 0.16 默认启用全部 stable 规则）；
+- **逐处 noqa 34 处**（理由均写入注释）：BLE001×10（透明降级/退避重试/不崩 server 等
+  有意宽捕获）、B023×10（`_retry(lambda: ...)` 当轮立即消费，无跨迭代延迟调用）、
+  S110/S112×8（守护面容错静默）、PLR0124×3（`f == f` NaN 过滤惯用法）、TRY004×3
+  （ValueError 为 API 契约语义，docstring 明载）；
+- **真修 6 处**：SIM102（altdata 嵌套 if 合并）、PLC0206（backtest `.values()`）、
+  PLC3002（factors lambda 直调内联）、B017（test_factor_governance 宽 Exception →
+  精确 `GateError`）、F401 re-export（datasets/`__init__` 六常量 redundant alias 显式化）。
+
+**清理期间发现并修复两个事故**
+
+1. `--unsafe-fixes` 误删 `datasource.py` 的 `merge_bars as _merge_bars` 契约导入
+   （ruff F401 视为未用，实为测试跨模块属性锚 `DS._merge_bars`）→ 增量回归 data.r0
+   立刻拦截（框架价值实证）→ 加回并 `# noqa: F401` 注明契约；
+2. **存量 bug 真修**：[writeguard.py](file:///workspace/alphapocket/applib/writeguard.py)
+   `restore_guard` 的延迟导入三件套（`MERGE_POLICY_FORMAT/merge_by_policy/registry_specs`）
+   在 HEAD 上全仓零定义（T-R7→T-R10 迁移遗留死代码，对照实验证实既有失败，非本轮引入；
+   也不在任何 suite 项内）→ 按守护面三语义分派真修
+   （registry→merge_registry、portfolio→merge_portfolio、market bars→merge_bars），
+   test_writeguard 8/8 转绿。
+
+**复验**
+
+- ruff：alphapocket 与 alphapocket-web `ruff check .` 全绿（含 test_writeguard 转绿的回归面）；
+- 增量回归（变更集 84 文件）：**7 pass / 0 fail / 2 skip**（255s）——core.smoke/api.contract/
+  data.r0/factor.audit/core.all/api.semantics/factor.units 全 pass；data.r1 与 factor.golden
+  skip 为沙箱重置后真实 workspace 数据面未恢复的设计内跳过（全量绿待基础设施重建后复验）。

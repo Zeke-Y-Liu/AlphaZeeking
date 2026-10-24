@@ -1,36 +1,107 @@
 {
-  "mode": "full",
+  "mode": "incremental",
   "with_live": false,
   "domains": [],
   "changes": [
-    "alphapocket-web/core/pyproject.toml",
-    "alphapocket-web/core/tests/test_health.py",
-    "alphapocket-web/core/tests/test_openapi_snapshot.py",
-    "alphapocket-web/web/package.json",
-    "alphapocket-web/web/pnpm-lock.yaml",
-    "alphapocket-web/core/tests/baseline/",
-    "alphapocket-web/core/tests/test_core_baseline.py",
-    "alphapocket-web/deploy/regression/",
-    "alphapocket-web/docs/PLAN-REGRESSION.md",
-    "alphapocket-web/web/e2e/",
-    "alphapocket-web/web/playwright.config.ts",
-    "alphapocket-web/web/tests/",
-    "alphapocket/tests/test_factor_completeness.py"
+    "alphapocket-web/core/app/api/v1/analysis.py",
+    "alphapocket-web/core/tests/test_seed.py",
+    "alphapocket-web/deploy/regression/reports/last.json",
+    "alphapocket-web/scripts/e2e_real.py",
+    "alphapocket/applib/altdata.py",
+    "alphapocket/applib/backtest.py",
+    "alphapocket/applib/cli.py",
+    "alphapocket/applib/ctx.py",
+    "alphapocket/applib/data.py",
+    "alphapocket/applib/datasets/__init__.py",
+    "alphapocket/applib/datasets/base.py",
+    "alphapocket/applib/datasource.py",
+    "alphapocket/applib/engines/__init__.py",
+    "alphapocket/applib/engines/base.py",
+    "alphapocket/applib/engines/config.py",
+    "alphapocket/applib/engines/debug.py",
+    "alphapocket/applib/exec_orders.py",
+    "alphapocket/applib/factor_backtest.py",
+    "alphapocket/applib/factor_eval.py",
+    "alphapocket/applib/factor_eval_fl.py",
+    "alphapocket/applib/factor_governance.py",
+    "alphapocket/applib/factor_inspect.py",
+    "alphapocket/applib/factors.py",
+    "alphapocket/applib/fastscreen/qlib_adapter.py",
+    "alphapocket/applib/fastscreen/vbt_screener.py",
+    "alphapocket/applib/hypothesis.py",
+    "alphapocket/applib/mcp_server.py",
+    "alphapocket/applib/repo.py",
+    "alphapocket/applib/report.py",
+    "alphapocket/applib/runner.py",
+    "alphapocket/applib/seed.py",
+    "alphapocket/applib/tools.py",
+    "alphapocket/applib/universe.py",
+    "alphapocket/applib/writeguard.py",
+    "alphapocket/factorlib/__init__.py",
+    "alphapocket/factorlib/engine/__init__.py",
+    "alphapocket/factorlib/engine/python_udf.py",
+    "alphapocket/factorlib/lifecycle.py",
+    "alphapocket/factorlib/materialize.py",
+    "alphapocket/factorlib/prepare.py",
+    "alphapocket/factorlib/registry.py",
+    "alphapocket/scripts/m7_gro_gate_m7.py",
+    "alphapocket/scripts/m7_mom_lowvol_gate_m7.py",
+    "alphapocket/scripts/m7_patch_603986.py",
+    "alphapocket/scripts/m7_qua_gate_m7.py",
+    "alphapocket/scripts/m7_rebuild_fl.py",
+    "alphapocket/scripts/m7_status_m7.py",
+    "alphapocket/scripts/m7_v2_compare.py",
+    "alphapocket/scripts/m7_val_factors_m7.py",
+    "alphapocket/scripts/m7_val_gate_m7.py",
+    "alphapocket/tests/fixtures/fl_golden/make_fixture.py",
+    "alphapocket/tests/test_composite.py",
+    "alphapocket/tests/test_data_ext_m7.py",
+    "alphapocket/tests/test_data_missing.py",
+    "alphapocket/tests/test_datasets_registry.py",
+    "alphapocket/tests/test_datasets_spec.py",
+    "alphapocket/tests/test_datasource_merge.py",
+    "alphapocket/tests/test_engines_alpha_cfg.py",
+    "alphapocket/tests/test_engines_base.py",
+    "alphapocket/tests/test_engines_beta_cfg.py",
+    "alphapocket/tests/test_engines_config.py",
+    "alphapocket/tests/test_engines_registry.py",
+    "alphapocket/tests/test_engines_wrap.py",
+    "alphapocket/tests/test_engines_wrappers.py",
+    "alphapocket/tests/test_factor_eval_fl.py",
+    "alphapocket/tests/test_factor_governance.py",
+    "alphapocket/tests/test_factor_inspect.py",
+    "alphapocket/tests/test_factorlib_lifecycle.py",
+    "alphapocket/tests/test_factorlib_materialize.py",
+    "alphapocket/tests/test_factorlib_registry.py",
+    "alphapocket/tests/test_factorlib_transform.py",
+    "alphapocket/tests/test_fetch_modes.py",
+    "alphapocket/tests/test_matching.py",
+    "alphapocket/tests/test_merge_policies.py",
+    "alphapocket/tests/test_metric_debug.py",
+    "alphapocket/tests/test_metric_mgmt.py",
+    "alphapocket/tests/test_multimarket_m7.py",
+    "alphapocket/tests/test_report_m6.py",
+    "alphapocket/tests/test_source_routing.py",
+    "alphapocket/tests/test_status_m7.py",
+    "alphapocket/tests/test_strategy_dsl.py",
+    "alphapocket/tests/test_strategy_wf.py",
+    "alphapocket/tests/test_writeguard.py",
+    "alphapocket/ruff.toml"
   ],
   "changes_source": "git status（工作区 + 暂存区，含未跟踪）",
   "notes": [
-    "全量模式：全部 suite 项",
-    "live 项未启用（--with-live 开启）: data.r2"
+    "增量模式：冒烟 4 项 + 影响命中 6 项",
+    "WARN 未映射变更（兜底仅冒烟覆盖）: alphapocket-web/scripts/e2e_real.py, alphapocket/applib/altdata.py, alphapocket/applib/backtest.py, alphapocket/applib/cli.py, alphapocket/applib/ctx.py, alphapocket/applib/engines/__init__.py, alphapocket/applib/engines/base.py, alphapocket/applib/engines/config.py…"
   ],
-  "started_at": "2026-10-24T10:48:51+0800",
-  "duration_s": 388.8,
+  "started_at": "2026-10-24T17:57:01+0800",
+  "duration_s": 255.5,
   "items": [
     {
       "name": "core.smoke",
       "domain": "core",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 2.2,
+      "duration_s": 2.3,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -45,26 +116,11 @@
       ]
     },
     {
-      "name": "core.all",
-      "domain": "core",
-      "kind": "pytest",
-      "status": "pass",
-      "duration_s": 47.3,
-      "detail": "",
-      "cmd": [
-        "/workspace/alphapocket-web/core/.venv/bin/python",
-        "-m",
-        "pytest",
-        "-q",
-        "tests/"
-      ]
-    },
-    {
       "name": "api.contract",
       "domain": "interaction-api",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 2.1,
+      "duration_s": 2.2,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -75,11 +131,58 @@
       ]
     },
     {
+      "name": "data.r0",
+      "domain": "data",
+      "kind": "pytest",
+      "status": "pass",
+      "duration_s": 0.9,
+      "detail": "",
+      "cmd": [
+        "/workspace/alphapocket-web/core/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "../alphapocket/tests/test_merge_policies.py",
+        "../alphapocket/tests/test_datasource_merge.py",
+        "../alphapocket/tests/test_data_sync_empty.py"
+      ]
+    },
+    {
+      "name": "factor.audit",
+      "domain": "factor",
+      "kind": "factor-audit",
+      "status": "pass",
+      "duration_s": 0.7,
+      "detail": "",
+      "cmd": [
+        "/workspace/alphapocket-web/core/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_factor_completeness.py"
+      ]
+    },
+    {
+      "name": "core.all",
+      "domain": "core",
+      "kind": "pytest",
+      "status": "pass",
+      "duration_s": 3.8,
+      "detail": "",
+      "cmd": [
+        "/workspace/alphapocket-web/core/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/"
+      ]
+    },
+    {
       "name": "api.semantics",
       "domain": "interaction-api",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 39.0,
+      "duration_s": 2.4,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -93,83 +196,12 @@
       ]
     },
     {
-      "name": "web.vitest",
-      "domain": "interaction-web",
-      "kind": "vitest",
-      "status": "pass",
-      "duration_s": 31.2,
-      "detail": "",
-      "cmd": [
-        "pnpm",
-        "exec",
-        "vitest",
-        "run"
-      ]
-    },
-    {
-      "name": "web.typecheck",
-      "domain": "interaction-web",
-      "kind": "typecheck",
-      "status": "pass",
-      "duration_s": 4.3,
-      "detail": "",
-      "cmd": [
-        "/workspace/alphapocket-web/core/.venv/bin/python",
-        "/workspace/alphapocket-web/deploy/regression/checks/web_typecheck.py"
-      ]
-    },
-    {
-      "name": "web.build",
-      "domain": "interaction-web",
-      "kind": "build",
-      "status": "pass",
-      "duration_s": 6.3,
-      "detail": "",
-      "cmd": [
-        "pnpm",
-        "exec",
-        "vite",
-        "build"
-      ]
-    },
-    {
-      "name": "web.e2e",
-      "domain": "interaction-e2e",
-      "kind": "e2e",
-      "status": "pass",
-      "duration_s": 9.7,
-      "detail": "",
-      "cmd": [
-        "pnpm",
-        "exec",
-        "playwright",
-        "test"
-      ]
-    },
-    {
-      "name": "data.r0",
-      "domain": "data",
-      "kind": "pytest",
-      "status": "pass",
-      "duration_s": 1.1,
-      "detail": "",
-      "cmd": [
-        "/workspace/alphapocket-web/core/.venv/bin/python",
-        "-m",
-        "pytest",
-        "-q",
-        "../alphapocket/tests/test_merge_policies.py",
-        "../alphapocket/tests/test_datasource_merge.py",
-        "../alphapocket/tests/test_data_sync_empty.py"
-      ]
-    },
-    {
       "name": "data.r1",
       "domain": "data",
       "kind": "script",
-      "status": "pass",
-      "duration_s": 2.2,
-      "detail": "",
+      "status": "skip",
+      "duration_s": 0.0,
+      "detail": "环境不满足（requires 非零）: (无输出)",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
         "/workspace/alphapocket-web/deploy/regression/checks/data_r1.py"
@@ -180,7 +212,7 @@
       "domain": "factor",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 241.0,
+      "duration_s": 242.9,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -205,27 +237,12 @@
       ]
     },
     {
-      "name": "factor.audit",
-      "domain": "factor",
-      "kind": "factor-audit",
-      "status": "pass",
-      "duration_s": 0.5,
-      "detail": "",
-      "cmd": [
-        "/workspace/alphapocket-web/core/.venv/bin/python",
-        "-m",
-        "pytest",
-        "-q",
-        "tests/test_factor_completeness.py"
-      ]
-    },
-    {
       "name": "factor.golden",
       "domain": "factor",
       "kind": "script",
-      "status": "pass",
-      "duration_s": 0.2,
-      "detail": "",
+      "status": "skip",
+      "duration_s": 0.0,
+      "detail": "环境不满足（requires 非零）: (无输出)",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
         "/workspace/alphapocket-web/deploy/regression/checks/data_r1.py",
@@ -235,9 +252,9 @@
     }
   ],
   "summary": {
-    "pass": 13,
+    "pass": 7,
     "fail": 0,
-    "skip": 0,
+    "skip": 2,
     "timeout": 0
   }
 }

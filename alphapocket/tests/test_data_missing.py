@@ -14,10 +14,10 @@ TODAY = "2026-10-12"
 
 
 def _spec(**over):
-    base = dict(dataset_id="dwd_daily_bar", path="market/daily_bars.json",
-                merge_policy="union_bars",
-                sources=(SourceSpec(interface="ak.stock_zh_a_daily", upstream="新浪财经"),),
-                validation={"min_rows": 100, "as_of_field": "dt"})
+    base = {"dataset_id": "dwd_daily_bar", "path": "market/daily_bars.json",
+                "merge_policy": "union_bars",
+                "sources": (SourceSpec(interface="ak.stock_zh_a_daily", upstream="新浪财经"),),
+                "validation": {"min_rows": 100, "as_of_field": "dt"}}
     base.update(over)
     return DatasetSpec(**base)
 

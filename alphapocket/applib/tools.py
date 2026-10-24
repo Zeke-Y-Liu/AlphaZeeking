@@ -4,13 +4,17 @@
 数据：AKShare 公开接口（新浪行情/财务/分红 + 腾讯交叉源 + 交易日历），经 datasource.fetch 落库。
 """
 from __future__ import annotations
-import json, datetime as dt
+
+import datetime as dt
+import json
+
 import duckdb
-from .ctx import Ctx, new_run_id
+
 from . import data as D
-from . import repo as R
 from . import factors as F
 from . import hypothesis as H
+from . import repo as R
+from .ctx import Ctx, new_run_id
 from .engines.base import apply_metric_change, factor_entries
 
 
@@ -46,8 +50,7 @@ def _bars_reports(ctx):
 def factor_compute(args, ctx):
     """引擎 B（20日信号）：真实行情 → mom/vol/MA20突破/20日新高/距高点 + 信号"""
     con = duckdb.connect(str(ctx.db_path))
-    con.execute("DELETE FROM factor_value_daily WHERE factor_id IN (%s)" %
-                ",".join(f"'{f}'" for f in F.ENGINE_B_FACTORS))
+    con.execute("DELETE FROM factor_value_daily WHERE factor_id IN ({})".format(",".join(f"'{f}'" for f in F.ENGINE_B_FACTORS)))
     bars, _ = _bars_reports(ctx)
     beta_eng = _engine("beta", ctx)          # 引擎入口（T-R2）：经包装器调用
     out, signals = [], []
@@ -73,8 +76,7 @@ def factor_compute(args, ctx):
 def factor_compute_alpha(args, ctx):
     """引擎 A（中长期因子）：PIT 财务阶梯 + 行情 → 估值/质量/成长/动量/红利低波 + 五维评分"""
     con = duckdb.connect(str(ctx.db_path))
-    con.execute("DELETE FROM factor_value_daily WHERE factor_id IN (%s)" %
-                ",".join(f"'{f}'" for f in F.ENGINE_A_FACTORS))
+    con.execute("DELETE FROM factor_value_daily WHERE factor_id IN ({})".format(",".join(f"'{f}'" for f in F.ENGINE_A_FACTORS)))
     con.execute("DELETE FROM factor_pit_meta")
     bars, fund = _bars_reports(ctx)
     alpha_eng = _engine("alpha", ctx)        # 引擎入口（T-R2）：经包装器调用
@@ -436,7 +438,7 @@ def portfolio_exec_orders(args, ctx):
     if run_id:
         art = ctx.artifacts_dir / run_id
     else:   # 取该组合最近一次含 rebalance_plan 的 run
-        for p in reversed(sorted(ctx.artifacts_dir.glob("*/rebalance_plan.json"))):
+        for p in sorted(ctx.artifacts_dir.glob("*/rebalance_plan.json"), reverse=True):
             if _load(p).get("portfolio") == pid:
                 art = p.parent
                 break
@@ -790,11 +792,11 @@ def research_source(args, ctx):
     try:
         reports = A.research_reports(code, max_pages=int(args.get("max_pages") or 1),
                                      allow_insecure_ssl=not strict)
-    except Exception as e:                                   # 单源失败不阻断另一源
+    except Exception as e:                                   # noqa: BLE001 - 单源失败不阻断另一源
         errs.append(f"东财研报: {type(e).__name__}: {e}")
     try:
         eps = A.eps_consensus(code, allow_insecure_ssl=not strict)
-    except Exception as e:
+    except Exception as e:                                   # noqa: BLE001 - 单源失败不阻断另一源
         errs.append(f"同花顺一致预期: {type(e).__name__}: {e}")
     return {"code": A.six(code), "source": A.PIN_SOURCE, "n_reports": len(reports),
             "reports": reports, "eps_consensus": eps, "errors": errs}

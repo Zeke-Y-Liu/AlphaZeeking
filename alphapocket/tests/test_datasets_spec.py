@@ -10,15 +10,15 @@ from applib.datasets import DatasetSpec, SourceSpec
 
 
 def _ok(**over):
-    base = dict(dataset_id="dwd_daily_bar", path="market/daily_bars.json",
-                merge_policy="union_bars",
-                fetch_params={"start": "2021-01-01", "frequency": "daily"},
-                sources=(SourceSpec(interface="ak.stock_zh_a_daily", upstream="新浪财经",
+    base = {"dataset_id": "dwd_daily_bar", "path": "market/daily_bars.json",
+                "merge_policy": "union_bars",
+                "fetch_params": {"start": "2021-01-01", "frequency": "daily"},
+                "sources": (SourceSpec(interface="ak.stock_zh_a_daily", upstream="新浪财经",
                                     role="primary"),
                          SourceSpec(interface="web.ifzq.gtimg.cn", upstream="腾讯证券",
                                     role="crosscheck")),
-                validation={"min_rows": 100, "required_keys": ["dt", "close"],
-                            "as_of_field": "dt"})
+                "validation": {"min_rows": 100, "required_keys": ["dt", "close"],
+                            "as_of_field": "dt"}}
     base.update(over)
     return DatasetSpec(**base)
 

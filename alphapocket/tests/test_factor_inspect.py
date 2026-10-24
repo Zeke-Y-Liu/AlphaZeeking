@@ -14,8 +14,11 @@ import duckdb
 import pytest
 
 from applib.factor_eval_fl import save_eval_report
-from applib.factor_inspect import (_inject_decay, _metric_coverage, _metric_ic_decay,
-                                   run_inspection)
+from applib.factor_inspect import (
+    _metric_coverage,
+    _metric_ic_decay,
+    run_inspection,
+)
 from factorlib.registry import load_factor, set_status
 
 _DAY = "2026-10-11"
@@ -216,7 +219,7 @@ def test_batch_failure_transparent_degradation(insp):
 
 def test_default_active_universe_and_recompute_fallback(insp):
     """factors=None 取全部 active（未物化的透明 unknown）；无 eval 记录走现场重算。"""
-    ctx, db, repo = insp
+    ctx, _db, _repo = insp
     out = run_inspection(ctx, as_of=_DAY)
     assert out["n_inspected"] == out["active_vs_cap"]["active"]
     me = next(f for f in out["factors"] if f["factor_id"] == _FID)

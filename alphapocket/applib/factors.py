@@ -8,7 +8,9 @@
 全部输入来自 dwd 层（AKShare 真实数据），输出确定性可复现。
 """
 from __future__ import annotations
+
 import datetime as dt
+import itertools
 import math
 
 ENGINE_A_FACTORS = ["val_pe_ttm", "val_pb", "val_pe_pct", "val_pb_pct", "div_yield_ttm",
@@ -44,7 +46,7 @@ def _interp(x, anchors):
         return anchors[0][1]
     if x >= anchors[-1][0]:
         return anchors[-1][1]
-    for (x0, s0), (x1, s1) in zip(anchors, anchors[1:]):
+    for (x0, s0), (x1, s1) in itertools.pairwise(anchors):
         if x0 <= x <= x1:
             return s0 + (s1 - s0) * (x - x0) / (x1 - x0) if x1 != x0 else s0
     return None
@@ -312,8 +314,11 @@ def compute_alpha(secid: str, bars: list[dict], reports: list[dict], dividends: 
 
     # 五维评分（0-100，锚点见 report 说明；T-R5：锚点/因子启停注册表驱动）
     anc = {**_ALPHA_ANCHORS, **anchors} if anchors else _ALPHA_ANCHORS
-    s_val = (lambda a, b: (a + b) / 2 if (a is not None and b is not None) else (a if a is not None else b))(
-        *(100 - p * 100 if p is not None else None for p in (_v("val_pe_pct", pe_pct), _v("val_pb_pct", pb_pct))))
+    _vals = [100 - p * 100 if p is not None else None
+             for p in (_v("val_pe_pct", pe_pct), _v("val_pb_pct", pb_pct))]
+    s_val = ((_vals[0] + _vals[1]) / 2
+             if (_vals[0] is not None and _vals[1] is not None)
+             else (_vals[0] if _vals[0] is not None else _vals[1]))
     s_qua = _interp(_v("qua_roe_ttm", roe_ttm), anc["s_qua"])
     gs = [R.get("rev_g"), R.get("np_g")] if R else [None, None]
     gs = [g for fid, g in zip(("grow_rev_yoy", "grow_np_yoy"), gs) if _v(fid, g) is not None]
@@ -789,7 +794,7 @@ def compute_macro_liquidity(series: dict, hk_series: list | None = None,
     gs = (sum(w * markets[m]["score"] for m, w in w_eff.items()) / sum(w_eff.values())
           if w_eff else None)
     g_level = _ml_level(gs)
-    dim = lambda m, d: (markets.get(m, {}).get("dims") or {}).get(d, {}).get("score")  # noqa: E731
+    dim = lambda m, d: (markets.get(m, {}).get("dims") or {}).get(d, {}).get("score")
     state = "neutral"
     if g_level is not None and g_level <= -2 and any(
             (dim(m, "D1") is not None and dim(m, "D1") <= -0.5) for m in dim_of):

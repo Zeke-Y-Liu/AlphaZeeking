@@ -86,7 +86,7 @@ class BaseEngine:
     def __init__(self):
         self.registry: dict | None = None   # None = 未 load（内置默认）
 
-    def load(self, repo_dir: Path | str | None = None) -> "BaseEngine":
+    def load(self, repo_dir: Path | str | None = None) -> BaseEngine:
         """从 workspace repo 加载注册表（幂等刷新）；repo_dir=None 保持内置默认。"""
         if repo_dir is not None:
             self.registry = load_registry(repo_dir)
@@ -202,7 +202,7 @@ def export_registry_v2() -> dict:
     """从 factors.py 现有常量导出完整 v2 注册表（内存产物，不落盘；落盘写保护在 T-R6）。"""
     return {
         "version": REGISTRY_VERSION,
-        "updated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+        "updated_at": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
         "engines": {
             "alpha": {
                 "dim_weights": dict(F.DEFAULT_DIM_WEIGHTS),
@@ -518,7 +518,7 @@ def merge_registry(on_disk: dict | None, defaults: dict) -> dict:
                 if k in o_m:
                     m[k] = o_m[k]
             out_metrics.append(m)
-        for mid, o_m in od_metrics.items():              # 规则3：盘上独有条目
+        for o_m in od_metrics.values():              # 规则3：盘上独有条目
             # 门禁新增（engine.metrics.add 强制 hypothesis_id）且 formula 仍在内置
             # 清单 → 保留为正式条目（用户新增因子在同步后完整保留，不入 orphan）；
             # 其余（代码公式已移除的旧默认指标）→ orphan 保留（不删数据，不入运行时面）
@@ -566,7 +566,7 @@ def merge_registry(on_disk: dict | None, defaults: dict) -> dict:
     od_cl = on_disk.get("changelog") if is_v2 else None
     if isinstance(od_cl, list) and od_cl:
         merged["changelog"] = ((merged.get("changelog") or []) + od_cl)[-CHANGELOG_MAX:]
-    merged["updated_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+    merged["updated_at"] = _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds")
     return merged
 
 
@@ -598,7 +598,7 @@ def apply_metric_change(reg: dict, engine_id: str, change: dict) -> tuple[dict, 
     → ValueError（中文消息）；变更结果必过 ``validate_registry``（不产非法文件）。
     """
     if not isinstance(reg, dict) or not isinstance(reg.get("engines"), dict):
-        raise ValueError("注册表结构不可识别（engines 节缺失）——先 `ap clone` 同步")
+        raise ValueError("注册表结构不可识别（engines 节缺失）——先 `ap clone` 同步")  # noqa: TRY004 - ValueError 为契约语义
     if engine_id not in ("alpha", "beta", "macro"):
         raise ValueError(f"未知引擎：{engine_id}（可选 alpha/beta/macro）")
     op = change.get("op")
@@ -680,7 +680,7 @@ def apply_metric_change(reg: dict, engine_id: str, change: dict) -> tuple[dict, 
         raise ValueError("变更未通过注册表校验：" + "；".join(errs[:3]))
 
     after = copy.deepcopy(entry)
-    rec = {"ts": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+    rec = {"ts": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
            "op": op, "engine": engine_id, "id": mid, "before": before, "after": after,
            "hypothesis_id": hyp, "reason": reason}
     cl = new_reg.get("changelog")

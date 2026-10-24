@@ -12,10 +12,15 @@ V4-α 真实数据验证流水线（§15.2：全绿才允许 push）：
   ⑥ provenance_check 数据集 sha256 与溯源登记一致（clone 完整性）
 """
 from __future__ import annotations
-import json, time, math
-import yaml
-import duckdb
+
+import json
+import math
+import time
 from pathlib import Path
+
+import duckdb
+import yaml
+
 from .ctx import Ctx, new_run_id, sha256_file
 from .tools import call_tool, checkpoint_save
 

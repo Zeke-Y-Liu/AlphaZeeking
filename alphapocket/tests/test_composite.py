@@ -9,9 +9,17 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from applib.composite import (CompositeError, METHODS, build_lasso_data, composite_multi_meta,
-                              composite_scores_multi, gate_consensus, gate_weight_drift,
-                              load_ic_history, save_snapshot)
+from applib.composite import (
+    METHODS,
+    CompositeError,
+    build_lasso_data,
+    composite_multi_meta,
+    composite_scores_multi,
+    gate_consensus,
+    gate_weight_drift,
+    load_ic_history,
+    save_snapshot,
+)
 from applib.factor_backtest import run_factor_backtest
 from factorlib import load_factor, set_status
 from factorlib.materialize import materialize
@@ -213,7 +221,6 @@ def test_gate_consensus_top_n_union_not_intersection():
     a = {s: i / 10 for i, s in enumerate([f"S{i}" for i in range(10)])}
     # b 与 a 全截面 Spearman≈1（同序），但 Top3 并集内 b 的次序刻意造分歧
     b = dict(a)
-    top_a = ["S9", "S8", "S7"]
     top_b = ["S6", "S5", "S4"]                                      # 分数略低于 top_a
     for s, v in zip(top_b, [0.95, 0.94, 0.93]):
         b[s] = v
@@ -255,7 +262,7 @@ def test_composite_pit_truncation_defense():
     months = _months(24)                                            # 2020-01..2021-12
     ics = [-0.2] * 18 + [0.5] * 6                                   # 末 6 月转正
     history_full = {**_ic_hist("f1", ics, months), **_ic_hist("f2", [-0.1] * 24, months)}
-    cut = months.index("2021-06") + 1
+    months.index("2021-06") + 1
     history_cut = {fid: [x for x in rows if x[0] <= "2021-06"]
                    for fid, rows in history_full.items()}
     a = composite_scores_multi(_SECTIONS, _FACTORS, history_full, as_of="2021-06-30")
@@ -279,7 +286,7 @@ def _meta_fixture():
     factors = [{"id": "f1", "direction": "desc"}, {"id": "f2", "direction": "desc"}]
     months = _months(12)
     history = {**_ic_hist("f1", [0.3] * 12, months), **_ic_hist("f2", [0.1] * 12, months)}
-    scores, meta = composite_multi_meta(_SECTIONS, factors, history, as_of="2020-12-31")
+    _scores, meta = composite_multi_meta(_SECTIONS, factors, history, as_of="2020-12-31")
     gates = {"min_rho": 0.82, "drift": 0.12, "frozen": False, "pairs": []}
     return meta, gates
 

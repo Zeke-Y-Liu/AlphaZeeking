@@ -72,8 +72,9 @@ class UdfEngine:
     def run(self, db_path, start, end) -> list[dict]:
         """逐 secid × 交易日调用 UDF。输入取自 fl_daily_bar / fl_fin_report（prepare 产物，
         与 repo JSON 同一形状契约）。注意 UDF 收到 secid 全量历史（窗口可跨 :start 回看）。"""
-        import duckdb
         from datetime import date
+
+        import duckdb
 
         _BAR_COLS = ("dt", "open", "high", "low", "close", "volume", "amount", "pct")
         _REP_COLS = ("period", "announce_date", "eps_ytd", "net_profit", "revenue",

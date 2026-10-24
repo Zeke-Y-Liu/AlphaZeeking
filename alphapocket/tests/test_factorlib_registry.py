@@ -12,9 +12,18 @@ import pytest
 import yaml
 
 import factorlib.registry as R
-from factorlib.registry import (CATEGORIES, ENGINES, FactorMeta, RegistryError,
-                                load_factor, load_registry, resolve_backtest_start,
-                                resolve_dependencies, set_status, validate)
+from factorlib.registry import (
+    CATEGORIES,
+    ENGINES,
+    FactorMeta,
+    RegistryError,
+    load_factor,
+    load_registry,
+    resolve_backtest_start,
+    resolve_dependencies,
+    set_status,
+    validate,
+)
 
 _IDS = ("val_pe_ttm", "val_pb_lf", "val_ps_ttm", "val_ev_ebitda", "val_div_yield",
         "mom_20d_fl", "sig_mom20_rank_fl", "eps_revise_fl",
@@ -27,7 +36,7 @@ _IDS = ("val_pe_ttm", "val_pb_lf", "val_ps_ttm", "val_ev_ebitda", "val_div_yield
 
 
 def _pkg_yaml(fid: str) -> Path:
-    return sorted((Path(R.__file__).parent / "defs").rglob(f"{fid}.yaml"))[0]
+    return min((Path(R.__file__).parent / "defs").rglob(f"{fid}.yaml"))
 
 
 # ── YAML 真源加载 ─────────────────────────────────────
@@ -75,10 +84,10 @@ def test_yaml_missing_required_field_rejected(tmp_path):
 
 # ── 字段校验（validate 违例列表）────────────────────────
 def _valid_meta(**kw) -> FactorMeta:
-    base = dict(id="f2_val_x", name="x", category="F2_fundamental", factor_type="alpha",
-                engine="sql", direction="low", universe=["CN"], inputs=["fl_daily_bar"],
-                lookback_days=0, pit=True, version="1.0.0", status="draft",
-                description="d", sql="SELECT 1")
+    base = {"id": "f2_val_x", "name": "x", "category": "F2_fundamental", "factor_type": "alpha",
+                "engine": "sql", "direction": "low", "universe": ["CN"], "inputs": ["fl_daily_bar"],
+                "lookback_days": 0, "pit": True, "version": "1.0.0", "status": "draft",
+                "description": "d", "sql": "SELECT 1"}
     base.update(kw)
     return FactorMeta(**base)
 

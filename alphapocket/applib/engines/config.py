@@ -19,7 +19,7 @@ from pathlib import Path
 
 from .base import ENGINE_REGISTRY_VERSION, EngineWrapper
 
-__all__ = ["load_engine_config", "engine_config_for", "ENGINE_REGISTRY_VERSION"]
+__all__ = ["ENGINE_REGISTRY_VERSION", "engine_config_for", "load_engine_config"]
 
 
 def load_engine_config(path: str | Path | None) -> dict:
@@ -31,7 +31,7 @@ def load_engine_config(path: str | Path | None) -> dict:
         return {}
     data = json.loads(p.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        raise ValueError(f"引擎配置须为 {{engine_id: ...}} 形态：{p}")
+        raise ValueError(f"引擎配置须为 {{engine_id: ...}} 形态：{p}")  # noqa: TRY004 - ValueError 为契约语义
     return {k: (v if isinstance(v, dict) else {}) for k, v in data.items()}
 
 
@@ -41,5 +41,5 @@ def engine_config_for(cfg: dict, eng: EngineWrapper) -> dict:
     if entry is None:
         return {}
     if not isinstance(entry, dict):
-        raise ValueError(f"引擎配置条目须为 dict：{eng.spec.engine_id}")
+        raise ValueError(f"引擎配置条目须为 dict：{eng.spec.engine_id}")  # noqa: TRY004 - ValueError 为契约语义
     return entry

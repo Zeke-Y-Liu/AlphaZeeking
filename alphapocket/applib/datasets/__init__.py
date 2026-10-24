@@ -11,9 +11,28 @@ register_spec 运行时登记）→ active_specs() 自动并入 → _MERGEABLE �
 """
 from __future__ import annotations
 
-from .base import (CATEGORIES, MERGE_POLICIES, NON_SNAPSHOT_POLICIES, ROLES,
-                   VERIFICATION_NAMES, DatasetSpec, SourceRef)
 from . import specs_dim, specs_factors, specs_market
+from .base import (
+    CATEGORIES as CATEGORIES,
+)
+from .base import (
+    MERGE_POLICIES as MERGE_POLICIES,
+)
+from .base import (
+    NON_SNAPSHOT_POLICIES as NON_SNAPSHOT_POLICIES,
+)
+from .base import (
+    ROLES as ROLES,
+)
+from .base import (
+    VERIFICATION_NAMES as VERIFICATION_NAMES,
+)
+from .base import (
+    DatasetSpec,
+)
+from .base import (
+    SourceRef as SourceRef,
+)
 
 _EXTRA: list[DatasetSpec] = []       # 运行时登记的自定义数据集（register_spec）
 

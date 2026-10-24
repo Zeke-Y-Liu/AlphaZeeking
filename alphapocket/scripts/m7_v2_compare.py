@@ -106,19 +106,19 @@ def main() -> int:
         json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
 
     L = ["# M7 T-F7 · v1/v2 对照报告（结构差异呈现，非排名优劣）", "",
-         "不可比口径：universe 不同（9 → 56）+ lockbox 口径不同（2025-10 → 2022-01）"
-         "→ 绝对收益不可直接比较。", ""]
+         ("不可比口径：universe 不同（9 → 56）+ lockbox 口径不同（2025-10 → 2022-01）"
+         "→ 绝对收益不可直接比较。"), ""]
     for name, row in strategies.items():
         v1, v2 = row["v1"], row["v2"]
         L += [f"## {name}", "",
-              f"| 侧 | id | 因子 | universe | lockbox | ret | sharpe | max_dd | 区间 |",
+              "| 侧 | id | 因子 | universe | lockbox | ret | sharpe | max_dd | 区间 |",
               "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-              f"| v1 | {v1['id']} | {', '.join(v1['factors'])} | {v1['universe']} | "
+              (f"| v1 | {v1['id']} | {', '.join(v1['factors'])} | {v1['universe']} | "
               f"{v1['lockbox']} | {v1['ret']:.4f} | {v1['sharpe']:.4f} | {v1['dd']:.4f} | "
-              f"{v1['start']}..{v1['end']} |",
-              f"| v2 | {v2['id']} | {', '.join(v2['factors'])} | {v2['universe']} | "
+              f"{v1['start']}..{v1['end']} |"),
+              (f"| v2 | {v2['id']} | {', '.join(v2['factors'])} | {v2['universe']} | "
               f"{v2['lockbox']} | {v2['ret']:.4f} | {v2['sharpe']:.4f} | {v2['dd']:.4f} | "
-              f"{v2['start']}..{v2['end']} |",
+              f"{v2['start']}..{v2['end']} |"),
               "", f"comparability：{row['comparability']}", ""]
     L += ["## notes", "", doc["notes"], ""]
     (OUT_DIR / "compare_v1_v2.md").write_text("\n".join(L), encoding="utf-8")

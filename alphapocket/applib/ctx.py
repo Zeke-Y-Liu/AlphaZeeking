@@ -20,9 +20,12 @@
 默认 `var/ws/default`）提供根路径，core 读取后传入 `Ctx(root=...)`。
 """
 from __future__ import annotations
-import os, json, hashlib, time
+
+import hashlib
+import json
+import time
+from dataclasses import dataclass
 from pathlib import Path
-from dataclasses import dataclass, field
 
 # 项目根 = applib/..（本进程内置的默认工作区；root 注入时为显式指定的工作区根）
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

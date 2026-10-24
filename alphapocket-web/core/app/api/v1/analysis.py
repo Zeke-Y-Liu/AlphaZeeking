@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
+from applib.ctx import Ctx
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -37,7 +38,6 @@ from app.models import Security
 from app.services import analysis as svc
 from app.services import backtest_svc, verification
 from app.services.workspace import WorkspaceManager
-from applib.ctx import Ctx
 
 logger = logging.getLogger("app.api.analysis")
 
@@ -188,11 +188,10 @@ def _refresh_news_job(ws_root: Path, secid: str) -> dict[str, Any]:
     保证 provenance_check 仍全绿（否则哈希不符会红）。
     """
     import akshare as ak
+    from applib.datasource import _fetch_stock_news
     from sqlalchemy import select
 
     from app.db.session import session_scope
-    from app.models import Security
-    from applib.datasource import _fetch_stock_news
 
     with session_scope() as db:
         sec = db.execute(select(Security).where(Security.secid == secid)).scalar_one_or_none()

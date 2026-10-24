@@ -71,9 +71,9 @@ CONS_A = {"t_plus_1": False, "lot_size": 100, "limit_move": "defer", "suspension
 
 
 def _run3(**kw) -> dict:
-    base = dict(rebalance="monthly", benchmark_secid="", rule_fn=lambda d: RULE3.get(d, {}),
-                exec_mode="next_vwap", cost_table=CT_A, constraints=CONS_A,
-                capital=1_000_000.0)
+    base = {"rebalance": "monthly", "benchmark_secid": "", "rule_fn": lambda d: RULE3.get(d, {}),
+                "exec_mode": "next_vwap", "cost_table": CT_A, "constraints": CONS_A,
+                "capital": 1_000_000.0}
     base.update(kw)
     return BT.run_backtest(_bars_3(), _pf3(), **base)
 
@@ -99,8 +99,8 @@ def _rule_one(w: float):
 
 def _run_one(bars=None, w=0.98, ct=None, cons=None, capital=100_000.0,
              px=10.0, buy_vwap=10.2, **kw) -> dict:
-    base = dict(rebalance="monthly", benchmark_secid="", rule_fn=_rule_one(w),
-                exec_mode="next_vwap", cost_table=ct, constraints=cons, capital=capital)
+    base = {"rebalance": "monthly", "benchmark_secid": "", "rule_fn": _rule_one(w),
+                "exec_mode": "next_vwap", "cost_table": ct, "constraints": cons, "capital": capital}
     base.update(kw)
     return BT.run_backtest(bars or _bars_one(px=px, buy_vwap=buy_vwap), _PF1, **base)
 
@@ -189,14 +189,14 @@ def test_find_exec_suspension_defer_and_cap():
 
 def test_find_exec_t_plus_1_blocks_early_sell():
     rows = [_urow("2024-01-02"), _urow("2024-01-03"), _urow("2024-01-04")]
-    kw = dict(direction="sell", t_plus_1=True, earliest_sell="2024-01-03",
-              limit_pol="defer", susp_pol="defer")
+    kw = {"direction": "sell", "t_plus_1": True, "earliest_sell": "2024-01-03",
+              "limit_pol": "defer", "susp_pol": "defer"}
     r, i = BT._find_exec(rows, "2024-01-01", **kw)
     assert (r["dt"], i) == ("2024-01-03", 1)                            # 01-02 被 T+1 挡下
     kw2 = dict(kw, earliest_sell="2024-01-05")
     assert BT._find_exec(rows, "2024-01-01", **kw2) == (None, "defer_cap")
-    kw3 = dict(direction="sell", t_plus_1=False, earliest_sell="2024-01-05",
-               limit_pol="defer", susp_pol="defer")
+    kw3 = {"direction": "sell", "t_plus_1": False, "earliest_sell": "2024-01-05",
+               "limit_pol": "defer", "susp_pol": "defer"}
     assert BT._find_exec(rows, "2024-01-01", **kw3)[0]["dt"] == "2024-01-02"   # 关闭则不挡
 
 
@@ -297,9 +297,9 @@ def test_slippage_monotone():
 # ── 集成：整手（DoD d）──────────────────────────────────
 def test_lot_rounding_residual_to_cash():
     """250,000/8 = 31,250 股：lot=100 → 31,200（残余进 cash）；lot=0 → 31,250。"""
-    common = dict(w=0.25, ct={"commission_rate": 0.0, "commission_min_cny": 0.0,
+    common = {"w": 0.25, "ct": {"commission_rate": 0.0, "commission_min_cny": 0.0,
                               "stamp_tax_rate": 0.0, "transfer_fee_rate": 0.0,
-                              "slippage_bps": 0.0}, capital=1_000_000.0)
+                              "slippage_bps": 0.0}, "capital": 1_000_000.0}
     bars = _bars_one(px=8.0)
     bt_lot = _run_one(bars=bars, cons={"t_plus_1": False, "lot_size": 100}, **common)
     bt_free = _run_one(bars=bars, cons={"t_plus_1": False, "lot_size": 0}, **common)

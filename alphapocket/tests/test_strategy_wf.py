@@ -12,10 +12,18 @@ from pathlib import Path
 
 import pytest
 
-from applib.strategy_wf import (StrategyWfError, audit_folds, lockbox_verify,
-                                plan_folds, rank_stable_from, select_method,
-                                sensitivity_grid, strategy_walk_forward,
-                                walk_forward_folds, _split_lockbox)
+from applib.strategy_wf import (
+    StrategyWfError,
+    _split_lockbox,
+    audit_folds,
+    lockbox_verify,
+    plan_folds,
+    rank_stable_from,
+    select_method,
+    sensitivity_grid,
+    strategy_walk_forward,
+    walk_forward_folds,
+)
 from factorlib import load_factor, set_status
 from factorlib.materialize import materialize
 

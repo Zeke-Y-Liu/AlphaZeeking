@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import itertools
 import json
 from pathlib import Path
 
@@ -16,8 +17,13 @@ import duckdb
 import pandas as pd
 import pytest
 
-from applib.universe import KEEP_ETFS, M7_BOARDS, PER_BOARD_CAND, TARGET_PICK, _board_candidates
-
+from applib.universe import (
+    KEEP_ETFS,
+    M7_BOARDS,
+    PER_BOARD_CAND,
+    TARGET_PICK,
+    _board_candidates,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 REAL_REPO = ROOT / "remote" / "repo"
@@ -43,7 +49,7 @@ def test_board_candidates_with_monkeypatch():
     fake_ak = SimpleNamespace(stock_board_industry_cons_em=lambda symbol: df)
     out = _board_candidates(fake_ak, "合成板块")
     assert [r["code"] for r in out] == ["600001", "600007", "600008", "600009", "600010"]
-    assert all(r["amount"] >= r2["amount"] for r, r2 in zip(out, out[1:]))   # 降序
+    assert all(r["amount"] >= r2["amount"] for r, r2 in itertools.pairwise(out))   # 降序
     assert all("ST" not in r["name"] and "退" not in r["name"]
                and r["name"][0] not in ("N", "C") for r in out)
     assert len(out) <= PER_BOARD_CAND
@@ -187,8 +193,7 @@ def test_dim_industry_coverage():
     u = json.loads((REAL_REPO / "dim" / "universe_m7.json").read_text(encoding="utf-8"))
     secids = [r["secid"] for r in u["picked"]]
     missing = con.execute(
-        "select secid from fl_dim_security where secid in (%s) and industry is null"
-        % ",".join("?" * len(secids)), secids).fetchall()
+        "select secid from fl_dim_security where secid in ({}) and industry is null".format(",".join("?" * len(secids))), secids).fetchall()
     assert not missing, f"行业缺失：{[m[0] for m in missing]}"
     con.close()
 
@@ -285,5 +290,5 @@ def test_lineage_fingerprint_updated():
         assert last[1] == eff, f"{fid} 本次物化版本 {last[1]} ≠ 有效版本 {eff}"
         if fid == "mom_20d_fl":
             assert "1.1.0" in {r[1] for r in sub} and len(sub) >= 2, \
-                f"mom_20d_fl 历史升版段丢失（T-L3 隔离语义破坏）"
+                "mom_20d_fl 历史升版段丢失（T-L3 隔离语义破坏）"
     con.close()

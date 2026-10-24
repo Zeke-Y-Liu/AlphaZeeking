@@ -35,7 +35,7 @@ def _load_json(p: Path):
 
 
 def _now() -> str:
-    return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
+    return _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds")
 
 
 def _ts() -> str:

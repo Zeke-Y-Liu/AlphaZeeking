@@ -1,6 +1,8 @@
 """远端仓库种子数据（云端 main 分支替身）——与 prototype-v2 演示数据同口径"""
 from __future__ import annotations
-import json, math
+
+import json
+import math
 from pathlib import Path
 
 AS_OF = "2026-09-30"

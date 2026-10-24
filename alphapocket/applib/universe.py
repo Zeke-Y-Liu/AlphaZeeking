@@ -18,7 +18,6 @@ import datetime as dt
 import json
 from pathlib import Path
 
-
 # ── 板块配置（东财行业板块名，2026-10-11 实测存在）─────────────────────
 M7_BOARDS = [
     "化学制品",   # 基础化工代表
@@ -90,7 +89,7 @@ def build_universe(repo_dir, out_path=None) -> dict:
                                      end_date="20170301", adjust="")
             if len(df):
                 return str(df["date"].min())[:10]
-        except Exception:                       # noqa: BLE001 - 单点失败走全量复判
+        except Exception:                       # noqa: BLE001, S110 - 单点失败走全量复判
             pass
         try:
             df = ak.stock_zh_a_daily(symbol=sina_sym, adjust="")

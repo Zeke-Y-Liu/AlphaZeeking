@@ -19,7 +19,6 @@ import time
 from pathlib import Path
 
 from . import backtest as BT
-from . import factors as F
 from .engines.base import factor_entries
 from .walkforward import _factor_value, _month_end_dates, _spearman
 
@@ -142,11 +141,11 @@ def run_p1_eval(pids: list[str], bars: dict, fund: dict, registry: dict,
                 "ok": incr["all_pass"] and ab_ok},
         "notes": [
             "增量价值关：新 alpha 因子与 mom_12_1 的逐月截面 Spearman 秩相关均值 |ρ| < 0.6。",
-            "A/B 条件门：引擎 A 买入需引擎 B 不持卖出信号（PIT 重算、多信号一致触发），"
-            "触发标的软衰减（权重 ×gate_damp，释放额度留现金）；增强累计收益 > 1.5pct 且回撤不恶化。",
+            ("A/B 条件门：引擎 A 买入需引擎 B 不持卖出信号（PIT 重算、多信号一致触发），"
+            "触发标的软衰减（权重 ×gate_damp，释放额度留现金）；增强累计收益 > 1.5pct 且回撤不恶化。"),
             "因子取值按 as_of PIT 重算（与 walkforward 同源口径），月末观测日对齐。",
-            f"截面样本：{len(secids)} 只标的（α universe），各属不同行业 → 相关性功效弱，"
-            "结论以「机制成立 + 待 2016 起全量历史补强」表述（诚实原则）。",
+            (f"截面样本：{len(secids)} 只标的（α universe），各属不同行业 → 相关性功效弱，"
+            "结论以「机制成立 + 待 2016 起全量历史补强」表述（诚实原则）。"),
         ],
     }
 

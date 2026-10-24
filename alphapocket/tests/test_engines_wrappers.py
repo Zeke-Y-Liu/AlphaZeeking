@@ -5,8 +5,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from applib import factors as F
-from applib.engines import (ALPHA_SPEC, BETA_SPEC, MACRO_SPEC, alpha_engine,
-                            beta_engine, check_output_range, macro_engine)
+from applib.engines import (
+    BETA_SPEC,
+    MACRO_SPEC,
+    alpha_engine,
+    beta_engine,
+    check_output_range,
+    macro_engine,
+)
 
 ENGINES_DIR = Path(__file__).resolve().parent.parent / "applib" / "engines"
 
@@ -45,7 +51,7 @@ def test_input_validation_blocks_before_compute():
     calls = []
     for eng in (alpha_engine, beta_engine, macro_engine):
         origin = eng._fn
-        eng._fn = lambda *a, **k: (calls.append(1), origin(**k))[1]   # spy 包一层
+        eng._fn = lambda *a, **k: (calls.append(1), origin(**k))[1]   # noqa: B023 - spy 当轮消费；见下 try 块
         try:
             out = eng({})                                  # 缺全部 required
             assert out["status"] == "invalid_input" and "缺少必填" in out["error"]

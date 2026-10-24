@@ -6,8 +6,14 @@ from __future__ import annotations
 
 import pytest
 
-from factorlib.transform import (TransformError, apply_chain, industry_demean,
-                                 rank_pct, winsorize_mad, zscore)
+from factorlib.transform import (
+    TransformError,
+    apply_chain,
+    industry_demean,
+    rank_pct,
+    winsorize_mad,
+    zscore,
+)
 
 K_SCALE = 3.0 * 1.4826
 

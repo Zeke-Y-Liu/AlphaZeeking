@@ -120,7 +120,7 @@ def _metric_regime(repo: Path, benchmark: str, raw_recent: list[tuple[str, float
         return {"bull": None, "bear": None}
     try:
         seg = regime_segments(repo, benchmark, raw_recent, direction)["segments"]
-    except Exception:                                    # 基准缺失等 → 透明降级
+    except Exception:                                    # noqa: BLE001 - 基准缺失等 → 透明降级
         return {"bull": None, "bear": None}
     out = {}
     for k in ("bull", "bear"):
@@ -201,7 +201,7 @@ def run_inspection(ctx: Ctx, factors: list[str] | None = None, as_of: str | None
                     "regime_fail": reg, "n_ic_months": len(raw),
                     "ic_series_source": src + ("（drill 注入 ×0.3）" if fid in inj else ""),
                 })
-            except Exception as e:                    # 透明降级红线：不阻断批量
+            except Exception as e:                    # noqa: BLE001 - 透明降级红线：不阻断批量
                 g["err"] = f"{type(e).__name__}: {e}"
             gathered[fid] = g
     finally:
@@ -226,13 +226,13 @@ def run_inspection(ctx: Ctx, factors: list[str] | None = None, as_of: str | None
         if not drill:
             try:
                 save_health_row(db_path, fid, g["version"], g["lineage_id"], day, j)
-            except Exception as e:
+            except Exception as e:                # noqa: BLE001 - 落库失败披露于 reasons，不阻断
                 row["reasons"].append(f"落库失败: {type(e).__name__}: {e}")
             try:
                 rec = set_health(repo, fid, j["health"], by="inspect",
                                  why=("；".join(j["reasons"]) or "巡检通过")[:200], as_of=day)
                 row["health_transition"] = rec    # 降级动作据此判定「本巡检发生迁移」
-            except Exception as e:                    # 如 invalid→healthy 直通被拒
+            except Exception as e:                    # noqa: BLE001 - 如 invalid→healthy 直通被拒
                 row["reasons"].append(f"健康迁移被拒: {e}")
         results.append(row)
 
@@ -264,10 +264,10 @@ def run_inspection(ctx: Ctx, factors: list[str] | None = None, as_of: str | None
 
 # ── 降级动作编排（计划 8.4「自动」语义，T-L5）─────────────────────────
 _INVALID_ACTIONS = (
-    "出路① 假设复查确认失效 → `ap hypothesis set-status --hypothesis <id> --status refuted`"
-    " → 因子人工退役（lifecycle deprecated；两维分离，巡检不自动迁移）",
-    "出路② 复验后人工恢复：invalid → unknown（复查中）→ healthy，须先过假设复查"
-    "（invalid→healthy 直通已被封）",
+    ("出路① 假设复查确认失效 → `ap hypothesis set-status --hypothesis <id> --status refuted`"
+    " → 因子人工退役（lifecycle deprecated；两维分离，巡检不自动迁移）"),
+    ("出路② 复验后人工恢复：invalid → unknown（复查中）→ healthy，须先过假设复查"
+    "（invalid→healthy 直通已被封）"),
 )
 
 
@@ -286,7 +286,8 @@ def downgrade_actions(ctx, out: dict) -> dict:
     """
     if out.get("drill"):
         return {"review": None, "notifications": []}   # 演练只是 what-if，不产生复查/通知
-    from applib.hypothesis import load as hyp_load, review_items_fl
+    from applib.hypothesis import load as hyp_load
+    from applib.hypothesis import review_items_fl
     from factorlib.registry import load_registry
 
     repo = Path(ctx.local_repo)
@@ -308,13 +309,13 @@ def downgrade_actions(ctx, out: dict) -> dict:
         impact = None
         if migrated:
             try:
-                from factorlib.lifecycle import impact_report      # 迟绑定：测试可 mock
+                from factorlib.lifecycle import impact_report  # 迟绑定：测试可 mock
                 rep = impact_report(db_path, repo, fid, version=f.get("version"))
                 impact = {"version": rep["version"],
                           "n_strategies": rep["n_strategies"], "n_rows": rep["n_rows"],
                           "n_evals": len(rep["refs"]["evals"]),
                           "n_gates": len(rep["refs"]["gates"])}
-            except Exception as e:                     # 影响面失败透明披露，不阻断通知
+            except Exception as e:                     # noqa: BLE001 - 影响面失败透明披露，不阻断通知
                 impact = {"error": f"{type(e).__name__}: {e}"}
         notes[(fid, day)] = {                          # factor+as_of 去重键
             "factor_id": fid, "health": f["health"], "as_of": day,
@@ -339,8 +340,8 @@ def downgrade_actions(ctx, out: dict) -> dict:
 def _render_notifications_md(notes: list[dict]) -> str:
     """降级通知 MD（人读）：逐因子 标警/摘除 + 影响面摘要 + 出路文案。"""
     L = ["# 降级通知（M5 8.4 · 巡检自动降级）\n",
-         "> 消费方式：本 artifact + `ap fl inspect` stdout（sandbox 无邮件/webhook 外推"
-         "渠道，RUNBOOK 消费方式登记见 T-L6）。\n"]
+         ("> 消费方式：本 artifact + `ap fl inspect` stdout（sandbox 无邮件/webhook 外推"
+         "渠道，RUNBOOK 消费方式登记见 T-L6）。\n")]
     for n in notes:
         L.append(f"## {n['factor_id']} · {n['health']}（as_of {n['as_of']}）\n")
         if n["reasons"]:
@@ -389,8 +390,8 @@ def _render_md(out: dict) -> str:
          "| 健康态 | 因子数 |", "| --- | --- |"]
     for h in ("healthy", "weakening", "invalid", "unknown"):
         L.append(f"| {h} | {out[f'n_{h}']} |")
-    L += ["", f"active vs 软上限（§11 #6）：**{out['active_vs_cap']['active']} / "
-              f"{out['active_vs_cap']['cap']}**\n",
+    L += ["", (f"active vs 软上限（§11 #6）：**{out['active_vs_cap']['active']} / "
+              f"{out['active_vs_cap']['cap']}**\n"),
           "## 逐因子明细\n",
           "| 因子 | 健康态 | IC衰减比 | 近窗IC均值 | 覆盖度比 | regime失效 | 序列来源 | 触发原因 |",
           "| --- | --- | --- | --- | --- | --- | --- | --- |"]

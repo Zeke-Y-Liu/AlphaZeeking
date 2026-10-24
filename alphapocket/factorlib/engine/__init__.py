@@ -11,9 +11,9 @@ sql/qlib_expr 引擎由 SQL 自带 used_period/used_announce 列（PIT 元数据
 三引擎统一签名 run(db_path, start, end)，由 materialize 无差别调度。
 """
 from factorlib.engine.base import EngineError, Row, normalize_rows
-from factorlib.engine.sql_engine import SqlEngine
 from factorlib.engine.python_udf import UdfEngine
 from factorlib.engine.qlib_expr import QlibExprEngine
+from factorlib.engine.sql_engine import SqlEngine
 
 _ENGINES = {"sql": SqlEngine, "python_udf": UdfEngine, "qlib_expr": QlibExprEngine}
 
@@ -26,5 +26,12 @@ def get_engine(meta):
     return cls(meta)
 
 
-__all__ = ["get_engine", "EngineError", "Row", "normalize_rows",
-           "SqlEngine", "UdfEngine", "QlibExprEngine"]
+__all__ = [
+    "EngineError",
+    "QlibExprEngine",
+    "Row",
+    "SqlEngine",
+    "UdfEngine",
+    "get_engine",
+    "normalize_rows",
+]

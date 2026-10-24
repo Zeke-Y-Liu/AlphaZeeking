@@ -15,11 +15,19 @@ import json
 
 import pytest
 
-from applib import datasource as DS
 from applib import datasets as DTS
-from applib.datasets import (CATEGORIES, MERGE_POLICIES, NON_SNAPSHOT_POLICIES,
-                             VERIFICATION_NAMES, DatasetSpec, SourceRef,
-                             active_specs, all_specs, get_spec)
+from applib import datasource as DS
+from applib.datasets import (
+    CATEGORIES,
+    MERGE_POLICIES,
+    NON_SNAPSHOT_POLICIES,
+    VERIFICATION_NAMES,
+    DatasetSpec,
+    SourceRef,
+    active_specs,
+    all_specs,
+    get_spec,
+)
 
 # 改造前硬编码的快照合并面（锚点：派生结果必须逐项相等）
 # 2026-10-21 扩展：industry_index / stock_news（单公司分析辅助数据集，fill_missing）

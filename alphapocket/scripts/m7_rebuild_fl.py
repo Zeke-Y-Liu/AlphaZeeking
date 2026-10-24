@@ -47,13 +47,13 @@ def main() -> int:
         print("[核对] 物化量级与 lineage：")
         for r in con.execute(
                 "select factor_id, count(*), count(distinct secid), min(dt), max(dt) "
-                "from fl_factor_value_daily where factor_id in (%s) "
-                "group by factor_id order by factor_id" % ",".join("?" * len(FACTORS)),
+                "from fl_factor_value_daily where factor_id in ({}) "
+                "group by factor_id order by factor_id".format(",".join("?" * len(FACTORS))),
                 list(FACTORS)).fetchall():
             print(f"      {r[0]:20s} {r[1]:>8} 行 / {r[2]} 标的 / {r[3]}..{r[4]}")
         for r in con.execute(
                 "select factor_id, factor_version, count(*) from fl_factor_lineage "
-                "where factor_id in (%s) group by 1,2 order by 1,2" % ",".join("?" * len(FACTORS)),
+                "where factor_id in ({}) group by 1,2 order by 1,2".format(",".join("?" * len(FACTORS))),
                 list(FACTORS)).fetchall():
             print(f"      lineage {r[0]:20s} v{r[1]} ×{r[2]}")
         n_dvd, n_no_ann = con.execute(

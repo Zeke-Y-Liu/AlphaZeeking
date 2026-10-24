@@ -1,0 +1,13 @@
+# ruff 基线（alphapocket 为纯 Python 包目录，无 pyproject.toml，配置独立于此）。
+# ruff 0.16 起默认启用全部 stable 规则；此处显式固化基线，防默认漂移。
+#
+# DTZ011 / DTZ005 豁免（25 处，审慎决策非偷懒）：
+# 金融数据面（交易日界 / as_of / gate 时间戳 / 巡检日期）刻意使用本地时区
+# date.today() / datetime.now()——A股交易日界以本地自然日为口径。改 timezone-aware
+# 会改变日期语义（UTC+8 晚间跨日），且与库内 naive 比较、isoformat 落盘口径冲突。
+# 时间维度的 PIT 合规由六项验证中的 pit_audit / calendar_check 把关。
+target-version = "py312"
+line-length = 100
+
+[lint]
+ignore = ["DTZ005", "DTZ011"]

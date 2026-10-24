@@ -21,14 +21,13 @@ import re
 import duckdb
 import pytest
 
+from applib import engines as E
 from applib import factors as F
 from applib import runner as RG
 from applib import sensitivity as SEN
-from applib import engines as E
+from applib.ctx import Ctx
 from applib.engines import AlphaEngine
 from applib.engines.base import export_registry_v2
-from applib.ctx import Ctx
-
 
 # ── 合成数据（确定性，无随机）────────────────────────────────
 

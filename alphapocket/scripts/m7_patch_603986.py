@@ -21,7 +21,7 @@ SINA = "sh603986"
 def _num(v):
     try:
         f = float(v)
-        return f if f == f else None          # NaN → None
+        return f if f == f else None          # noqa: PLR0124 - NaN → None（自反比较惯用法）
     except (TypeError, ValueError):
         return None
 

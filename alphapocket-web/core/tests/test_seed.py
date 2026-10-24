@@ -9,8 +9,6 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
-from sqlalchemy import func, select
-
 from app.models import Portfolio, Position, Security, User
 from app.seed import run_seed
 

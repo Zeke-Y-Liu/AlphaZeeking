@@ -9,6 +9,7 @@
 未计滑点/冲击成本；月度再平衡以月末收盘价执行，非可成交价。
 """
 from __future__ import annotations
+
 import json
 import math
 from datetime import date
@@ -133,8 +134,8 @@ def _yearly_table(mret: dict) -> dict:
         y, mo = ym[:4], ym[5:]
         t.setdefault(y, {})[mo] = r
         t[y]["Y"] = t[y].get("Y", 1.0) * (1 + r)
-    for y in t:
-        t[y]["Y"] -= 1
+    for row in t.values():
+        row["Y"] -= 1
     return t
 
 
@@ -217,7 +218,7 @@ def _lot_round(shares: float, lot: int) -> int:
     """整手取整：lot>0 → 向下取整手；lot=0（关闭）→ 向下取整股。"""
     if lot > 0:
         return int(shares // lot) * lot
-    return int(math.floor(max(shares, 0.0)))
+    return math.floor(max(shares, 0.0))
 
 
 def _find_exec(rows: list[dict], after: str, *, direction: str, t_plus_1: bool,
@@ -517,7 +518,13 @@ def run_backtest(bars: dict, portfolio: dict, start: str | None = None,
     commission = cost_bps / 10000.0
     tracked = (weighting == "equal_risk") or bool(risk_limits) or bool(track_risk)
     if tracked:
-        from .risk import inverse_vol_weights, apply_limits, sector_of, annualized_vol, risk_contrib_var
+        from .risk import (
+            annualized_vol,
+            apply_limits,
+            inverse_vol_weights,
+            risk_contrib_var,
+            sector_of,
+        )
         sec_map = {s: sector_of((sectors or {}).get(s)) for s in secids}
 
     def _trailing_vols(d: str) -> dict:
@@ -813,7 +820,7 @@ def render_md(bt: dict) -> str:
                  f"| {_pct(a['ann_vol'])} | {_pct(a['max_dd'])} | {_num(a['corr'])} |")
     L.append("")
     L.append("## ④ 假设与局限")
-    L.append(f"- 数据：AKShare 新浪日线（**不复权价**），ETF/LOF 无复权与分红接口 → 为**价格收益**，低估含息总收益（510300、511260 等分红/付息品种受影响）。")
+    L.append("- 数据：AKShare 新浪日线（**不复权价**），ETF/LOF 无复权与分红接口 → 为**价格收益**，低估含息总收益（510300、511260 等分红/付息品种受影响）。")
     _mb = bt.get("data_quality", {}).get("missing_bars")
     _mbt = _miss_txt(_mb) if _mb is not None else "N/A（next_vwap 路径 data_quality 无明细）"
     L.append(f"- 513100 于 2022-01-14 疑似份额折算（-80.5%），该日 pct 缺失按 0 计；缺失 K 线同样按 0 收益计（{_mbt}）。")

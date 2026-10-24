@@ -12,7 +12,12 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from applib.factor_eval_fl import nw_t_stat, render_md, run_factor_eval, save_eval_report
+from applib.factor_eval_fl import (
+    nw_t_stat,
+    render_md,
+    run_factor_eval,
+    save_eval_report,
+)
 from applib.walkforward import _spearman
 from factorlib import load_factor, set_status
 from factorlib.materialize import materialize

@@ -11,7 +11,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from applib.strategy import StrategyError, apply_universe, load_strategy, parse_weight_kind
+from applib.strategy import (
+    StrategyError,
+    apply_universe,
+    load_strategy,
+    parse_weight_kind,
+)
 
 _STATE = "factors/factor_registry_state.json"
 _DAY = "2026-10-11"
@@ -20,7 +25,7 @@ _DAY = "2026-10-11"
 # ── 造数助手 ─────────────────────────────────────────────
 def _pkg_yaml(fid: str) -> Path:
     import factorlib.registry as R
-    return sorted((Path(R.__file__).parent / "defs").rglob(f"{fid}.yaml"))[0]
+    return min((Path(R.__file__).parent / "defs").rglob(f"{fid}.yaml"))
 
 
 def _activate(repo: Path, fid: str, status: str = "active") -> None:
@@ -79,7 +84,7 @@ universe: 123
 
 
 def test_schema_enum_and_weight_errors(tmp_path):
-    repo = _active_repo(tmp_path)
+    _active_repo(tmp_path)
     with pytest.raises(StrategyError) as ei:
         _load(tmp_path, """
 id: bad-enum
@@ -95,7 +100,7 @@ rebalance: weekly
 
 
 def test_factor_duplicate_rejected(tmp_path):
-    repo = _active_repo(tmp_path)
+    _active_repo(tmp_path)
     with pytest.raises(StrategyError, match="因子重复：val_pe_ttm"):
         _load(tmp_path, """
 id: dup
@@ -106,7 +111,7 @@ composite: {top_n: 3, method: [equal]}
 
 
 def test_top_n_and_universe_filters_errors(tmp_path):
-    repo = _active_repo(tmp_path)
+    _active_repo(tmp_path)
     with pytest.raises(StrategyError) as ei:
         _load(tmp_path, """
 id: t4
@@ -128,7 +133,7 @@ def test_yaml_parse_error_and_top_level_type(tmp_path):
 
 
 def test_factors_count_bounds(tmp_path):
-    repo = _active_repo(tmp_path)
+    _active_repo(tmp_path)
     with pytest.raises(StrategyError, match="factors 必填且为 1..8"):
         _load(tmp_path, """
 id: t-many

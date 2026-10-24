@@ -24,13 +24,17 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
 import qlib  # 新依赖：只允许 fastscreen 内 import（T-F8 红线，静态测试守护）
 from qlib.backtest.signal import Signal as _QlibSignal
 
 from applib import backtest as BT
 from applib.ctx import Ctx
-from applib.fastscreen.vbt_screener import DEFAULT_END, DEFAULT_START, build_scores, crosscheck_self
+from applib.fastscreen.vbt_screener import (
+    DEFAULT_END,
+    DEFAULT_START,
+    build_scores,
+    crosscheck_self,
+)
 
 _REVIEW_AXES = ("撮合时点", "成本", "日历", "复权")
 
@@ -164,7 +168,7 @@ def compare_annual(sid: str, top_n: int, ann_self: float, ann_qlib: float,
     review = None
     if not passed:
         d = decomp or {}
-        num = lambda k: ("n/a" if d.get(k) is None else f"{d[k]:+.4%}")  # noqa: E731
+        num = lambda k: ("n/a" if d.get(k) is None else f"{d[k]:+.4%}")
         parts = {"cost_self": d.get("cost_self") or 0, "cost_qlib": d.get("cost_qlib") or 0,
                  "exec_zero": d.get("exec_zero") or 0}
         lead = max(parts, key=lambda k: abs(parts[k])) if d else None
@@ -209,8 +213,8 @@ def render_md(payload: dict) -> str:
     sid = payload["strategy"]
     L = [f"# Qlib 交叉核对 —— {sid}", "",
          "- 数据：fl_daily_bar → qlib bin（同源不复权；features/ 目录布局 0.9.x）",
-         "- 策略：TopkDropout(topk=n, n_drop=0) ≈ 等权 Top-N 月调（月频信号外置，"
-         "决策步 shift=1 → T 日信号 T+1 close 成交）",
+         ("- 策略：TopkDropout(topk=n, n_drop=0) ≈ 等权 Top-N 月调（月频信号外置，"
+         "决策步 shift=1 → T 日信号 T+1 close 成交）"),
          "- 判定：|ann_qlib − ann_self| < 1pct（含成本轨，同基数 252/交易日）", "",
          "| top_n | ann_self(自研精验) | ann_qlib | Δ | n_days | 判定 |",
          "| --- | --- | --- | --- | --- | --- |"]
@@ -226,11 +230,11 @@ def render_md(payload: dict) -> str:
     reviews = [r for r in payload["rows"] if r["review"]]
     if reviews:
         L += ["", "## 偏差审查报告（>1pct 触发，四查逐项定位）", "",
-              "恒等分解：Δ(自研net−qlib) = cost_self + cost_qlib + exec_zero；"
-              "exec_close_zero = T日收盘零成本 − qlib零成本（约束+时滞分离项）"]
+              ("恒等分解：Δ(自研net−qlib) = cost_self + cost_qlib + exec_zero；"
+              "exec_close_zero = T日收盘零成本 − qlib零成本（约束+时滞分离项）")]
         for r in reviews:
             dc = r["review"]["decomposition"]
-            L += [f"", f"### {r['strategy']} top_n={r['top_n']}（Δ={r['ann_diff']:+.4%}）", "",
+            L += ["", f"### {r['strategy']} top_n={r['top_n']}（Δ={r['ann_diff']:+.4%}）", "",
                   f"- cost_self（主链成本贡献）= {dc['cost_self']:+.4%}",
                   f"- cost_qlib（qlib 成本贡献）= {dc['cost_qlib']:+.4%}",
                   f"- exec_zero（零成本撮合+约束+时滞差）= {dc['exec_zero']:+.4%}",

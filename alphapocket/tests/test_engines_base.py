@@ -8,10 +8,10 @@ from applib.engines import EngineSpec, EngineWrapper, check_output_range, valida
 
 
 def _spec(**over) -> EngineSpec:
-    base = dict(engine_id="test_engine", version="v1",
-                input_schema={"secid": str, "n": int, "factor": (int, float)},
-                required=("secid",),
-                output_range=(-2, 2), range_fields=("level",))
+    base = {"engine_id": "test_engine", "version": "v1",
+                "input_schema": {"secid": str, "n": int, "factor": (int, float)},
+                "required": ("secid",),
+                "output_range": (-2, 2), "range_fields": ("level",)}
     base.update(over)
     return EngineSpec(**base)
 

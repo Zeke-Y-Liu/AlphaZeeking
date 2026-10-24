@@ -20,7 +20,6 @@ from applib import sensitivity as SEN
 from applib.engines import BetaEngine
 from applib.engines.base import export_registry_v2
 
-
 # ── 合成行情（确定性趋势，无随机）────────────────────────────
 
 

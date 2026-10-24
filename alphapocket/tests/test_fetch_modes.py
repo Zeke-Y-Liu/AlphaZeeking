@@ -78,9 +78,8 @@ def _mk_repo(base: Path) -> None:
 
 def test_refresh_mode_semantics(tmp_path, monkeypatch):
     """refresh：窗口重拉同 dt 覆盖=点位修正 + 历史不动 + 用户改动保留（DoD 1/2/3）。"""
-    import datetime as _dt
     repo = _mk_repo(tmp_path)
-    ctx = Ctx(remote_dir=tmp_path, sandbox_dir=tmp_path / "sandbox")
+    Ctx(remote_dir=tmp_path, sandbox_dir=tmp_path / "sandbox")
 
     win = DS._refresh_window(["600519.SH"], today="2026-10-11")["600519.SH"]
     assert win == "2026-10-04"
@@ -110,6 +109,6 @@ def test_incremental_mode_no_rmtree_keeps_overwrite_datasets(tmp_path):
     (repo / "market" / "fx.json").write_text(json.dumps({"HKD_CNY": 0.92}, ensure_ascii=False))
     # snapshot→（模拟拉取失败：本次未产出 fx）→ restore 后 fx 仍在（不 rmtree 的直接推论）
     from applib import writeguard as WG
-    snap = WG.snapshot_guard(repo)
+    WG.snapshot_guard(repo)
     assert "market/fx.json" not in [k for k in WG.GUARDED_RELS]  # 非守护面，不 rmtree 即保留
     assert json.loads((repo / "market" / "fx.json").read_text()) == {"HKD_CNY": 0.92}

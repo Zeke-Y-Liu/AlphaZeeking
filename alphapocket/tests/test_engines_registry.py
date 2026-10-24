@@ -7,13 +7,15 @@
 """
 import json
 
-import pytest
-
 from applib import factors as F
-from applib.engines.base import (ALPHA_DIMS, BETA_SIGNAL_IDS, KNOWN_FORMULAS,
-                                 MACRO_DIMS, REGISTRY_VERSION, export_registry_v2,
-                                 load_registry, validate_registry)
-
+from applib.engines.base import (
+    BETA_SIGNAL_IDS,
+    KNOWN_FORMULAS,
+    REGISTRY_VERSION,
+    export_registry_v2,
+    load_registry,
+    validate_registry,
+)
 
 # ── 导出结构完整性 ────────────────────────────────────────────
 

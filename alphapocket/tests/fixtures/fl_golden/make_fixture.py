@@ -38,7 +38,7 @@ def _weekdays(lo: str, hi: str) -> list[str]:
 
 def make_repo() -> dict:
     days = _weekdays("2021-01-04", "2021-06-30")
-    cps = set(CHECKPOINTS)
+    set(CHECKPOINTS)
 
     bars = {}
     for i, secid in enumerate(SECIDS, start=1):

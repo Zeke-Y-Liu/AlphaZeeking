@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import duckdb
@@ -480,7 +480,7 @@ def save_health_row(db_path: Path, factor_id: str, factor_version: str | None,
                     [factor_id, factor_version, lineage_id, str(as_of), judge["health"],
                      json.dumps(judge.get("reasons", []), ensure_ascii=False),
                      json.dumps(judge.get("metrics", {}), ensure_ascii=False, default=str),
-                     datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")])
+                     datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")])
     finally:
         con.close()
     return {"factor_id": factor_id, "as_of": str(as_of), "health": judge["health"]}

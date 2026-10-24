@@ -154,7 +154,7 @@ def prepare(repo: Path, db_path: Path) -> dict:
                 if not r.get("ex_date"):
                     continue
                 dvd_rows.append((s, r["ex_date"], r.get("announce"), r.get("dps")))
-        con.executemany("INSERT INTO fl_fin_report VALUES (%s)" % ",".join(["?"] * (3 + len(_FIN_FIELDS))),
+        con.executemany("INSERT INTO fl_fin_report VALUES ({})".format(",".join(["?"] * (3 + len(_FIN_FIELDS)))),
                         fin_rows)
         if dvd_rows:                            # 合成 fixture 可无分红 → 空列表跳过（duckdb 不收空 executemany）
             con.executemany("INSERT INTO fl_dividend VALUES (?,?,?,?)", dvd_rows)

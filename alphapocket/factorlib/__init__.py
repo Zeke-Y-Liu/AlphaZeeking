@@ -10,7 +10,13 @@
 
 契约依据：《数据层与因子库架构设计》§14–§19；《中长期因子挖掘与回测-实施计划》M1。
 """
-from factorlib.registry import FactorMeta, load_registry, load_factor, set_status, resolve_backtest_start
+from factorlib.registry import (
+    FactorMeta,
+    load_factor,
+    load_registry,
+    resolve_backtest_start,
+    set_status,
+)
 
-__all__ = ["FactorMeta", "load_registry", "load_factor", "set_status", "resolve_backtest_start"]
+__all__ = ["FactorMeta", "load_factor", "load_registry", "resolve_backtest_start", "set_status"]
 __version__ = "0.1.0"

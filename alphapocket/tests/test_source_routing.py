@@ -22,7 +22,12 @@ from pathlib import Path
 import pytest
 
 from applib import datasource as DS
-from applib.datasets import all_specs, get_spec_safe, spec_primary_interface, spec_primary_upstream
+from applib.datasets import (
+    all_specs,
+    get_spec_safe,
+    spec_primary_interface,
+    spec_primary_upstream,
+)
 
 # 改造前 fetch_all _reg 手工登记口径（T-R11 对拍锚：spec 主源声明必须与此逐字一致）
 _LEGACY_REG = {
@@ -38,8 +43,8 @@ _LEGACY_REG = {
     ("adjust_ex_dates", "market/adjust_ex_dates.json"):
         ("web.ifzq.gtimg.cn(hk/us, qfq 事件元数据)", "腾讯证券"),
     ("dwd_financial_report", "factors/fundamental_values.json"):
-        ("ak.stock_financial_analysis_indicator(A股) + stock_financial_hk_analysis_indicator_em(港股) + "
-         "stock_financial_us_analysis_indicator_em(美股) + stock_financial_report_sina(A股三表：利润表/资产负债表/现金流量表)",
+        (("ak.stock_financial_analysis_indicator(A股) + stock_financial_hk_analysis_indicator_em(港股) + "
+         "stock_financial_us_analysis_indicator_em(美股) + stock_financial_report_sina(A股三表：利润表/资产负债表/现金流量表)"),
          "新浪财经/东方财富"),
     ("dim_ggt_components", "market/ggt_components.json"):
         ("雪球港股通筛选 market=HK&type=ggt（降级 ggt_static 快照）", "雪球/静态快照"),
@@ -50,8 +55,8 @@ _LEGACY_REG = {
     ("dwd_trade_calendar_us", "market/trade_calendar_us.json"):
         ("K线日期并集推导（us 市场）", "新浪财经"),
     ("macro_hk_rates", "market/hk_rates.json"):
-        ("ak.rate_interbank(HIBOR1M) + ak.macro_bank_usa_interest_rate(Fed) + "
-         "ak.currency_boc_sina(USD/HKD 中行折算价交叉 USDHKD)", "新浪财经/中国银行"),
+        (("ak.rate_interbank(HIBOR1M) + ak.macro_bank_usa_interest_rate(Fed) + "
+         "ak.currency_boc_sina(USD/HKD 中行折算价交叉 USDHKD)"), "新浪财经/中国银行"),
     ("macro_liquidity", "market/macro_liquidity.json"):
         ("akshare 宏观接口族（见 meta 各指标 source）",
          "中国人民银行/全国银行间同业拆借中心/中债/美联储/BLS"),
@@ -157,6 +162,7 @@ def test_prov_sources_structure_real_ws():
 
 def test_source_ref_round_trip_with_upstream():
     from dataclasses import asdict
+
     from applib.datasets.base import SourceRef as SR
     r0 = SR("s", "primary", "ak.x()", "n", "机构")
     d = json.loads(json.dumps(asdict(r0), ensure_ascii=False))

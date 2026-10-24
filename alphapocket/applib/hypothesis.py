@@ -343,7 +343,7 @@ def review_items_fl(repo: Path, hyp_reg: dict, health_rows: list[dict]) -> dict:
     try:                                    # 因子名 best-effort（repo 无 defs 时回退 id）
         from factorlib.registry import load_registry
         names = {m.id: m.name for m in load_registry(repo)}
-    except Exception:
+    except Exception:                              # noqa: BLE001, S110 - 因子名 best-effort
         pass
 
     mandatory: list[dict] = []

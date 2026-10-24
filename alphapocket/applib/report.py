@@ -4,8 +4,10 @@
 ⑤下一交易日指引 ⑥变更/执行/风险建议 —— 全部数字来自 AKShare 真实数据，可复现。
 """
 from __future__ import annotations
+
 import json
 from pathlib import Path
+
 from .ctx import Ctx
 
 CSS = """
@@ -241,17 +243,17 @@ def _guidance(p):
     b, a = p["beta"], p["alpha"]
     name = p["name"]
     if b["state"] == "below":
-        head = f'<span class="tag tSell">预警</span>'
+        head = '<span class="tag tSell">预警</span>'
         body = (f"收盘已低于 MA20（{_num(b['ma20'])}）达 <b>{_pct(b['ma20_break'])}</b>（±2% 带外）。"
                 f"下一交易日观察能否收复 MA20 {_num(b['ma20'])}；持续处于带外则进入减仓评估单流程（人工确认，引擎不自动卖出）。"
                 f"参考：带外确认位 {_num(b['band_low'])} · 20日低点 {_num(b['low20'])}。")
     elif b["state"] == "above":
-        head = f'<span class="tag tHold">趋势上方</span>'
+        head = '<span class="tag tHold">趋势上方</span>'
         body = (f"收盘高于 MA20 达 <b>{_pct(b['ma20_break'])}</b>，20日动量 {_pct(b['mom_20d'])}。持有为主；"
                 f"回踩执行参考带 <b>[{_num(b['band_low'])}, {_num(b['band_high'])}]</b>（MA20±1.5σ，σ为20日日波动）。"
                 f"有效收盘跌破 {_num(b['band_low'])} 转预警；突破 20 日高点 {_num(b['high20_intra'])} 确认强势。")
     else:
-        head = f'<span class="tag tInfo">中性区</span>'
+        head = '<span class="tag tInfo">中性区</span>'
         body = (f"收盘处于 MA20 ±2% 带内（{_pct(b['ma20_break'])}）。无操作指令；关注带边界突破方向："
                 f"上沿 {_num(b['band_high'])} / 下沿 {_num(b['band_low'])}，突破 20 日高点 {_num(b['high20_intra'])} 确认强势。")
     val_note = ""

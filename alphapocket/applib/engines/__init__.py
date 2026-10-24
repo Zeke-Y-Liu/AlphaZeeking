@@ -9,15 +9,31 @@ get_engine 未知 id → ValueError；注册表缺失/损坏由 load_registry �
 from __future__ import annotations
 
 from .alpha import AlphaEngine
-from .base import (MetricSpec, export_registry_v2, factor_entries,
-                   find_factor_entry, load_registry, validate_registry)
+from .base import (
+    MetricSpec,
+    export_registry_v2,
+    factor_entries,
+    find_factor_entry,
+    load_registry,
+    validate_registry,
+)
 from .beta import BetaEngine
 from .macro import MacroEngine
 
-__all__ = ["AlphaEngine", "BetaEngine", "MacroEngine", "ENGINES",
-           "get_engine", "list_engines", "MetricSpec",
-           "export_registry_v2", "load_registry", "validate_registry",
-           "factor_entries", "find_factor_entry"]
+__all__ = [
+    "ENGINES",
+    "AlphaEngine",
+    "BetaEngine",
+    "MacroEngine",
+    "MetricSpec",
+    "export_registry_v2",
+    "factor_entries",
+    "find_factor_entry",
+    "get_engine",
+    "list_engines",
+    "load_registry",
+    "validate_registry",
+]
 
 ENGINES: dict[str, object] = {
     "alpha": AlphaEngine(),

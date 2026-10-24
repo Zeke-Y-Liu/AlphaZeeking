@@ -6,8 +6,14 @@ test_macro_liquidity.py / test_datasource_merge.py 等处已是安全网）。
 import pytest
 
 from applib import factors as F
-from applib.engines import AlphaEngine, BetaEngine, ENGINES, MacroEngine, get_engine, list_engines
-
+from applib.engines import (
+    ENGINES,
+    AlphaEngine,
+    BetaEngine,
+    MacroEngine,
+    get_engine,
+    list_engines,
+)
 
 # ── 合成数据（最小充分集）─────────────────────────────────────
 
@@ -74,7 +80,7 @@ def test_metrics_counts_and_active():
     assert get_engine("alpha").metrics() and len(get_engine("alpha").metrics()) == 19
     assert len(get_engine("beta").metrics()) == 6
     assert len(get_engine("macro").metrics()) == 13
-    for eid, eng in ENGINES.items():
+    for eng in ENGINES.values():
         assert eng.active_ids() == {m.id for m in eng.metrics()}      # 全默认 active
         assert eng.describe()["active_count"] == eng.describe()["metric_count"]
     assert ENGINES["macro"].describe()["dim_weights"] == F.MACRO_DIM_WEIGHTS

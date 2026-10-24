@@ -16,8 +16,15 @@ import duckdb
 import pytest
 
 from applib.factor_governance import (
-    bonferroni, cross_factor_corr, deflated_sharpe, gate_incremental,
-    gate_param_robustness, gate_time_robustness, regime_segments, walk_forward,
+    GateError,
+    bonferroni,
+    cross_factor_corr,
+    deflated_sharpe,
+    gate_incremental,
+    gate_param_robustness,
+    gate_time_robustness,
+    regime_segments,
+    walk_forward,
 )
 from factorlib import load_factor, set_status
 from factorlib.materialize import materialize
@@ -25,7 +32,6 @@ from factorlib.materialize import materialize
 
 def _series(n: int, fn) -> list[tuple[str, float]]:
     """n 个月末（2021-01 起连续月）× 生成函数（月序 → ic）。"""
-    from datetime import date
     out, y, m = [], 2021, 1
     for i in range(n):
         out.append((f"{y:04d}-{m:02d}-28", fn(i)))
@@ -104,7 +110,7 @@ def test_deflated_sharpe_properties():
     d5, d50 = deflated_sharpe(sr, n, 5), deflated_sharpe(sr, n, 50)
     assert d5["sr0"] > one["sr0"] and d50["sr0"] > d5["sr0"]
     assert d50["dsr"] < d5["dsr"] <= one["dsr"]
-    with pytest.raises(Exception):
+    with pytest.raises(GateError):
         deflated_sharpe(sr, 1, 5)                                # 样本不足
 
 

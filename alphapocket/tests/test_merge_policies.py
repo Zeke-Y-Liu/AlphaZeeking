@@ -18,10 +18,14 @@ import pytest
 
 from applib import datasource as DS
 from applib.datasets import get_spec
-from applib.datasets.merge import (apply_policy, merge_bars_union,
-                                   merge_carry_old, merge_fill_missing,
-                                   merge_new_nonempty, merge_set_union)
-
+from applib.datasets.merge import (
+    apply_policy,
+    merge_bars_union,
+    merge_carry_old,
+    merge_fill_missing,
+    merge_new_nonempty,
+    merge_set_union,
+)
 
 # ── 五种合并策略（数据集级纯函数）────────────────────────────────
 

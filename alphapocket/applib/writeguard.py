@@ -22,8 +22,14 @@ import datetime as _dt
 import json
 from pathlib import Path
 
-__all__ = ["GUARDED_RELS", "snapshot_guard", "restore_guard",
-           "merge_registry", "merge_portfolio", "merge_bars"]
+__all__ = [
+    "GUARDED_RELS",
+    "merge_bars",
+    "merge_portfolio",
+    "merge_registry",
+    "restore_guard",
+    "snapshot_guard",
+]
 
 # 机器维护字段（新值胜出）；其余字段用户改动优先
 MACHINE_FIELDS = frozenset({"version", "universe", "type", "horizon_days"})
@@ -74,10 +80,7 @@ def _merge_items(old_items: list, new_items: list, *, key: str) -> tuple[list, d
             continue
         m = dict(nit)
         for k, ov in oit.items():
-            if k not in m:                              # 用户自定义字段保留
-                m[k] = ov
-                info["user_fields_kept"].setdefault(iid, []).append(k)
-            elif ov != m[k] and k not in MACHINE_FIELDS:  # 冲突 → 用户改动胜出
+            if k not in m or ov != m[k] and k not in MACHINE_FIELDS:                              # 用户自定义字段保留
                 m[k] = ov
                 info["user_fields_kept"].setdefault(iid, []).append(k)
         merged.append(m)
@@ -146,35 +149,39 @@ def merge_bars(old: dict, new: dict) -> tuple[dict, dict]:
     return out, info
 
 
-# ── 恢复回写（T-R7 收敛：合并分派 spec.merge_policy 单一机制）───────────────
+# ── 恢复回写（守护面三语义分派；writeguard 三个 merge 唯一实现）──────────
 def restore_guard(repo: Path, snap: dict) -> dict:
     """fetch_all 写库完成后调用：守护面逐文件合并回写 → 返回合并信息（审计）。
 
-    T-R7 收敛：合并函数 / 落盘格式 / summary 组装全部由 datasets 注册表驱动——
-    ``GUARDED_RELS`` 逐项经 ``registry_specs()`` 反查 spec → ``merge_by_policy``；
-    writeguard 三个 merge 函数保持唯一实现（注册表委托回本模块，零第二实现）。
+    分派（T-R4 三语义，本模块三个 merge 函数为唯一实现）：
+    - ``factors/registry.json`` → ``merge_registry``（registry_merge 写保护合并）；
+    - ``portfolio/{cn4,multi5}.json`` → ``merge_portfolio``（组合定义写保护）；
+    - ``market/{daily_bars,daily_bars_raw,cross_check_tx}.json`` → ``merge_bars``
+      （K 线 union：增量窗重拉防丢历史；不按 spec.merge_policy 分派——
+      daily_bars 的 new_nonempty 语义是「新非空整体替换」，适用 fetch_all 全量
+      重拉链路，不适用 rmtree 守护场景的 union 期望）。
     行为等价锚点：registry/portfolio 缩进 2 且 info 进 summary、bars 紧凑且
     summary 含 dt_total、``_merge`` 键不落盘（T-R4 语义逐字段不变）。
     """
-    from .datasets import MERGE_POLICY_FORMAT, merge_by_policy, registry_specs
-    by_path = {s.path: s for s in registry_specs().values()}
     summary: dict[str, dict] = {}
     for rel, old in snap.items():
         p = repo / rel
         new = _read_json(p)
         if new is None or not p.exists():
             continue                                    # 本次未产出该文件 → 旧内容保持
-        spec = by_path.get(rel)
-        if spec is None:                                # 守护面未声明 → 显式登记不静默
-            summary[rel] = {"unspecified": True,
-                            "note": "守护面文件无 DatasetSpec 声明，跳过合并（登记待补）"}
-            continue
-        merged, info = merge_by_policy(spec, new, old)
-        fmt = MERGE_POLICY_FORMAT.get(spec.merge_policy, {})
-        if fmt.get("summary") == "bars":                # bars 类：紧凑落盘 + dt_total
+        if rel == "factors/registry.json":
+            merged = merge_registry(old, new)
+            summary[rel] = merged.pop("_merge", {})
+            p.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+        elif rel.startswith("portfolio/"):
+            merged = merge_portfolio(old, new)
+            summary[rel] = merged.pop("_merge", {})
+            p.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+        elif rel.startswith("market/"):                 # bars 类守护面：紧凑落盘 + dt_total
+            merged, info = merge_bars(old, new)
             summary[rel] = {**info, "dt_total": sum(len(v) for v in merged.values())}
             p.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
-        else:                                           # registry/portfolio/carry_old：缩进 2
-            summary[rel] = info
-            p.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+        else:                                           # 守护面未声明 → 显式登记不静默
+            summary[rel] = {"unspecified": True,
+                            "note": "守护面文件无合并分派声明，跳过合并（登记待补）"}
     return summary

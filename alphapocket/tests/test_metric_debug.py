@@ -252,11 +252,11 @@ def test_diff_snapshot_missing_and_guards(tmp_path):
 # ── CLI 冒烟（test/diff）──────────────────────────────────────
 
 def _ns(**kw):
-    base = dict(action="list", id=None, engine=None, status=None, formula=None, dim=None,
-                market=None, scorer_type=None, scorer_arg=None, params_json=None,
-                set_kv=[], weights_json=None, hypothesis_id=None, reason=None, as_json=False,
-                tool="walkforward", grid=None, overrides_json=None, portfolio="cn4",
-                baseline=None, changelog_idx=None, ctx=None)
+    base = {"action": "list", "id": None, "engine": None, "status": None, "formula": None, "dim": None,
+                "market": None, "scorer_type": None, "scorer_arg": None, "params_json": None,
+                "set_kv": [], "weights_json": None, "hypothesis_id": None, "reason": None, "as_json": False,
+                "tool": "walkforward", "grid": None, "overrides_json": None, "portfolio": "cn4",
+                "baseline": None, "changelog_idx": None, "ctx": None}
     base.update(kw)
     return type("A", (), base)()
 

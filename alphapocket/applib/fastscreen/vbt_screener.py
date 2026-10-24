@@ -23,7 +23,6 @@ from pathlib import Path
 import duckdb
 import numpy as np
 import pandas as pd
-
 import vectorbt as vbt  # 新依赖：只允许 fastscreen 内 import（T-F8 红线，静态测试守护）
 
 from applib import backtest as BT
@@ -110,8 +109,11 @@ def build_scores(db_path: Path, repo: Path, spec: dict,
             need_multi = any(m != "equal" for m in ms)
             by_m: dict[str, dict] = {}
             if need_multi:
-                from applib.composite import (build_lasso_data, composite_multi_meta,
-                                              load_ic_history)
+                from applib.composite import (
+                    build_lasso_data,
+                    composite_multi_meta,
+                    load_ic_history,
+                )
                 history = load_ic_history(con, fids, directions, closes, as_of=d,
                                           versions=versions)
                 lasso_data = build_lasso_data(con, fids, directions, closes, as_of=d,
@@ -180,7 +182,7 @@ def run_vbt_grid(px: pd.DataFrame, panels: dict[str, pd.DataFrame], *,
                 rows.append({"method": method, "top_n": int(n), "slippage": float(slip),
                              "total_return": round(total, 6),
                              "cagr": round(cagr, 6),
-                             "n_orders": int(len(pf.orders.records_readable)),
+                             "n_orders": len(pf.orders.records_readable),
                              "n_days": nd})
     return rows
 
@@ -256,8 +258,8 @@ def align_rows(grid: list[dict], self_rows: list[dict]) -> dict:
 # ── 归档与 CLI ──────────────────────────────────────────
 def render_md(sid: str, grid: list[dict], align: dict, slippages: list[float]) -> str:
     L = [f"# vectorbt 快筛网格 × 自研精验对照 —— {sid}", "",
-         f"- 快筛口径：`Portfolio.from_orders(targetpercent)` 无约束近似"
-         f"（无 T+1 / 无涨跌停 / 无整手）；fees={0.00026:g}（双边佣金+过户费）",
+         (f"- 快筛口径：`Portfolio.from_orders(targetpercent)` 无约束近似"
+         f"（无 T+1 / 无涨跌停 / 无整手）；fees={0.00026:g}（双边佣金+过户费）"),
          "- 对照口径：自研 run_factor_backtest（全约束 T+1 VWAP，equal 主选股法，同区间）",
          "- 红线：快筛是排序工具，网格最优须回自研精验复核后采纳；对照不宣称「一致」", ""]
     L.append("| method | top_n | slippage | total_return | cagr | n_orders |")
@@ -270,11 +272,11 @@ def render_md(sid: str, grid: list[dict], align: dict, slippages: list[float]) -
     for p in align["pairs"]:
         L.append(f"| {p['top_n']} | {p['vbt_cagr']:.4%} | {p['self_cagr']:.4%} "
                  f"| {p['cagr_diff']:+.4%} |")
-    L += ["", f"- 排序一致性（equal，Spearman ρ）：**{align['spearman_equal']}**"
-              f"（n={align['n_pairs']}）",
-          "- 差异来源（如实披露，禁止宣称一致）：① 撮合时点 close vs T+1 VWAP；"
+    L += ["", (f"- 排序一致性（equal，Spearman ρ）：**{align['spearman_equal']}**"
+              f"（n={align['n_pairs']}）"),
+          ("- 差异来源（如实披露，禁止宣称一致）：① 撮合时点 close vs T+1 VWAP；"
           "② 约束集（T+1/涨跌停/整手 defer/skip）；③ 印花税单向不可表达"
-          "（vbt fees 双边，卖出端少计 0.05%）；④ 份额/现金机制差（targetpercent vs 份额制）"]
+          "（vbt fees 双边，卖出端少计 0.05%）；④ 份额/现金机制差（targetpercent vs 份额制）")]
     return "\n".join(L) + "\n"
 
 

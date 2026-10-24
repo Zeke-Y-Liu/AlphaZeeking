@@ -13,16 +13,23 @@ import pytest
 import yaml
 
 import factorlib.registry as R
-from factorlib.registry import (HEALTH, FactorMeta, RegistryError, bump_version,
-                                load_factor, load_registry, set_health, set_status,
-                                validate)
+from factorlib.registry import (
+    FactorMeta,
+    RegistryError,
+    bump_version,
+    load_factor,
+    load_registry,
+    set_health,
+    set_status,
+    validate,
+)
 
 _STATE = "factors/factor_registry_state.json"
 _DAY = "2026-10-11"
 
 
 def _pkg_yaml(fid: str) -> Path:
-    return sorted((Path(R.__file__).parent / "defs").rglob(f"{fid}.yaml"))[0]
+    return min((Path(R.__file__).parent / "defs").rglob(f"{fid}.yaml"))
 
 
 def _read_state(repo: Path) -> dict:
@@ -158,9 +165,9 @@ def test_health_unknown_factor_rejected(tmp_path):
 
 # ── 版本语义（三段式 + bump 工作流）─────────────────────────────────
 def test_validate_version_three_segment_format():
-    base = dict(id="f2_val_x", name="x", category="F2_fundamental", factor_type="alpha",
-                engine="sql", direction="low", universe=["CN"], inputs=["fl_daily_bar"],
-                lookback_days=0, pit=True, status="draft", description="d", sql="SELECT 1")
+    base = {"id": "f2_val_x", "name": "x", "category": "F2_fundamental", "factor_type": "alpha",
+                "engine": "sql", "direction": "low", "universe": ["CN"], "inputs": ["fl_daily_bar"],
+                "lookback_days": 0, "pit": True, "status": "draft", "description": "d", "sql": "SELECT 1"}
     assert validate(FactorMeta(version="1.0.0", **base)) == []
     for bad in ("1", "1.0", "v1.0.0", "1.0.0.1", "", None):
         errs = validate(FactorMeta(version=bad, **base))
@@ -479,11 +486,20 @@ def test_activate_factor_only_draft(tmp_path):
 # ══ T-L3 版本冻结与被引用关系（旧版不可变 + pin + 影响面）══════════
 import hashlib
 
-from applib.factor_backtest import FactorBacktestError, load_section, run_factor_backtest
+from applib.factor_backtest import (
+    FactorBacktestError,
+    load_section,
+    run_factor_backtest,
+)
 from applib.factor_eval_fl import FactorEvalError, run_factor_eval
 from factorlib.lifecycle import impact_report, refs
-from factorlib.materialize import (MaterializeError, definition_fingerprint,
-                                   latest_version, lineage_id, materialize, query)
+from factorlib.materialize import (
+    MaterializeError,
+    definition_fingerprint,
+    latest_version,
+    materialize,
+    query,
+)
 
 _BT_SPEC = {"id": "fl_pin_top3", "name": "pin 对账", "top_n": 3, "rebalance": "monthly",
             "benchmark": "510300.SH",
@@ -531,7 +547,7 @@ def test_bump_full_recompute_old_rows_frozen(fl_db, fl_repo):
     v2 = [r for r in rows_all if r["factor_version"] == "1.1.0"]
     assert len(v1) * 2 == len(rows_all) and len(v2) == len(v1)
     assert _row_digest(v1) == dig_v1                            # 旧版行含 lineage 逐位不变
-    strip = lambda rs: sorted((r["dt"], r["secid"], r["value"]) for r in rs)  # noqa: E731
+    strip = lambda rs: sorted((r["dt"], r["secid"], r["value"]) for r in rs)
     assert strip(v2) == strip(v1)                               # 同定义同输入 → 值一致
     assert {r["lineage_id"] for r in v1}.isdisjoint({r["lineage_id"] for r in v2})
 
@@ -635,7 +651,7 @@ def test_backtest_pin_old_version_bit_identical(fl_db, fl_repo):
     bt2 = run_factor_backtest(db, repo, {**_BT_SPEC, "factor_version": "1.0.0"},
                               start="2021-03-01", end="2021-06-30")
     # spec 元数据（factor_version 显式 pin 与否）天然不同 → 剔除后逐字节 diff
-    strip_meta = lambda bt: {k: v for k, v in bt.items() if k != "factor_spec"}  # noqa: E731
+    strip_meta = lambda bt: {k: v for k, v in bt.items() if k != "factor_spec"}
     assert json.dumps(strip_meta(bt1), sort_keys=True, default=str) == \
         json.dumps(strip_meta(bt2), sort_keys=True, default=str)
     assert bt2["factor_lineages"]["val_pe_ttm"]["version"] == "1.0.0"
@@ -655,7 +671,7 @@ def test_backtest_default_latest_and_multi_version_unique_rows(fl_db, fl_repo):
     assert bt3["factor_lineages"]["val_pe_ttm"]["version"] == "1.1.0"
     assert bt3["factor_lineages"]["val_pe_ttm"]["lineage_id"] != \
         bt1["factor_lineages"]["val_pe_ttm"]["lineage_id"]
-    strip = lambda bt: [(t["dt"], sorted(t["secids"])) for t in bt["factor_targets"]]  # noqa: E731
+    strip = lambda bt: [(t["dt"], sorted(t["secids"])) for t in bt["factor_targets"]]
     assert strip(bt3) == strip(bt1)                             # 同定义同输入 → 同选股
     assert bt3["series"] == bt1["series"] and bt3["strategy_metrics"] == bt1["strategy_metrics"]
 
@@ -771,7 +787,7 @@ def test_impact_report_renders_and_persists(tmp_path):
 
 
 # ══ T-L4 季度巡检：judge_health 三指标三态真值表（纯函数直测，零 IO）══
-from factorlib.lifecycle import judge_health                     # noqa: E402
+from factorlib.lifecycle import judge_health
 
 
 def _m(decay=None, recent=None, cov=None, bull=None, bear=None) -> dict:
@@ -868,10 +884,13 @@ def test_save_health_row_idempotent(tmp_path):
 
 
 # ══ T-L5 假设复查联动 + 降级动作 + 合成池（必答/抽查/标警/摘除/通知）══
-from applib.factor_inspect import downgrade_actions, health_rows_from_state  # noqa: E402
-from applib.hypothesis import (load as hyp_load,                    # noqa: E402
-                               render_review_fl_md, review_items_fl)
-from factorlib.lifecycle import ACTIVE_CAP, active_pool             # noqa: E402
+from applib.factor_inspect import (
+    downgrade_actions,
+    health_rows_from_state,
+)
+from applib.hypothesis import load as hyp_load
+from applib.hypothesis import render_review_fl_md, review_items_fl
+from factorlib.lifecycle import ACTIVE_CAP, active_pool
 
 
 def _repo_all_defs(tmp_path: Path, *, hyp_reg: bool = True) -> Path:
@@ -1102,7 +1121,7 @@ def test_downgrade_same_asof_rerun_dedup(tmp_path, monkeypatch):
     out = _down_out(transition={"from": "healthy", "to": "invalid", "as_of": _DAY})
     r1 = downgrade_actions(ctx, out)
     r2 = downgrade_actions(ctx, out)                             # 同 as_of 重跑
-    key = lambda rs: [(n["factor_id"], n["as_of"]) for n in rs]  # noqa: E731
+    key = lambda rs: [(n["factor_id"], n["as_of"]) for n in rs]
     assert key(r1["notifications"]) == key(r2["notifications"]) == [("val_pe_ttm", _DAY)]
     assert len(r2["notifications"]) == 1
     assert Path(r2["notifications_md"]).read_text(encoding="utf-8") == \

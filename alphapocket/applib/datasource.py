@@ -42,12 +42,27 @@ V4-β 财务因子补充（2026-10-07）：港股/美股接入东财财务与分
 行数/sha256）；财务报告期按监管披露截止日保守推算可用人时点（PIT）。
 """
 from __future__ import annotations
-import json, logging, re, time, hashlib, datetime as dt
+
+import datetime as dt
+import hashlib
+import json
+import logging
+import re
+import time
 from pathlib import Path
 
-from .datasets import (NON_SNAPSHOT_POLICIES, active_specs as _active_specs, get_spec,
-                       get_spec_safe, spec_primary_interface, spec_primary_upstream)
-from .datasets.merge import apply_policy, merge_bars as _merge_bars   # T-R10：合并语义真源迁入 datasets/merge.py
+from .datasets import (
+    NON_SNAPSHOT_POLICIES,
+    get_spec,
+    get_spec_safe,
+    spec_primary_interface,
+    spec_primary_upstream,
+)
+from .datasets import active_specs as _active_specs
+from .datasets.merge import apply_policy  # T-R10：合并语义真源迁入 datasets/merge.py
+from .datasets.merge import (
+    merge_bars as _merge_bars,  # noqa: F401 - 测试契约：DS._merge_bars（test_datasource_merge / test_merge_policies 对拍锚）
+)
 
 _log = logging.getLogger(__name__)
 
@@ -122,7 +137,7 @@ FOREIGN_PIT_LAG_DAYS = {"HK": 90, "US": 90}
 _DIV_CCY_ALIAS = {"港币": "HKD", "港元": "HKD", "人民币": "CNY", "美元": "USD"}
 
 # 港股通标的静态快照（兜底；在线源为雪球港股通筛选）
-from applib.ggt_static import GGT_SNAPSHOT_DATE, GGT_STATIC  # noqa: E402
+from applib.ggt_static import GGT_SNAPSHOT_DATE, GGT_STATIC
 
 _SINA_HQ_URL = "https://hq.sinajs.cn/list="
 _TX_QT_URL = "https://qt.gtimg.cn/q="
@@ -274,7 +289,7 @@ def fetch_realtime_quotes(secids) -> dict:
                     q["source"] = "sina"
                     out[secid] = q
                     missing.discard(secid)
-    except Exception:                           # noqa: BLE001 - 主源失败走兜底
+    except Exception:                           # noqa: BLE001, S110 - 主源失败走兜底
         pass
 
     # ② 腾讯兜底（逐标的；仅补新浪缺失的）
@@ -295,7 +310,7 @@ def fetch_realtime_quotes(secids) -> dict:
             if q:
                 q["source"] = "tencent"
                 out[secid] = q
-        except Exception:                       # noqa: BLE001 - 兜底也失败则跳过
+        except Exception:                       # noqa: BLE001, S112 - 兜底也失败则跳过
             continue
     return out
 
@@ -661,7 +676,7 @@ def fetch_ggt_components() -> tuple[list[str], str]:
         codes = sorted({c for c in codes if re.fullmatch(r"\d{5}", c)})
         if codes:
             return codes, "xueqiu"
-    except Exception:                                       # noqa: BLE001 - 降级静态快照
+    except Exception:                                       # noqa: BLE001, S110 - 降级静态快照
         pass
     return list(GGT_STATIC), f"static_snapshot@{GGT_SNAPSHOT_DATE}"
 
@@ -693,7 +708,7 @@ def _tx_http(param: str, tries: int = 3, retry_empty: bool = False) -> list:
                     time.sleep(1.0 * (i + 1))
                     continue
                 return []
-        except Exception:                                   # noqa: BLE001 - 限流/网络抖动 → 退避重试
+        except Exception:                                   # noqa: BLE001, S110 - 限流/网络抖动 → 退避重试
             pass
         if i < tries - 1:
             time.sleep(1.0 * (i + 1))
@@ -822,7 +837,7 @@ def _patch_ex_dates_from_divergence(
     """
     ex = set(ex_dates)
     raw = {r["dt"]: r["close"] for r in raw_rows if r.get("dt")}
-    raw_dts = sorted(raw)
+    sorted(raw)
     prev = None
     missing: list[str] = []
     for r in qfq_recs:
@@ -1017,7 +1032,7 @@ def _iso(x) -> str | None:
 def _num(x) -> float | None:
     try:
         f = float(x)
-        return f if f == f else None      # NaN → None
+        return f if f == f else None      # noqa: PLR0124 - NaN → None（自反比较惯用法）
     except (TypeError, ValueError):
         return None
 
@@ -1031,7 +1046,7 @@ def _retry(fn, n=3, wait=2.0):
     for i in range(n):
         try:
             return fn()
-        except Exception as e:            # 上游偶发限流/超时：退避重试
+        except Exception as e:            # noqa: BLE001 - 上游偶发限流/超时：退避重试
             last = e
             time.sleep(wait * (i + 1))
     raise RuntimeError(f"akshare 重试 {n} 次仍失败：{last}")
@@ -1220,7 +1235,7 @@ def _fetch_a_statements(ak, sina: str) -> dict[str, dict]:
         cols = {k: c for k, (s, c) in A_STMT_COLS.items() if s == sym}
         try:
             df = _retry(lambda s=sym: ak.stock_financial_report_sina(stock=sina, symbol=s))
-        except Exception:                     # noqa: BLE001 - 单表缺失不阻断
+        except Exception:                     # noqa: BLE001, S112 - 单表缺失不阻断
             continue
         if df is None or len(df) == 0:
             continue
@@ -1374,7 +1389,7 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
             for u in unnamed:
                 if names.get(u["secid"]):
                     u["name"] = names[u["secid"]]
-        except Exception:                       # noqa: BLE001 - 名称缺失不阻断同步
+        except Exception:                       # noqa: BLE001, S110 - 名称缺失不阻断同步
             pass
 
     def _start_for(secid: str) -> str:
@@ -1453,12 +1468,12 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
         s0 = _start_for(u["secid"])       # T0.3：增量时自次日；否则 = start（默认不变）
         # Q-fix（§14.2 qfq 漂移根治）：qfq 前复权基准随最新价漂移，增量窗口拼接必自相矛盾
         # ——qfq 恒全量拉取（自当前基准重算整条序列）；raw 不复权不漂移，仍按增量窗口。
-        qfq = _retry(lambda: ak.stock_zh_a_daily(symbol=u["sina"], start_date=start.replace("-", ""),
+        qfq = _retry(lambda: ak.stock_zh_a_daily(symbol=u["sina"], start_date=start.replace("-", ""),  # noqa: B023 - 当轮立即消费
                                                  end_date=today.replace("-", ""), adjust="qfq"))
-        raw = _retry(lambda: ak.stock_zh_a_daily(symbol=u["sina"], start_date=s0.replace("-", ""),
+        raw = _retry(lambda: ak.stock_zh_a_daily(symbol=u["sina"], start_date=s0.replace("-", ""),  # noqa: B023 - 当轮立即消费
                                                  end_date=today.replace("-", ""), adjust=""))
         tq = (dt.date.today() - dt.timedelta(days=120)).isoformat().replace("-", "")
-        tx = _retry(lambda: ak.stock_zh_a_hist_tx(symbol=u["sina"], start_date=tq, end_date=today.replace("-", "")))
+        tx = _retry(lambda: ak.stock_zh_a_hist_tx(symbol=u["sina"], start_date=tq, end_date=today.replace("-", "")))  # noqa: B023 - 当轮立即消费
 
         recs, prev = [], None
         for _, r in qfq.iterrows():
@@ -1472,7 +1487,7 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
         bars_raw[u["secid"]] = [{"dt": _iso(r["date"]), "close": _num(r["close"])} for _, r in raw.iterrows()]
         cross_tx[u["secid"]] = [{"dt": _iso(r["date"]), "close": _num(r["close"])} for _, r in tx.iterrows()]
 
-        fin = _retry(lambda: ak.stock_financial_analysis_indicator(symbol=u["code"], start_year=fin_start_year))
+        fin = _retry(lambda: ak.stock_financial_analysis_indicator(symbol=u["code"], start_year=fin_start_year))  # noqa: B023 - 当轮立即消费
         stmts = _fetch_a_statements(ak, u["sina"])     # P1.2/D5：三表关键科目（按报告期并入）
         reports = []
         for _, r in fin.iterrows():
@@ -1482,7 +1497,7 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
             reports.append({"period": period, "announce_date": _announce_date(period),
                             **{k: _num(r.get(c)) for k, c in FIN_COLS.items()},
                             **(stmts.get(period) or {})})
-        dvd = _retry(lambda: ak.stock_history_dividend_detail(symbol=u["code"], indicator="分红"))
+        dvd = _retry(lambda: ak.stock_history_dividend_detail(symbol=u["code"], indicator="分红"))  # noqa: B023 - 当轮立即消费
         dividends = [{"ex_date": _iso(r["除权除息日"]), "announce": _iso(r["公告日期"]),
                       "dps": (_num(r["派息"]) or 0) / 10, "song": _num(r["送股"]), "zhuang": _num(r["转增"])}
                      for _, r in dvd.iterrows()
@@ -1496,7 +1511,7 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
     tq8 = (dt.date.today() - dt.timedelta(days=120)).isoformat().replace("-", "")
     corp_actions = []   # 份额折算/拆分登记（价格断层保护）
     for u in a_funds:
-        hist = _retry(lambda: ak.fund_etf_hist_sina(symbol=u["sina"]))
+        hist = _retry(lambda: ak.fund_etf_hist_sina(symbol=u["sina"]))  # noqa: B023 - 当轮立即消费
         has_amt = "amount" in getattr(hist, "columns", [])
         recs, prev = [], None
         for _, r in hist.iterrows():
@@ -1519,7 +1534,7 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
         # 按 s0 切片会让增量窗口（常仅数根）覆盖整段历史（ETF 序列被截断 → golden_test 越界）。
         recs = [r for r in recs if r["dt"] and r["dt"] >= start]
         bars_qfq[u["secid"]] = recs                                # 基金无复权接口：主序列即 raw
-        tx = _retry(lambda: ak.stock_zh_a_hist_tx(symbol=u["sina"], start_date=tq8,
+        tx = _retry(lambda: ak.stock_zh_a_hist_tx(symbol=u["sina"], start_date=tq8,  # noqa: B023 - 当轮立即消费
                                                   end_date=today.replace("-", "")))
         cross_tx[u["secid"]] = [{"dt": _iso(r["date"]), "close": _num(r["close"])}
                                 for _, r in tx.iterrows() if _iso(r["date"])]

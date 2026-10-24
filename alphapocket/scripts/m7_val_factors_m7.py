@@ -37,7 +37,7 @@ def main() -> int:
     from factorlib.registry import load_factor as _lf
     cur = _lf(SB_REPO, "val_pe_ttm").version
     if cur == "1.1.0":
-        print(f"      已处于 1.1.0，跳过")
+        print("      已处于 1.1.0，跳过")
     else:
         rec = bump_version(SB_REPO, "val_pe_ttm", "1.1.0", who="m7-tf2",
                            why="TTM 阶梯改累计口径，消费端显式过滤 NULL 回退最近可算报告期")

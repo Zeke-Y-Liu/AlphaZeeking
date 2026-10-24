@@ -16,13 +16,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import duckdb
 
 from factorlib.engine import get_engine
-from factorlib.registry import RegistryError
 
 _TABLE_VALUES = "fl_factor_value_daily"
 _TABLE_PIT = "fl_factor_pit_meta"
@@ -130,7 +129,7 @@ def _register_lineage(con, meta, lid: str) -> None:
                 [meta.id, meta.version])
     con.execute(f"INSERT INTO {_TABLE_LINEAGE} VALUES (?,?,?,?,?)",
                 (meta.id, meta.version, definition_fingerprint(meta), lid,
-                 datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")))
+                 datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")))
 
 
 def _calendar_bounds(con) -> tuple[date, date]:

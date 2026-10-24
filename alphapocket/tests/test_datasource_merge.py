@@ -26,7 +26,6 @@ from applib import datasource as DS
 from applib import runner as R
 from applib.ctx import Ctx
 
-
 # ── _merge_bars：纯函数 ──────────────────────────────────────────
 
 def test_merge_bars_append_and_order():

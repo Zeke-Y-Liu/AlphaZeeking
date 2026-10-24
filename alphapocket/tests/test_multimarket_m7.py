@@ -11,8 +11,8 @@ e) 存量 YAML（v1/v2 六份）零迁移回归 + 混合市场回测显式拒绝
 """
 from __future__ import annotations
 
-import shutil
 import json
+import shutil
 from pathlib import Path
 
 import duckdb
@@ -47,7 +47,7 @@ def pool_ready(fl_repo):
     for fid in sorted(fids):
         set_status(fl_repo, fid, "active", who="m7-tf9", why="多市场测试池",
                    gate={"ok": True, "reasons": []})
-    _ = load_factor  # noqa: F841（保持导入形态一致）
+    _ = load_factor  # 保持导入形态一致
     return fl_repo, sorted(fids)
 
 
@@ -156,8 +156,13 @@ def test_market_readiness_hk_with_mapping_and_bars(pool_ready, fl_db, tmp_path):
 # ── b) account_mapping：校验缺项列名 + HKFRS 往返 ───────────────────────
 def test_account_mapping_validation_and_roundtrip(fl_repo, tmp_path):
     """样例映射往返（eps ↔ BasicEarningsPerShare）；缺科目 → missing 列名；缺文件全判缺。"""
-    from factorlib.account_map import (AccountMapError, external_name, internal_name,
-                                       load_account_map, validate_market)
+    from factorlib.account_map import (
+        AccountMapError,
+        external_name,
+        internal_name,
+        load_account_map,
+        validate_market,
+    )
     assert not (fl_repo / "dim" / "account_mapping.json").exists()
     v0 = validate_market(fl_repo, "HK", ["eps", "revenue"])
     assert v0["ok"] is False and v0["missing"] == ["eps", "revenue"]   # 缺文件 → 全列缺项
@@ -189,9 +194,9 @@ def test_account_mapping_validation_and_roundtrip(fl_repo, tmp_path):
 # ── c) HK 空跑：重检验触发 + 分段披露（不抛异常，CN 段正常）────────────
 def test_hk_dryrun_eval_flow(fl_repo, fl_db):
     """run_market_eval(["CN","HK"])：CN 段 M3 重跑落档；HK 段就绪性披露，全程不抛异常。"""
+    from applib.factor_eval_fl import run_market_eval, save_eval_report
     from factorlib.materialize import materialize
     from factorlib.registry import load_factor, set_status
-    from applib.factor_eval_fl import run_market_eval, save_eval_report
     db, _ = fl_db
     set_status(fl_repo, "val_pe_ttm", "active", who="m7-tf9", why="HK 空跑演练",
                gate={"ok": True, "reasons": []})
@@ -218,7 +223,8 @@ def test_hk_dryrun_eval_flow(fl_repo, fl_db):
 def test_personal_clone_register_and_gate_no_waiver(clone_repo, fl_db):
     """登记：source_type=personal_clone + 血缘绑定 + 保持 draft；
     门禁：七查照跑全链评估，无检验记录照拒，拒因含「个人化来源不豁免检验」。"""
-    from applib.hypothesis import load as hyp_load, personal_clone_register
+    from applib.hypothesis import load as hyp_load
+    from applib.hypothesis import personal_clone_register
     from factorlib.lifecycle import activation_gate
     from factorlib.registry import load_factor
     db, _ = fl_db

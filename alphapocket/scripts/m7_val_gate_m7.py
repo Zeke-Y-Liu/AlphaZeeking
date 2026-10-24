@@ -34,7 +34,7 @@ VARIANTS = [{"label": "rank_pct", "transform": ["rank_pct"]},
 def main() -> int:
     from applib.factor_eval_fl import run_factor_eval, save_eval_report
     from applib.factor_governance import run_full_gauntlet, save_gate_report
-    from factorlib.lifecycle import activation_gate, activate_factor
+    from factorlib.lifecycle import activate_factor, activation_gate
     from factorlib.registry import load_factor
 
     # argv：因子子集（续跑）；"--gate-only" 只跑门禁+激活（eval/gate 报告已在档时用）
@@ -81,7 +81,6 @@ def main() -> int:
         print(f"  activate: {act['activated']} {act.get('reason', '')}")
 
     print("\n== 终态 ==")
-    con_sb = None
     from factorlib.registry import load_factor as _lf
     for fid in VAL4:
         m = _lf(SB_REPO, fid)

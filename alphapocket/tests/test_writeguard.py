@@ -5,8 +5,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from applib.writeguard import (GUARDED_RELS, merge_bars, merge_portfolio,
-                               merge_registry, restore_guard, snapshot_guard)
+from applib.writeguard import (
+    merge_bars,
+    merge_portfolio,
+    merge_registry,
+    restore_guard,
+    snapshot_guard,
+)
 
 MACHINE_BASE = {"factors": [
     {"id": "mom_12_1", "name": "12-1月动量", "type": "alpha", "status": "active",
@@ -70,7 +75,7 @@ def _bar(d, c, pct=None):
 def test_merge_bars_union_keeps_history():
     old = {"600519.SH": [_bar("2024-01-02", 10.0), _bar("2024-01-03", 10.5, 0.05)]}
     new = {"600519.SH": [_bar("2024-01-03", 10.5, 0.05), _bar("2024-01-04", 11.0)]}
-    out, info = merge_bars(old, new)
+    out, _info = merge_bars(old, new)
     assert [r["dt"] for r in out["600519.SH"]] == ["2024-01-02", "2024-01-03", "2024-01-04"]
     assert out["600519.SH"][0] == _bar("2024-01-02", 10.0)               # 历史 dt 保留
 

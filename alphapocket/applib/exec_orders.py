@@ -8,6 +8,7 @@
 单位约定：A 股 ETF/LOF 交易单位 100 份/手；ETF/LOF 免印花税，佣金按万 2.5/单边（最低 ¥5/笔）。
 """
 from __future__ import annotations
+
 import csv
 import io
 import json
@@ -22,7 +23,7 @@ STAMP_DUTY = 0.0005       # 印花税 0.05%（仅 A 股股票卖出）
 
 def _lot(shares: float) -> int:
     """按整手取整（最近整数手），保证委托数量为 100 的整数倍"""
-    return int(round(shares / LOT)) * LOT
+    return round(shares / LOT) * LOT
 
 
 def _fee(amount: float, asset_type: str, direction: str) -> float:
@@ -97,7 +98,7 @@ def build_exec_orders(review: dict, plan: dict, capital: float = 1_000_000.0) ->
                  "note": (("A股股票：佣金双边万2.5（最低 ¥5/笔）+ 印花税卖出 0.05%；ETF/LOF 免印花税"
                            if any(o["asset_type"] == "STOCK" for o in orders) else
                            "ETF/LOF 免印花税；佣金双边万2.5，单笔最低 ¥5")
-                          + "（按基准资金 ¥{:,.0f} 实算）".format(capital))},
+                          + f"（按基准资金 ¥{capital:,.0f} 实算）")},
         "summary": {"n_orders": len(actionable), "n_sell": len(sells), "n_buy": len(buys),
                     "turnover_cny": round(proceeds + outlay, 2),
                     "turnover_pct": round((proceeds + outlay) / capital * 100, 1)},

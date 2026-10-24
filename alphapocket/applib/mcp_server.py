@@ -4,7 +4,10 @@
 ap 自身不调用大模型 —— 推理与编排由宿主 IDE agent 完成（token 计 IDE 订阅）。
 """
 from __future__ import annotations
-import json, sys
+
+import json
+import sys
+
 from .ctx import Ctx
 from .tools import TOOLS, call_tool
 
@@ -39,7 +42,7 @@ def handle(msg: dict, ctx: Ctx) -> dict | None:
             return {"jsonrpc": "2.0", "id": rid, "result": {
                 "content": [{"type": "text", "text": json.dumps(res, ensure_ascii=False, default=str)}],
                 "isError": False}}
-        except Exception as e:  # 工具异常不崩 server
+        except Exception as e:  # noqa: BLE001 - 工具异常不崩 server
             return {"jsonrpc": "2.0", "id": rid, "result": {
                 "content": [{"type": "text", "text": json.dumps({"error": str(e)}, ensure_ascii=False)}],
                 "isError": True}}
