@@ -199,3 +199,13 @@ python deploy/regression/run.py --domain factor
 - 增量回归（变更集 84 文件）：**7 pass / 0 fail / 2 skip**（255s）——core.smoke/api.contract/
   data.r0/factor.audit/core.all/api.semantics/factor.units 全 pass；data.r1 与 factor.golden
   skip 为沙箱重置后真实 workspace 数据面未恢复的设计内跳过（全量绿待基础设施重建后复验）。
+
+**入库与环境状态（2026-10-24 收口核验）**
+
+- 本轮全部改动已提交：`28b6eb1`（85 files，+799/−485——含 ruff 清零 60+ 文件、writeguard
+  真修、`alphapocket/ruff.toml`、本文档 §3.7、回归报告 last.json）；工作区干净；
+- 提交后复核：两仓库 `ruff check .` 全绿（配置已入库，不随环境漂移）；
+- **第三次沙箱重置**（22:10，晚于提交）：`core/.venv` / web·bff `node_modules` / `.ck`
+  缓存再次丢失——已入库成果不受影响；下次跑回归（无论增量/全量）前需先按
+  §3.7 的安装清单重建 venv 与 node_modules，数据面（data.r1/golden）恢复另需
+  基础设施起服 + workspace 重建。
