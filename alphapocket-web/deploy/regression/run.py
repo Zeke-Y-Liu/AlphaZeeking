@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from suite import CORE_FUNCTIONS, MAP, SUITE, TestItem  # noqa: E402
+from suite import CORE_FUNCTIONS, MAP, SUITE, TestItem
 
 ROOT = Path("/workspace")
 REPORT_DIR = Path(__file__).resolve().parent / "reports"
@@ -188,7 +188,7 @@ def _run_item(item: TestItem) -> ItemResult:
     t0 = time.monotonic()
     try:
         r = subprocess.run(item.cmd, cwd=item.cwd, env=env, capture_output=True,
-                           text=True, timeout=item.timeout)
+                           text=True, timeout=item.timeout, check=False)
         res.duration_s = round(time.monotonic() - t0, 1)
         if r.returncode != 0:
             res.status = "fail"

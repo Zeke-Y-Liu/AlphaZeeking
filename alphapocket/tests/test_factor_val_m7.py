@@ -238,9 +238,7 @@ def test_val_ev_ebitda_golden_value(fl_repo, tmp_path):
             r["cash"] = 1e9
             if p == "2020-12-31":
                 r["ebit"], r["dep_amort"] = 4e8, 2e8
-            elif p == "2020-03-31":
-                r["ebit"], r["dep_amort"] = 1e8, 5e7
-            elif p == "2021-03-31":
+            elif p == "2020-03-31" or p == "2021-03-31":
                 r["ebit"], r["dep_amort"] = 1e8, 5e7
             # 其余期（2019Q3/2019FY/2020H1/2020Q3）不注入 → ebit/dep NULL（如实）
     _edit_fund(fl_repo, inject)

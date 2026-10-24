@@ -116,8 +116,8 @@ SUITE: list[TestItem] = [
         [_PY, f"{ROOT}/alphapocket-web/deploy/regression/checks/web_typecheck.py"],
         f"{ROOT}/alphapocket-web/web", timeout=300,
         requires=[_PY, "-c",
-                  "import sys; sys.exit(0 if __import__('pathlib').Path"
-                  "('../core/.venv/bin/python').exists() else 1)"],
+                  ("import sys; sys.exit(0 if __import__('pathlib').Path"
+                   "('../core/.venv/bin/python').exists() else 1)")],
         desc="vue-tsc 基线对比：新增类型错误才 fail（存量错误冻结于基线文件）"),
     TestItem(
         "web.build", "interaction-web", "build",

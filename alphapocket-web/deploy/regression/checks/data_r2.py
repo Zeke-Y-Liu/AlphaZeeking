@@ -58,7 +58,7 @@ def main() -> int:
         return 1
     print(f"同步完成：{job_id}（{waited}s）")
 
-    return subprocess.run([sys.executable, R1]).returncode
+    return subprocess.run([sys.executable, R1], check=False).returncode
 
 
 if __name__ == "__main__":

@@ -14,7 +14,11 @@ import pytest
 
 from applib import backtest as BT
 from applib.factor_backtest import (
-    FactorBacktestError, composite_scores, load_section, run_factor_backtest, select_top,
+    FactorBacktestError,
+    composite_scores,
+    load_section,
+    run_factor_backtest,
+    select_top,
 )
 from factorlib import load_factor, set_status
 from factorlib.materialize import materialize

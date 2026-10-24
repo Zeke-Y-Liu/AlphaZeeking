@@ -17,8 +17,8 @@ from pathlib import Path
 ROOT = Path("/workspace/alphapocket")
 sys.path.insert(0, str(ROOT))
 
-from applib.ctx import Ctx  # noqa: E402
-from applib.runner import VERIFY_SUITE  # noqa: E402
+from applib.ctx import Ctx
+from applib.runner import VERIFY_SUITE
 
 WS = Path("/workspace/alphapocket-web/var/ws/default")
 
