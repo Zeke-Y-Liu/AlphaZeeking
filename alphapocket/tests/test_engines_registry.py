@@ -19,14 +19,29 @@ from applib.engines.base import (
 
 # ── 导出结构完整性 ────────────────────────────────────────────
 
-def test_export_three_engines_and_counts():
+def test_export_four_engines_and_counts():
     r = export_registry_v2()
     assert r["version"] == REGISTRY_VERSION == 2
-    assert set(r["engines"].keys()) == {"alpha", "beta", "macro"}
+    assert set(r["engines"].keys()) == {"alpha", "beta", "macro", "index_trend"}
     assert len(r["engines"]["alpha"]["metrics"]) == len(F.ENGINE_A_FACTORS) == 19
     assert len(r["engines"]["beta"]["metrics"]) == len(F.ENGINE_B_FACTORS) == 6
     assert len(r["engines"]["macro"]["metrics"]) == 13   # 10 macro_liquidity + 3 hk_rates
     assert r["changelog"] == []
+
+
+def test_export_index_trend_engine():
+    """引擎D 导出形态（2026-10-26）：四指数封闭集 + regime 阈值 + dim 恒 None。"""
+    r = export_registry_v2()
+    it = r["engines"]["index_trend"]
+    assert [m["id"] for m in it["metrics"]] \
+        == F.INDEX_TREND_INDEXES == ["ndx", "csi300", "hstech", "chinext"]
+    assert it["regime"] == F.INDEX_TREND_REGIME == {
+        "quantile_win": 252, "ma_fast": 20, "ma_slow": 60,
+        "pos_high": 80.0, "pos_low": 20.0}
+    for m in it["metrics"]:
+        assert m["engine"] == "index_trend" and m["formula"] == "builtin:index_trend"
+        assert m["dim"] is None and m["dataset"] == "index_bars" and m["status"] == "active"
+        assert m["market"] == F.INDEX_TREND_META[m["id"]]["market"]      # 市场归属反演
 
 
 def test_export_matches_factors_constants():
@@ -138,6 +153,26 @@ def test_validate_rejects_bad_entries():
     # 未知 beta 信号
     e = validate_registry(_mutated(lambda r: r["engines"]["beta"]["signals"].append({"id": "sig_new"})))
     assert any("signals" in x for x in e)
+
+
+def test_validate_rejects_bad_index_trend_entries():
+    """引擎D 专属校验（2026-10-26）：封闭集 id / dim=None / regime 键 / 市场归属。"""
+    # 封闭集外的指数 id（新指数须先登记 factors.INDEX_TREND_INDEXES）
+    e = validate_registry(_mutated(
+        lambda r: r["engines"]["index_trend"]["metrics"][0].update(id="sp500")))
+    assert any("指数 id 非法" in x for x in e)
+    # dim 必须为 None（市场级条件变量不入维度评分）
+    e = validate_registry(_mutated(
+        lambda r: r["engines"]["index_trend"]["metrics"][0].update(dim="D1")))
+    assert any("dim" in x for x in e)
+    # regime 键必须 ⊆ 五键白名单
+    e = validate_registry(_mutated(
+        lambda r: r["engines"]["index_trend"].update(regime={"foo": 1})))
+    assert any("index_trend.regime" in x for x in e)
+    # market 非法
+    e = validate_registry(_mutated(
+        lambda r: r["engines"]["index_trend"]["metrics"][0].update(market="JP")))
+    assert any("market 非法" in x for x in e)
 
 
 # ── 加载器（透明降级 + 隔离）──────────────────────────────────

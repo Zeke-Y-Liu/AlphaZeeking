@@ -1,4 +1,4 @@
-"""引擎组件包（T-R2）：三引擎统一入口。
+"""引擎组件包（T-R2）：四引擎统一入口（引擎D·指数趋势 2026-10-26 增补）。
 
 用法：
     from applib import engines as E
@@ -18,12 +18,14 @@ from .base import (
     validate_registry,
 )
 from .beta import BetaEngine
+from .index_trend import IndexTrendEngine
 from .macro import MacroEngine
 
 __all__ = [
     "ENGINES",
     "AlphaEngine",
     "BetaEngine",
+    "IndexTrendEngine",
     "MacroEngine",
     "MetricSpec",
     "export_registry_v2",
@@ -39,6 +41,7 @@ ENGINES: dict[str, object] = {
     "alpha": AlphaEngine(),
     "beta": BetaEngine(),
     "macro": MacroEngine(),
+    "index_trend": IndexTrendEngine(),
 }
 
 
@@ -50,5 +53,5 @@ def get_engine(eid: str):
 
 
 def list_engines() -> list[dict]:
-    """三引擎自描述清单。"""
+    """四引擎自描述清单。"""
     return [e.describe() for e in ENGINES.values()]

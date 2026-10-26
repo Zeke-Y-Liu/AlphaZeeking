@@ -1935,7 +1935,7 @@
     },
     "/api/v1/engines/describe": {
       "get": {
-        "description": "三引擎自描述（id/name/指标数/活跃数/维度权重）。",
+        "description": "四引擎自描述（id/name/指标数/活跃数/维度权重）。",
         "operationId": "describe_engines_api_v1_engines_describe_get",
         "responses": {
           "200": {

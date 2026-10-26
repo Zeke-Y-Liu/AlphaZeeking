@@ -4,7 +4,7 @@
 changelog + 门禁校验），REST 层只做参数透传与响应包装：
 
 - ``GET  /engines/metrics?engine=&status=``：指标清单（含 changelog 计数）；
-- ``GET  /engines/describe``：三引擎自描述（指标数/活跃数/维度权重）；
+- ``GET  /engines/describe``：四引擎自描述（指标数/活跃数/维度权重）；
 - ``POST /engines/metrics``：新增指标（hypothesis_id 必填）；
 - ``PATCH /engines/metrics/{mid}``：修改（部分字段深合并；启停需 hypothesis_id）；
 - ``DELETE /engines/metrics/{mid}``：软删（status=inactive，条目保留）；
@@ -30,8 +30,8 @@ from app.core.errors import AppError, ErrorCode
 
 router = APIRouter(prefix="/engines", tags=["engines"])
 
-# 合法引擎 id（与 applib.engines.base 注册表三键一致）
-_ENGINES = ("alpha", "beta", "macro")
+# 合法引擎 id（与 applib.engines.base 注册表四键一致；引擎D 指数趋势 2026-10-26 增补）
+_ENGINES = ("alpha", "beta", "macro", "index_trend")
 
 
 def _ctx(settings: Annotated[Settings, Depends(get_settings)]) -> Ctx:
@@ -65,11 +65,17 @@ def _dataset_state(ctx: Ctx, dataset: str | None) -> dict[str, Any] | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         series = data.get("series") if isinstance(data, dict) else None
+        if isinstance(series, dict):
+            n_series = len(series)
+        elif isinstance(data, dict) and data and all(isinstance(v, list) for v in data.values()):
+            n_series = len(data)     # 指数/清单形态（如 index_bars：{指数id: [bars]}，无 series 键）
+        else:
+            n_series = 0
         return {
             "dataset": dataset,
             "synced": True,
             "as_of": data.get("as_of") if isinstance(data, dict) else None,
-            "series": len(series) if isinstance(series, dict) else 0,
+            "series": n_series,
         }
     except (OSError, ValueError):
         # 文件损坏视同未同步（透明降级，不抛异常）
@@ -105,13 +111,14 @@ def list_metrics(
 
 @router.get("/describe")
 def describe_engines(ctx: Annotated[Ctx, Depends(_ctx)]) -> dict[str, Any]:
-    """三引擎自描述（id/name/指标数/活跃数/维度权重）。"""
-    from applib.engines import alpha, beta, macro  # noqa: PLC0415 - 延迟导入
+    """四引擎自描述（id/name/指标数/活跃数/维度权重）。"""
+    from applib.engines import alpha, beta, index_trend, macro  # noqa: PLC0415 - 延迟导入
 
     return {"engines": [
         alpha.AlphaEngine().load(ctx.local_repo).describe(),
         beta.BetaEngine().load(ctx.local_repo).describe(),
         macro.MacroEngine().load(ctx.local_repo).describe(),
+        index_trend.IndexTrendEngine().load(ctx.local_repo).describe(),
     ]}
 
 

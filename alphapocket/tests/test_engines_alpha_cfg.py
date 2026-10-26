@@ -73,10 +73,10 @@ def _asof():
 @pytest.fixture(autouse=True)
 def _reset_singletons():
     """防跨用例污染：单例引擎回归内置默认（前后各清一次，防 tmp registry 泄漏）。"""
-    for eid in ("alpha", "beta", "macro"):
+    for eid in ("alpha", "beta", "macro", "index_trend"):
         E.get_engine(eid).registry = None
     yield
-    for eid in ("alpha", "beta", "macro"):
+    for eid in ("alpha", "beta", "macro", "index_trend"):
         E.get_engine(eid).registry = None
 
 

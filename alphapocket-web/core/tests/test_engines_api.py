@@ -40,14 +40,17 @@ def test_list_and_describe(client):
     data = _get(client, "/api/v1/engines/metrics")
     assert data["changelog_n"] >= 0
     engines = {m["engine"] for m in data["metrics"]}
-    assert engines <= {"alpha", "beta", "macro"}
+    assert engines <= {"alpha", "beta", "macro", "index_trend"}
     assert any(m["engine"] == "alpha" for m in data["metrics"])   # 内置默认清单非空
 
     desc = _get(client, "/api/v1/engines/describe")
     ids = {e["id"] for e in desc["engines"]}
-    assert ids == {"alpha", "beta", "macro"}
+    assert ids == {"alpha", "beta", "macro", "index_trend"}
     for e in desc["engines"]:
         assert e["metric_count"] > 0 and e["active_count"] > 0
+    # 引擎D（指数趋势）：describe 透出四指数内置清单（封闭集）
+    it = next(e for e in desc["engines"] if e["id"] == "index_trend")
+    assert it["metric_count"] == 4 and it["active_count"] == 4
 
 
 def test_add_rejects_unknown_engine(client):

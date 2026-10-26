@@ -163,6 +163,11 @@ SUITE: list[TestItem] = [
          "tests/test_factor_val_m7.py", "tests/test_factor_gro_m7.py",
          "tests/test_factor_qua_m7.py", "tests/test_factor_mom_lowvol_m7.py",
          "tests/test_factor_backtest.py",
+         # 引擎C/D 市场级条件变量（2026-10-26 引擎D 增补 index_trend；
+         # 同批补登记引擎C 宏观流动性与注册表四引擎断言，消除 MAP 影响面 gap）
+         "tests/test_macro_liquidity.py", "tests/test_factor_index_trend.py",
+         "tests/test_engines_registry.py", "tests/test_engines_wrap.py",
+         "tests/test_datasets_registry.py",
          # 环境依赖型既有失败（读本体 sandbox/repo/hypothesis 状态登记文件，沙箱
          # 重置后丢失；M7 登记流非因子计算回归面）→ 显式排除并在此登记：
          "--deselect", "tests/test_factor_val_m7.py::test_val_defs_hypothesis_binding",
@@ -172,9 +177,10 @@ SUITE: list[TestItem] = [
          "--deselect",
          "tests/test_factor_mom_lowvol_m7.py::test_defs_hypothesis_binding_and_direction"],
         f"{ROOT}/alphapocket", timeout=600, env=_APPLIB_ENV,
-        desc="因子计算单元集（val/gro/qua/mom/lowvol/backtest）。注："
-             "tests/test_factors_p1.py 的 test_rule_fn_daily_rotation_manual_nav"
-             " 为策略 DSL 既有失败（KeyError 'rule'，非因子计算），不入套件"),
+        desc="因子计算单元集（val/gro/qua/mom/lowvol/backtest + 引擎C 宏观流动性 + "
+             "引擎D 指数趋势 + 注册表四引擎）。注：tests/test_factors_p1.py 的 "
+             "test_rule_fn_daily_rotation_manual_nav 为策略 DSL 既有失败"
+             "（KeyError 'rule'，非因子计算），不入套件"),
     TestItem(
         "factor.audit", "factor", "factor-audit",
         [_PY, "-m", "pytest", "-q", "tests/test_factor_completeness.py"],
@@ -197,6 +203,7 @@ MAP: dict[str, list[str]] = {
     "alphapocket-web/core/migrations/**": ["core.all"],
     "alphapocket-web/core/alembic.ini": ["core.all"],
     "alphapocket-web/web/src/**": ["web.vitest", "web.typecheck", "web.build", "web.e2e"],
+    "alphapocket-web/web/tests/**": ["web.typecheck"],   # 基线文件（typecheck-baseline.txt）更新即校验 typecheck
     "alphapocket-web/web/e2e/**": ["web.e2e"],
     "alphapocket-web/web/playwright.config.*": ["web.e2e"],
     "alphapocket-web/web/package.json": ["web.vitest", "web.typecheck", "web.build", "web.e2e"],
@@ -209,6 +216,9 @@ MAP: dict[str, list[str]] = {
     "alphapocket/applib/industry.py": ["core.all"],
     "alphapocket/applib/runner.py": ["data.r1", "factor.golden"],
     "alphapocket/applib/factor*.py": ["factor.units", "factor.golden", "core.all"],
+    "alphapocket/applib/engines/**": ["factor.units", "core.all"],
+    "alphapocket/applib/tools.py": ["factor.units", "core.all"],
+    "alphapocket/applib/report.py": ["factor.units", "core.all"],
     "alphapocket/applib/strategy*.py": ["factor.units"],
     "alphapocket/tests/**": ["factor.units", "data.r0"],
     "alphapocket/remote/repo/factors/registry.json": ["factor.audit", "factor.units"],

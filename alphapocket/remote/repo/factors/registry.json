@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "updated_at": "2026-10-15T09:15:24+00:00",
+  "updated_at": "2026-10-26T15:14:29+00:00",
   "engines": {
     "alpha": {
       "dim_weights": {
@@ -804,6 +804,73 @@
           "version": 1,
           "hypothesis_id": null,
           "note": "来源 market/hk_rates.json（H-0006 港美利率族）"
+        }
+      ]
+    },
+    "index_trend": {
+      "regime": {
+        "quantile_win": 252,
+        "ma_fast": 20,
+        "ma_slow": 60,
+        "pos_high": 80.0,
+        "pos_low": 20.0
+      },
+      "metrics": [
+        {
+          "id": "ndx",
+          "engine": "index_trend",
+          "formula": "builtin:index_trend",
+          "dim": null,
+          "market": "US",
+          "dataset": "index_bars",
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": "纳斯达克综合（指数趋势：位置百分位 + 均线趋势，市场级条件变量）"
+        },
+        {
+          "id": "csi300",
+          "engine": "index_trend",
+          "formula": "builtin:index_trend",
+          "dim": null,
+          "market": "A",
+          "dataset": "index_bars",
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": "沪深300（指数趋势：位置百分位 + 均线趋势，市场级条件变量）"
+        },
+        {
+          "id": "hstech",
+          "engine": "index_trend",
+          "formula": "builtin:index_trend",
+          "dim": null,
+          "market": "HK",
+          "dataset": "index_bars",
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": "恒生科技（指数趋势：位置百分位 + 均线趋势，市场级条件变量）"
+        },
+        {
+          "id": "chinext",
+          "engine": "index_trend",
+          "formula": "builtin:index_trend",
+          "dim": null,
+          "market": "A",
+          "dataset": "index_bars",
+          "scorer": null,
+          "params": {},
+          "status": "active",
+          "version": 1,
+          "hypothesis_id": null,
+          "note": "创业板指（指数趋势：位置百分位 + 均线趋势，市场级条件变量）"
         }
       ]
     }

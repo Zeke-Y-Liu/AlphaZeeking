@@ -109,6 +109,8 @@ export interface RunSummary {
     signal_states?: unknown;
     /** 引擎C 冻结五键（T-C6 契约）；缺失/旧 run → 前端按 unavailable 降级呈现。 */
     macro_liquidity?: MacroLiquiditySummary | null;
+    /** 引擎D 指数趋势摘要（2026-10-26 契约）；缺失/旧 run → 前端按 unavailable 降级呈现。 */
+    index_trend?: IndexTrendSummary | null;
   } | null;
 }
 
@@ -409,12 +411,35 @@ export interface MacroLiquiditySummary {
   as_of?: string | null;
 }
 
+/** 引擎D 单指数摘要条目（runs.summary.index_trend.indexes[id]，2026-10-26 字段冻结）。 */
+export interface IndexTrendEntry {
+  /** 位置档：high_zone(≥80%) / mid_zone / low_zone(≤20%)；近252根高低区间百分位 */
+  position?: 'high_zone' | 'mid_zone' | 'low_zone' | null;
+  /** 位置百分位 0-100 */
+  pos_q?: number | null;
+  /** 趋势三态：up（MA20上方且20日收益>0）/ down / range */
+  trend?: 'up' | 'down' | 'range' | null;
+  ret_20d?: number | null;
+  close?: number | null;
+  name?: string | null;
+  market?: string | null;
+}
+
+/** 引擎D 指数趋势摘要（runs.summary.index_trend，services.review._index_trend_summary 产出；
+ * 市场级条件变量，不参与权重决策——纪律同引擎C）。 */
+export interface IndexTrendSummary {
+  status?: 'unavailable';
+  error?: string;
+  indexes?: Record<string, IndexTrendEntry>;
+  as_of?: string | null;
+}
+
 /* ── 引擎板块（指标注册表 v2：因子增删改查 + 数据集联动） ── */
 
-/** 单条引擎指标声明（alpha/beta/macro 三引擎同构）。 */
+/** 单条引擎指标声明（alpha/beta/macro/index_trend 四引擎同构）。 */
 export interface EngineMetric {
   id: string;
-  engine: 'alpha' | 'beta' | 'macro' | string;
+  engine: 'alpha' | 'beta' | 'macro' | 'index_trend' | string;
   formula: string;
   dim: string | null;
   market: string | null;
@@ -601,6 +626,39 @@ export interface MacroLiquidityBlock extends MacroLiquiditySummary {
   [key: string]: unknown;
 }
 
+/* ── 引擎D 指数趋势（2026-10-26：位置百分位 + 均线趋势，市场级条件变量）── */
+
+/** 引擎D 单指数全量条目（applib review.json → index_trend.indexes[id]）：
+ * 位置族（pos_q/dist_high/dist_low/position）+ 趋势族（ret_20d/ret_60d/ma_fast/ma_slow/
+ * trend）+ 降级族（status: insufficient/unavailable/inactive）。 */
+export interface IndexTrendDetail extends IndexTrendEntry {
+  status?: string | null;
+  as_of?: string | null;
+  bars_n?: number | null;
+  dist_high?: number | null;
+  dist_low?: number | null;
+  pos_high_252?: number | null;
+  pos_low_252?: number | null;
+  ret_60d?: number | null;
+  ma_fast?: number | null;
+  ma_slow?: number | null;
+  ma_fast_above?: boolean | null;
+  ma_fast_above_slow?: boolean | null;
+  source?: string | null;
+  note?: string | null;
+  error?: string | null;
+  [key: string]: unknown;
+}
+
+/** 引擎D 指数趋势块（applib review.json 全量产物；summary 层由 core 提炼为 IndexTrendSummary）。 */
+export interface IndexTrendBlock {
+  status?: string | null;
+  error?: string | null;
+  as_of?: string | null;
+  indexes?: Record<string, IndexTrendDetail>;
+  [key: string]: unknown;
+}
+
 /* ── 评估产物契约（applib review.json，冻结；方案书 §5.2 / T6.4） ── */
 
 /** 体检指标（review.json → portfolio_metrics）。 */
@@ -688,6 +746,8 @@ export interface ReviewPayload {
   factor_health?: { active?: string[]; weakening?: string[] } | null;
   /** 引擎C regime 块（T-C2/T-C4 全量产物；前端卡片消费 runs.summary 五键，此为报告层扩展）。 */
   macro_liquidity?: MacroLiquidityBlock | null;
+  /** 引擎D 指数趋势块（2026-10-26 全量产物；前端卡片消费 runs.summary.index_trend 摘要）。 */
+  index_trend?: IndexTrendBlock | null;
   data_quality?: {
     last_bar?: string | null;
     calendar_next?: string | null;

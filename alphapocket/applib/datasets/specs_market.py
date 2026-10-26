@@ -142,4 +142,18 @@ SPECS: list[DatasetSpec] = [
                            "单标的失败跳过（fill_missing 用旧值兜底）；分析用数据面，不进六项对账",
                            "东方财富")],
         note="个股新闻：单公司分析「最新消息」模块数据面（港美无公开接口）"),
+    DatasetSpec(
+        name="index_bars", path="market/index_bars.json", category="market",
+        merge_policy="fill_missing", always=True, duckdb_table=None,
+        verifications=[],
+        sources=[SourceRef("index_daily", "primary",
+                           "ndx: ak.index_us_stock_sina(.IXIC)；csi300/chinext: "
+                           "ak.stock_zh_index_daily(sh000300/sz399006)；"
+                           "hstech: ak.stock_hk_index_daily_sina(HSTECH)",
+                           "指数清单与 factors.INDEX_TREND_INDEXES 对拍（封闭集）；"
+                           "单指数失败跳过（fill_missing 用旧值兜底）；2026-10-26 实测："
+                           "港股指数须用代码 HSTECH（中文名报 KeyError）；"
+                           "分析用数据面，不进六项对账",
+                           "新浪财经")],
+        note="引擎D 指数趋势数据面（第一批四指数日线，与持仓 universe 无关，恒拉取）"),
 ]

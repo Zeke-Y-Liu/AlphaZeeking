@@ -70,9 +70,9 @@ def test_get_engine_unknown_raises():
         get_engine("nope")
 
 
-def test_list_engines_three():
+def test_list_engines_four():
     ds = list_engines()
-    assert [d["id"] for d in ds] == ["alpha", "beta", "macro"]
+    assert [d["id"] for d in ds] == ["alpha", "beta", "macro", "index_trend"]
     assert all({"name", "kind", "metric_count", "active_count"} <= set(d) for d in ds)
 
 
@@ -80,6 +80,10 @@ def test_metrics_counts_and_active():
     assert get_engine("alpha").metrics() and len(get_engine("alpha").metrics()) == 19
     assert len(get_engine("beta").metrics()) == 6
     assert len(get_engine("macro").metrics()) == 13
+    # 引擎D：四指数封闭集（第一批 2026-10-26），dim 恒 None（市场级条件变量）
+    assert [m.id for m in get_engine("index_trend").metrics()] \
+        == F.INDEX_TREND_INDEXES == ["ndx", "csi300", "hstech", "chinext"]
+    assert all(m.dim is None for m in get_engine("index_trend").metrics())
     for eng in ENGINES.values():
         assert eng.active_ids() == {m.id for m in eng.metrics()}      # 全默认 active
         assert eng.describe()["active_count"] == eng.describe()["metric_count"]

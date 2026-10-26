@@ -35,9 +35,13 @@ BETA_SIGNAL_IDS = tuple(F.ENGINE_B_SIGNAL_IDS)
 ALPHA_ANCHOR_KEYS = ("s_val", "s_qua", "s_gro", "s_mom", "s_dvd", "s_lvol")
 BETA_DEFAULT_KEYS = ("win", "band", "band_sigma", "bias_thresh", "vpd_thresh", "pct_window")
 MACRO_REGIME_KEYS = ("chg_win", "peg_strong", "peg_weak", "carry_widen_pt")
+# 引擎D（指数趋势，2026-10-26）：指数 registry 节的 regime 合法键 + 引擎键集
+INDEX_TREND_REGIME_KEYS = ("quantile_win", "ma_fast", "ma_slow", "pos_high", "pos_low")
+ENGINE_IDS = ("alpha", "beta", "macro", "index_trend")
 
 # 代码内置公式清单（formula 形如 "builtin:<id>"；T-R7 add 校验用；
-# macro_series = 引擎C 序列打分型指标（scorer 驱动），scorer 型公式的唯一合法值）
+# macro_series = 引擎C 序列打分型指标（scorer 驱动），scorer 型公式的唯一合法值；
+# index_trend = 引擎D 指数条目公式（compute_index_trend，指数即「指标」形态登记））
 KNOWN_FORMULAS = frozenset({
     # 引擎 A（factors.compute_alpha）
     "pe_ttm_pit", "pb_pit", "pctile_pe_5y", "pctile_pb_5y", "div_yield_ttm",
@@ -48,18 +52,20 @@ KNOWN_FORMULAS = frozenset({
     "mom", "vol", "ma_break", "high_touch", "dist_high", "amt_pctile",
     # 引擎 C（factors.compute_macro_liquidity：scorer 型序列指标）
     "macro_series",
+    # 引擎 D（factors.compute_index_trend：指数趋势条目）
+    "index_trend",
 })
 
 
 @dataclass
 class MetricSpec:
-    """注册表中的单条指标声明（三引擎同构）。"""
+    """注册表中的单条指标声明（四引擎同构）。"""
     id: str
-    engine: str                       # "alpha" | "beta" | "macro"
+    engine: str                       # "alpha" | "beta" | "macro" | "index_trend"
     formula: str                      # "builtin:<公式id>"；macro 引擎用 scorer 字段
-    dim: str | None = None            # alpha: ALPHA_DIMS；macro: D1..D4；beta: None
-    market: str | None = None         # 仅 macro："A"|"HK"|"US"
-    dataset: str | None = None        # 仅 macro：数据来源数据集名
+    dim: str | None = None            # alpha: ALPHA_DIMS；macro: D1..D4；beta/index_trend: None
+    market: str | None = None         # macro/index_trend："A"|"HK"|"US"
+    dataset: str | None = None        # macro/index_trend：数据来源数据集名
     scorer: dict | None = None        # 仅 macro：{"type": ..., "arg": ...}
     params: dict = field(default_factory=dict)
     status: str = "active"
@@ -198,6 +204,21 @@ def _macro_metrics() -> list[dict]:
     return out
 
 
+def _index_metrics() -> list[dict]:
+    """引擎D 指数条目（2026-10-26 第一批四指数，从 F.INDEX_TREND_META 反演）。
+
+    指数即「指标」形态登记：一条 metric = 一只指数（id 即指数 id），启停即该指数
+    是否参与评估（active_ids 语义）；dim 恒 None（市场级条件变量不入维度评分）。
+    """
+    return [{
+        "id": iid, "engine": "index_trend", "formula": "builtin:index_trend",
+        "dim": None, "market": meta.get("market"), "dataset": "index_bars",
+        "scorer": None, "params": {}, "status": "active", "version": 1,
+        "hypothesis_id": None,
+        "note": f"{meta.get('name')}（指数趋势：位置百分位 + 均线趋势，市场级条件变量）",
+    } for iid, meta in F.INDEX_TREND_META.items()]
+
+
 def export_registry_v2() -> dict:
     """从 factors.py 现有常量导出完整 v2 注册表（内存产物，不落盘；落盘写保护在 T-R6）。"""
     return {
@@ -231,6 +252,10 @@ def export_registry_v2() -> dict:
                 "regime": dict(_MACRO_REGIME),
                 "metrics": _macro_metrics(),
             },
+            "index_trend": {
+                "regime": dict(F.INDEX_TREND_REGIME),
+                "metrics": _index_metrics(),
+            },
         },
         "changelog": [],
     }
@@ -251,11 +276,11 @@ def validate_registry(reg: dict) -> list[str]:
     if reg.get("version") != REGISTRY_VERSION:
         _err(f"version 必须为 {REGISTRY_VERSION}（实际 {reg.get('version')!r}）")
     eng = reg.get("engines")
-    if not isinstance(eng, dict) or set(eng.keys()) != {"alpha", "beta", "macro"}:
-        _err("engines 必须含且仅含 alpha/beta/macro 三键")
+    if not isinstance(eng, dict) or set(eng.keys()) != set(ENGINE_IDS):
+        _err(f"engines 必须含且仅含 {'/'.join(ENGINE_IDS)} 四键")
         return errs
 
-    for eid in ("alpha", "beta", "macro"):
+    for eid in ENGINE_IDS:
         sec = eng[eid]
         if not isinstance(sec, dict):
             _err(f"engines.{eid} 必须是 dict")
@@ -338,6 +363,20 @@ def validate_registry(reg: dict) -> list[str]:
         sc = m.get("scorer")
         if sc is not None and (not isinstance(sc, dict) or sc.get("type") not in SCORER_TYPES):
             errs.append(f"macro 指标 {m.get('id')} 的 scorer.type 非法：{sc!r}")
+
+    # index_trend 专属（引擎D，2026-10-26）：指数清单封闭集 + regime 键 + 市场归属
+    it = eng["index_trend"]
+    irg = it.get("regime")
+    if not isinstance(irg, dict) or not set(irg.keys()) <= set(INDEX_TREND_REGIME_KEYS):
+        errs.append(f"index_trend.regime 键必须 ⊆ {list(INDEX_TREND_REGIME_KEYS)}")
+    for m in it.get("metrics", []):
+        if m.get("id") not in F.INDEX_TREND_INDEXES:
+            errs.append(f"index_trend 指数 id 非法：{m.get('id')!r}（"
+                        f"须 ∈ {list(F.INDEX_TREND_INDEXES)}；新指数需先在 factors.py 登记清单）")
+        if m.get("market") not in MACRO_MARKETS:
+            errs.append(f"index_trend 指数 {m.get('id')} 的 market 非法：{m.get('market')!r}")
+        if m.get("dim") is not None:
+            errs.append(f"index_trend 指数 {m.get('id')} 的 dim 必须为 None（市场级条件变量不入维度）")
 
     # changelog 结构
     cl = reg.get("changelog", [])
@@ -599,8 +638,8 @@ def apply_metric_change(reg: dict, engine_id: str, change: dict) -> tuple[dict, 
     """
     if not isinstance(reg, dict) or not isinstance(reg.get("engines"), dict):
         raise ValueError("注册表结构不可识别（engines 节缺失）——先 `ap clone` 同步")  # noqa: TRY004 - ValueError 为契约语义
-    if engine_id not in ("alpha", "beta", "macro"):
-        raise ValueError(f"未知引擎：{engine_id}（可选 alpha/beta/macro）")
+    if engine_id not in ENGINE_IDS:
+        raise ValueError(f"未知引擎：{engine_id}（可选 {'/'.join(ENGINE_IDS)}）")
     op = change.get("op")
     if op not in ("add", "update", "remove", "show"):
         raise ValueError(f"未知操作：{op!r}（可选 add/update/remove/show）")

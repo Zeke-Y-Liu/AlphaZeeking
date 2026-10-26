@@ -222,6 +222,105 @@ def _macro_md(review) -> list:
     return L
 
 
+# ── ②.6 指数级别趋势（引擎D，2026-10-26）：位置百分位 + 均线趋势（市场级条件变量）──
+_IT_TREND_TXT = {"up": "上行", "down": "下行", "range": "震荡"}
+_IT_POS_TXT = {"high_zone": "高位区", "mid_zone": "中位区", "low_zone": "低位区"}
+_IT_MKT_TXT = {"A": "A股", "HK": "港股", "US": "美股"}
+
+
+def _it_active_indexes(it) -> list:
+    """按 factors.INDEX_TREND_INDEXES 规范序取可用指数条目（跳过 unavailable/insufficient/inactive）。"""
+    from . import factors as F
+    idx = it.get("indexes") or {}
+    return [(k, idx[k]) for k in F.INDEX_TREND_INDEXES if k in idx
+            and idx[k].get("status") in (None, "active") and idx[k].get("pos_q") is not None]
+
+
+def _index_trend_html(review) -> str:
+    it = review.get("index_trend") or {}
+    head = ('<h2>②.6 指数级别趋势<em>Engine D · 市场级条件变量（不构成买卖信号）</em></h2>')
+    if it.get("status") == "unavailable":
+        err = it.get("error") or "数据未同步"
+        return (f'{head}<div class="meta" style="padding:6px 0">'
+                f'指数趋势数据未同步（不影响本报告其余结论） · 原因：{err}</div>')
+    h = [head, '<div class="card">']
+    idx = it.get("indexes") or {}
+    for k, e in idx.items():                        # 位置温度计：每指数近252根高低区间百分位
+        if e.get("status") == "inactive":
+            h.append(f'<div class="meta" style="padding:2px 0">· {e.get("name") or k}'
+                     f'（{_IT_MKT_TXT.get(e.get("market"), "—")}）已停用（registry）</div>')
+            continue
+        if e.get("status") in ("unavailable", "insufficient"):
+            h.append(f'<div class="meta" style="padding:2px 0">· {e.get("name") or k}'
+                     f'（{_IT_MKT_TXT.get(e.get("market"), "—")}）'
+                     f'{e.get("note") or "数据不可用：" + str(e.get("error") or "序列不足")}</div>')
+            continue
+        pq = e.get("pos_q")
+        h.append(f'<div style="display:flex;align-items:center;gap:9px;margin:5px 0">'
+                 f'<span style="font-size:11px;width:88px;flex:0 0 auto">{e.get("name") or k}'
+                 f' <span style="font-size:9px;color:var(--mute)">{_IT_MKT_TXT.get(e.get("market"), "")}</span></span>'
+                 f'<span style="flex:1"><span class="pctbar" style="display:block">'
+                 f'<i style="width:{pq:.0f}%"></i></span></span>'
+                 f'<span class="mono" style="font-size:10px;width:120px;text-align:right;flex:0 0 auto">'
+                 f'{_IT_POS_TXT.get(e.get("position"), "?")} {pq:.0f}%'
+                 f' · <span class="{("up" if e.get("trend") == "up" else "down" if e.get("trend") == "down" else "")}">'
+                 f'{"↑" if e.get("trend") == "up" else "↓" if e.get("trend") == "down" else "→"} '
+                 f'{_IT_TREND_TXT.get(e.get("trend"), "?")}</span></span></div>')
+    act = _it_active_indexes(it)
+    if act:
+        rows = ""
+        for k, e in act:
+            rows += (f'<tr><td><b>{e.get("name") or k}</b> <span style="font-size:9px;color:var(--mute">'
+                     f'{_IT_MKT_TXT.get(e.get("market"), "")}</span></td>'
+                     f'<td class="mono">{_num(e.get("close"))}</td>'
+                     f'<td class="mono">{_IT_POS_TXT.get(e.get("position"), "?")} · {e.get("pos_q"):.0f}%'
+                     f'<br><span style="font-size:9px;color:var(--mute)">距高点 {_pct(e.get("dist_high"))}'
+                     f' / 距低点 {_pct(e.get("dist_low"))}</span></td>'
+                     f'<td class="mono {_cls(e.get("ret_20d"))}">{_pct(e.get("ret_20d"))}</td>'
+                     f'<td class="mono {_cls(e.get("ret_60d"))}">{_pct(e.get("ret_60d"))}</td>'
+                     f'<td class="mono">{_num(e.get("ma_fast"), 1)} / {_num(e.get("ma_slow"), 1)}'
+                     f'<br><span style="font-size:9px;color:var(--mute)">快线{"在" if e.get("ma_fast_above") else "不在"}'
+                     f'价格上方 · {"金叉" if e.get("ma_fast_above_slow") else "未金叉"}</span></td>'
+                     f'<td class="{"up" if e.get("trend") == "up" else "down" if e.get("trend") == "down" else ""}">'
+                     f'{_IT_TREND_TXT.get(e.get("trend"), "?")}</td></tr>')
+        h.append(f'<div style="margin-top:10px"><div class="meta">指数明细（位置 = 近252交易日高低区间百分位；'
+                 f'趋势 = 收盘对 MA20 位置与 20 日收益同向判定）</div>'
+                 f'<table><tr><th>指数</th><th>收盘</th><th>位置</th><th>20日</th><th>60日</th>'
+                 f'<th>MA20/MA60</th><th>趋势</th></tr>{rows}</table></div>')
+    h.append('<div class="warn"><span>◇</span><div>'
+             '<div>· 引擎D 为市场级条件变量，不参与权重决策、不产生买卖信号（纪律同引擎C）</div>'
+             '<div>· 位置百分位基于近 252 根收盘价区间，非估值口径；高位区提示拥挤、低位区提示超跌，'
+             '不构成顶底判断</div></div></div></div>')
+    return "".join(h)
+
+
+def _index_trend_md(review) -> list:
+    it = review.get("index_trend") or {}
+    L = ["## 指数级别趋势（引擎D · 市场级条件变量，不构成买卖信号）"]
+    if it.get("status") == "unavailable":
+        L += [f"- 指数趋势数据未同步（不影响本报告其余结论）{('：' + it['error']) if it.get('error') else ''}", ""]
+        return L
+    idx = it.get("indexes") or {}
+    off = [e.get("name") or k for k, e in idx.items()
+           if e.get("status") in ("unavailable", "insufficient", "inactive")]
+    if off:
+        L.append(f"- 数据不可用/已停用：{'、'.join(off)}")
+    act = _it_active_indexes(it)
+    if act:
+        L += ["| 指数 | 收盘 | 位置 | 距高点 | 20日 | 60日 | 趋势 |",
+              "| --- | --- | --- | --- | --- | --- | --- |"]
+        for k, e in act:
+            tr = {"up": "上行", "down": "下行", "range": "震荡"}.get(e.get("trend"), "?")
+            L.append(f"| {e.get('name') or k}（{_IT_MKT_TXT.get(e.get('market'), '')}）"
+                     f" | {_num(e.get('close'))} | {_IT_POS_TXT.get(e.get('position'), '?')} {e.get('pos_q'):.0f}% "
+                     f"| {_pct(e.get('dist_high'))} | {_pct(e.get('ret_20d'))} "
+                     f"| {_pct(e.get('ret_60d'))} | {tr} |")
+    L += ["", "口径注记：",
+          "- 引擎D 为市场级条件变量，不参与权重决策、不产生买卖信号（纪律同引擎C）",
+          "- 位置百分位基于近 252 根收盘价区间，非估值口径", ""]
+    return L
+
+
 def _verify_rows(verify):
     rows = ""
     for k, v in verify.items():
@@ -320,6 +419,9 @@ def render_html(review, plan, ctx: Ctx, run_id: str, code_ver, ds_commit, verify
 
     # ②.5 宏观流动性（引擎C：市场级条件变量，不产生信号、不参与权重决策）
     h.append(_macro_html(review))
+
+    # ②.6 指数级别趋势（引擎D：位置百分位 + 均线趋势，市场级条件变量，同引擎C 纪律）
+    h.append(_index_trend_html(review))
 
     # ③ 中长期因子评估（引擎 A）
     rows = ""
@@ -439,6 +541,7 @@ def render_md(review, plan, run_id, code_ver, ds_commit, verify) -> str:
     L.append(f"- 当日 {_pct(pm['day_ret'])} · 近20日 {_pct(pm['ret_20d'])} · 年初至今 {_pct(pm['ret_ytd'])} · 近一年 {_pct(pm['ret_1y'])} · 一年最大回撤 {_pct(pm['max_dd_1y'])}")
     L.append(f"- {pm['method']} · {review['note']}\n")
     L.extend(_macro_md(review))
+    L.extend(_index_trend_md(review))
     L.append("## ③ 中长期因子评估（引擎A）\n| 标的 | PE-TTM(分位) | PB(分位) | 股息率 | ROE-TTM | 营收同比 | 净利同比 | 动量12-1 | 年化波动 | 五维 | 综合 |")
     L.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for p in review["positions"]:

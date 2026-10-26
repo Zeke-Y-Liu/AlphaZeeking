@@ -418,3 +418,51 @@ def test_build_summary_macro_unavailable() -> None:
     assert bad == {"status": "unavailable", "error": "x"}
     assert "markets" not in bad
     assert _macro_summary({}) == {"status": "unavailable", "error": None}
+
+
+# ── 引擎D：runs.summary.index_trend 冻结字段（2026-10-26，纯函数单测）──
+from app.services.review import _index_trend_summary  # noqa: E402
+
+
+def test_build_summary_index_trend_fields() -> None:
+    """正常 review → summary.index_trend 四指数位置/趋势一屏（insufficient 不入摘要）。"""
+    review = {
+        "as_of": "2026-10-26",
+        "portfolio_metrics": {"nav": 1.05},
+        "positions": [{"beta": {"state": "above"}}],
+        "signals": [],
+        "index_trend": {
+            "as_of": "2026-10-24",
+            "indexes": {
+                "ndx": {"position": "high_zone", "pos_q": 88.5, "trend": "up",
+                        "ret_20d": 0.041, "close": 26100.3,
+                        "name": "纳斯达克综合", "market": "US"},
+                "hstech": {"position": "low_zone", "pos_q": 12.4, "trend": "down",
+                           "ret_20d": -0.062, "close": 3888.1,
+                           "name": "恒生科技", "market": "HK"},
+                "chinext": {"status": "insufficient", "note": "序列不足",
+                            "name": "创业板指", "market": "A"},
+            },
+        },
+    }
+    its = _build_summary(review)["index_trend"]
+    assert its == {
+        "as_of": "2026-10-24",
+        "indexes": {
+            "ndx": {"position": "high_zone", "pos_q": 88.5, "trend": "up",
+                    "ret_20d": 0.041, "close": 26100.3,
+                    "name": "纳斯达克综合", "market": "US"},
+            "hstech": {"position": "low_zone", "pos_q": 12.4, "trend": "down",
+                       "ret_20d": -0.062, "close": 3888.1,
+                       "name": "恒生科技", "market": "HK"},
+        },                                    # insufficient 条目不入摘要
+    }
+    assert _index_trend_summary(review) == its
+
+
+def test_build_summary_index_trend_unavailable() -> None:
+    """unavailable 原样透传；缺 index_trend 键 → unavailable 兜底（error=None）。"""
+    bad = _index_trend_summary({"index_trend": {"status": "unavailable", "error": "数据未同步"}})
+    assert bad == {"status": "unavailable", "error": "数据未同步"}
+    assert "indexes" not in bad
+    assert _index_trend_summary({}) == {"status": "unavailable", "error": None}

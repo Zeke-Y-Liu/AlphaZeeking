@@ -33,6 +33,19 @@ MACRO_FACTORS = ["m2_yoy", "tsf_new_12m", "shibor_1m", "lpr_1y", "rrr_big", "cn_
                  "us_10y_2y", "fed_target", "us_cpi_yoy", "us_cpi_surprise"]
 MACRO_DIM_WEIGHTS = {"D1": 0.30, "D2": 0.25, "D3": 0.25, "D4": 0.20}
 
+# 引擎D 指数趋势指数族（市场级条件变量，2026-10-26 Goal：第一批四指数）。
+# id 集与 datasource._INDEX_FETCH 拉取清单对拍（tests/test_factor_index_trend.py 锚定）；
+# registry 登记形态（engines.index_trend.metrics）由 engines.base._index_metrics 导出。
+INDEX_TREND_INDEXES = ["ndx", "csi300", "hstech", "chinext"]
+INDEX_TREND_META = {
+    "ndx":     {"name": "纳斯达克综合", "market": "US"},
+    "csi300":  {"name": "沪深300", "market": "A"},
+    "hstech":  {"name": "恒生科技", "market": "HK"},
+    "chinext": {"name": "创业板指", "market": "A"},
+}
+INDEX_TREND_REGIME = {"quantile_win": 252, "ma_fast": 20, "ma_slow": 60,
+                      "pos_high": 80.0, "pos_low": 20.0}
+
 # 五维默认权重（锚点：与历史硬编码一致；R1 敏感度扫描通过 compute_alpha(weights=...) 覆盖）
 DEFAULT_DIM_WEIGHTS = {"估值": .25, "质量": .25, "成长": .20, "动量": .15, "红利低波": .15}
 
@@ -819,3 +832,114 @@ def compute_macro_liquidity(series: dict, hk_series: list | None = None,
     return {"as_of": as_of, "markets": markets,
             "global": {"score": gs, "level": g_level, "state": state},
             "indicators": indicators, "notes": notes}
+
+
+# ── 引擎D：指数级别趋势（纯函数，零 IO；2026-10-26 新 Goal）──────────────
+
+
+def _it_ma(closes: list[float], n: int) -> float | None:
+    """近 n 根简单均线；窗口不足 → None（透明降级）。"""
+    return sum(closes[-n:]) / n if len(closes) >= n else None
+
+
+def _it_ret(closes: list[float], n: int) -> float | None:
+    """n 日区间收益 = 末收 / 前n收 - 1；序列不足 → None。"""
+    return closes[-1] / closes[-1 - n] - 1 if len(closes) > n and closes[-1 - n] else None
+
+
+def compute_index_trend(bars: dict, as_of: str | None = None,
+                        quantile_win: int = 252, ma_fast: int = 20, ma_slow: int = 60,
+                        pos_high: float = 80, pos_low: float = 20,
+                        active_ids: set | None = None,
+                        meta: dict | None = None) -> dict:
+    """指数级别趋势：当前位置 + 趋势判断（市场级条件变量，不产生买卖信号）。
+
+    纯函数：入参 dict → 出参 dict，零 IO / 零网络 / 确定性（同引擎C 纪律）。
+
+    - ``bars``：``market/index_bars.json`` 的 series（{index_id: [{dt, close}, …]}）；
+      清洗：剔 None 收盘、按 ``as_of`` 截断（PIT 口径，日线级别无前视）；
+    - ``active_ids``：registry status=active 指数白名单（None = 全部参与）。
+      停用指数仍登记行情（close/as_of）+ ``missing: "inactive"``，不产出
+      趋势/位置判断（对齐引擎C inactive 语义：登记可见、不打分）；
+    - ``meta``：index_bars.json 落盘 meta（{id: {name/market/source}}）透传。
+
+    每指数输出（对照需求「当前的位置和趋势判断」）：
+    - **位置**：``pos_q`` 末收在近 ``quantile_win`` 根收盘高低区间的百分位（0-100，
+      平区间恒 50）、``dist_high`` / ``dist_low`` 距区间高/低点距离（负=低于）；
+      ``position`` 三档：high_zone（≥ pos_high）/ low_zone（≤ pos_low）/ mid_zone；
+    - **趋势**：``ret_fast``(20日) / ``ret_slow``(60日) 区间收益、``ma_fast`` / ``ma_slow``
+      均线、``ma_fast_above``（末收 > 快线）、``ma_fast_above_slow``（快线 > 慢线，
+      数据不足为 None 仅作观察）；``trend`` 三态判定：up（快线上方 且 20 日收益 > 0）
+      / down（快线下方 且 20 日收益 < 0）/ range（方向不一致或证据缺失）；
+    - **降级**：序列 < ma_fast + 1 根 → ``status: insufficient``（核心判断不适用）；
+      序列空 → ``status: unavailable``；全部指数缺失 → 顶层 unavailable。
+
+    输出：``{as_of, indexes: {id: {…}}}``；调用方（portfolio_review）失败透明降级。
+    """
+    if not isinstance(bars, dict) or not bars:
+        return {"status": "unavailable", "error": "指数序列为空"}
+    # as_of 缺省 = 各指数序列末点最大值（同引擎C 口径）
+    all_dts = [r.get("dt") for rows in bars.values() if isinstance(rows, list)
+               for r in rows if isinstance(r, dict) and r.get("dt")]
+    as_of = as_of or (max(all_dts) if all_dts else None)
+
+    def _clean(rows) -> list:
+        return [(r["dt"], r["close"]) for r in (rows or [])
+                if isinstance(r, dict) and r.get("dt") and r.get("close") is not None
+                and (as_of is None or r["dt"] <= as_of)]
+
+    indexes: dict[str, dict] = {}
+    for key in sorted(bars):
+        if not isinstance(bars[key], list):
+            continue
+        # meta 透传与数据可用性无关：降级分支（inactive/unavailable/insufficient）
+        # 同样登记 name/market/source（报告/前端均按 name 展示，避免「chinext（—）」）
+        m = meta.get(key) if (isinstance(meta, dict)
+                              and isinstance(meta.get(key), dict)) else None
+        nm = ({"name": m.get("name"), "market": m.get("market"),
+               "source": m.get("source")} if m else {})
+        pts = _clean(bars[key])
+        if active_ids is not None and key not in active_ids:
+            if pts:
+                indexes[key] = {**nm, "status": "inactive", "missing": "inactive",
+                                "close": pts[-1][1], "as_of": pts[-1][0]}
+            else:
+                indexes[key] = {**nm, "status": "inactive", "missing": "inactive"}
+            continue
+        if not pts:
+            indexes[key] = {**nm, "status": "unavailable"}
+            continue
+        closes = [c for _, c in pts]
+        entry: dict = {"close": closes[-1], "as_of": pts[-1][0], "bars_n": len(closes)}
+        if len(closes) < ma_fast + 1:
+            indexes[key] = {**entry, **nm, "status": "insufficient",
+                            "note": f"序列不足 {ma_fast + 1} 根（快均线 {ma_fast} + 区间收益），"
+                                    "趋势/位置判断不适用"}
+            continue
+        # ── 位置：近 quantile_win 根区间百分位 + 距高/低点 ──
+        win = closes[-quantile_win:] if quantile_win > 0 else closes
+        hi, lo = max(win), min(win)
+        pos_q = 50.0 if hi == lo else (closes[-1] - lo) / (hi - lo) * 100.0
+        entry.update({"pos_q": round(pos_q, 1),
+                      "dist_high": closes[-1] / hi - 1 if hi else None,
+                      "dist_low": closes[-1] / lo - 1 if lo else None,
+                      "pos_high_252": hi, "pos_low_252": lo,
+                      "position": ("high_zone" if pos_q >= pos_high
+                                   else "low_zone" if pos_q <= pos_low else "mid_zone")})
+        # ── 趋势：均线结构 + 区间收益 → 三态 ──
+        ma_f, ma_s = _it_ma(closes, ma_fast), _it_ma(closes, ma_slow)
+        ret_f, ret_s = _it_ret(closes, ma_fast), _it_ret(closes, ma_slow)
+        above = closes[-1] > ma_f if ma_f is not None else None
+        entry.update({"ret_20d": ret_f, "ret_60d": ret_s,
+                      "ma_fast": ma_f, "ma_slow": ma_s,
+                      "ma_fast_above": above,
+                      "ma_fast_above_slow": (ma_f > ma_s
+                                             if (ma_f is not None and ma_s is not None) else None)})
+        entry["trend"] = ("up" if (above is True and (ret_f or 0) > 0)
+                          else "down" if (above is False and (ret_f or 0) < 0)
+                          else "range")
+        entry.update(nm)                    # name/market/source（循环头已解析）
+        indexes[key] = entry
+    if not indexes:
+        return {"status": "unavailable", "error": "指数序列为空"}
+    return {"as_of": as_of, "indexes": indexes}

@@ -10,6 +10,7 @@ import { ApMarketBadge } from '../components/ui';
 import { ApiError } from '../api/types';
 import type {
   DataRisk,
+  IndexTrendEntry,
   MacroLiquiditySummary,
   Portfolio,
   ReviewPayload,
@@ -167,6 +168,57 @@ function macroTone(lv: number | null | undefined): BadgeTone {
 function fmtSigned(v?: number | null): string {
   if (v == null || !Number.isFinite(v)) return DASH;
   return `${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
+}
+
+/* ── 引擎D 指数级别趋势（市场级条件变量，不构成买卖信号；纪律同引擎C） ── */
+const indexTrend = computed(
+  () =>
+    (run.value?.summary as { index_trend?: IndexTrendSummaryLike } | null | undefined)
+      ?.index_trend ?? null,
+);
+const indexTrendUnavailable = computed(() => indexTrend.value?.status === 'unavailable');
+/** 四指数规范展示序（与 applib factors.INDEX_TREND_INDEXES 对齐；旧 run 缺失键自然跳过）。 */
+const IT_ORDER = ['ndx', 'csi300', 'hstech', 'chinext'] as const;
+/** 行类型显式收窄（vue-tsc 不透传 filter 谓词，模板访问 r.e 需非可选）。 */
+interface IndexTrendRow {
+  id: (typeof IT_ORDER)[number];
+  e: IndexTrendEntry;
+}
+const indexTrendRows = computed<IndexTrendRow[]>(() =>
+  IT_ORDER.map((id) => ({ id, e: indexTrend.value?.indexes?.[id] })).filter(
+    (r): r is IndexTrendRow => Boolean(r.e),
+  ),
+);
+const IT_POS_TEXT: Record<string, string> = { high_zone: '高位区', mid_zone: '中位区', low_zone: '低位区' };
+const IT_TREND_TEXT: Record<string, string> = { up: '上行', down: '下行', range: '震荡' };
+const IT_MKT_TEXT: Record<string, string> = { A: 'A股', HK: '港股', US: '美股' };
+
+function itPosText(p?: string | null): string {
+  return p ? (IT_POS_TEXT[p] ?? '—') : '—';
+}
+
+function itTrendText(t?: string | null): string {
+  return t ? (IT_TREND_TEXT[t] ?? '—') : '—';
+}
+
+function itTrendTone(t?: string | null): BadgeTone {
+  if (t === 'up') return 'danger';
+  if (t === 'down') return 'success';
+  return 'info';
+}
+
+function itPosTone(p?: string | null): BadgeTone {
+  if (p === 'high_zone') return 'warn';
+  if (p === 'low_zone') return 'success';
+  return 'default';
+}
+
+/** summary 层 index_trend 形态（IndexTrendSummary 运行时引用，避免与产物层 Block 混淆）。 */
+interface IndexTrendSummaryLike {
+  status?: string;
+  error?: string;
+  indexes?: Record<string, IndexTrendEntry>;
+  as_of?: string | null;
 }
 
 /* ── 下一交易日指引 ────────────────────────────── */
@@ -487,6 +539,42 @@ onMounted(load);
               <p v-else class="ap-muted">暂无宏观数据</p>
             </ApCard>
 
+            <ApCard title="引擎D · 指数级别趋势">
+              <p v-if="indexTrendUnavailable" class="ap-muted" data-test="index-trend-unavailable">
+                指数趋势数据未同步（不影响其余评估）
+              </p>
+              <template v-else-if="indexTrendRows.length">
+                <div
+                  v-for="r in indexTrendRows"
+                  :key="r.id"
+                  class="ap-row it-row"
+                >
+                  <span class="it-name">
+                    {{ r.e.name ?? r.id }}
+                    <span class="ap-muted">{{ IT_MKT_TEXT[r.e.market ?? ''] ?? '' }}</span>
+                  </span>
+                  <span class="it-posbar" :data-test="`it-posbar-${r.id}`">
+                    <i :style="{ width: `${Math.round(r.e.pos_q ?? 0)}%` }" />
+                  </span>
+                  <ApBadge :tone="itPosTone(r.e.position)" :data-test="`it-pos-${r.id}`">
+                    {{ itPosText(r.e.position) }} {{ Math.round(r.e.pos_q ?? 0) }}%
+                  </ApBadge>
+                  <ApBadge :tone="itTrendTone(r.e.trend)" :data-test="`it-trend-${r.id}`">
+                    {{ itTrendText(r.e.trend) }}
+                  </ApBadge>
+                  <span class="ap-mono" :data-test="`it-ret20-${r.id}`">
+                    20日 {{ fmtPct(r.e.ret_20d) }}
+                  </span>
+                  <span class="ap-mono">收盘 {{ fmtNum(r.e.close) }}</span>
+                </div>
+                <p class="ap-muted macro-note" data-test="index-trend-note">
+                  市场级条件变量，不构成买卖信号 · 位置 = 近252交易日高低区间百分位 · 截至
+                  {{ fmtDate(indexTrend?.as_of) }}
+                </p>
+              </template>
+              <p v-else class="ap-muted">暂无指数趋势数据</p>
+            </ApCard>
+
             <ApCard title="下一交易日指引">
               <div class="ap-row nt-head">
                 <span class="ap-kicker">下一交易日</span>
@@ -550,6 +638,31 @@ onMounted(load);
   border-radius: var(--ap-radius);
   color: var(--ap-warn);
   font-size: var(--ap-fs-sm);
+}
+/* 引擎D 指数行：名称 / 位置条 / 档位徽章 / 趋势徽章 / 20日收益 */
+.it-row {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ap-sp-2);
+  padding: 3px 0;
+}
+.it-name {
+  font-size: var(--ap-fs-sm);
+  flex: 0 0 128px;
+}
+.it-posbar {
+  position: relative;
+  flex: 1 1 120px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--ap-border, #e8e3d8);
+  overflow: hidden;
+}
+.it-posbar i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--ap-primary, #2c5f8a);
 }
 .macro-head {
   flex-wrap: wrap;

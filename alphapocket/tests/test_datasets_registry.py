@@ -31,6 +31,7 @@ from applib.datasets import (
 
 # 改造前硬编码的快照合并面（锚点：派生结果必须逐项相等）
 # 2026-10-21 扩展：industry_index / stock_news（单公司分析辅助数据集，fill_missing）
+# 2026-10-26 扩展：index_bars（引擎D 指数趋势数据面，四指数日线，fill_missing）
 _LEGACY_MERGEABLE = {
     "daily_bars": "market/daily_bars.json",
     "daily_bars_raw": "market/daily_bars_raw.json",
@@ -41,6 +42,7 @@ _LEGACY_MERGEABLE = {
     "macro_liquidity": "market/macro_liquidity.json",
     "industry_index": "industry/industry_index.json",
     "stock_news": "news/stock_news.json",
+    "index_bars": "market/index_bars.json",
 }
 
 # data.py 的实际建表名（duckdb_table 登记面与建表对拍）

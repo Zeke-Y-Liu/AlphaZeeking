@@ -326,4 +326,76 @@ describe('PortfolioDetailView', () => {
     expect(wrapper.find('[data-test="macro-badge-A"]').exists()).toBe(false);
     expect(wrapper.find('[data-test="macro-global"]').exists()).toBe(false);
   });
+
+  // ── 引擎D 指数级别趋势卡片（runs.summary.index_trend，2026-10-26）──
+  function makeIndexTrendSummary() {
+    return {
+      index_trend: {
+        indexes: {
+          ndx: { position: 'high_zone', pos_q: 88.5, trend: 'up', ret_20d: 0.041,
+                 close: 26100.3, name: '纳斯达克综合', market: 'US' },
+          csi300: { position: 'mid_zone', pos_q: 46.2, trend: 'range', ret_20d: -0.003,
+                    close: 4095.1, name: '沪深300', market: 'A' },
+          hstech: { position: 'low_zone', pos_q: 12.4, trend: 'down', ret_20d: -0.062,
+                    close: 3888.1, name: '恒生科技', market: 'HK' },
+          chinext: { position: 'mid_zone', pos_q: 55.0, trend: 'range', ret_20d: 0.008,
+                     close: 2645.7, name: '创业板指', market: 'A' },
+        },
+        as_of: '2026-10-26',
+      },
+    };
+  }
+
+  it('引擎D 卡片渲染四指数：位置徽章 + 趋势徽章 + 位置条宽度', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    const run = makeRun();
+    run.summary = makeIndexTrendSummary();
+    mListRuns.mockResolvedValue([run]);
+    mArtifact.mockResolvedValue(makeReview());
+
+    const { wrapper } = await mountDetail();
+
+    // 四指数按规范序渲染（ndx → csi300 → hstech → chinext）
+    const pos = wrapper.findAll('[data-test^="it-pos-"]');
+    expect(pos.map((b) => b.text())).toEqual([
+      '高位区 89%', '中位区 46%', '低位区 12%', '中位区 55%',
+    ]);
+    expect(wrapper.findAll('[data-test^="it-trend-"]').map((b) => b.text()))
+      .toEqual(['上行', '震荡', '下行', '震荡']);
+    // 位置条宽度 = 位置百分位取整（ndx 88.5 → 89%）
+    const bar = wrapper.find('[data-test="it-posbar-ndx"] > i');
+    expect(bar.exists()).toBe(true);
+    expect((bar.element as HTMLSpanElement).style.width).toBe('89%');
+    // 20日收益与口径注记
+    expect(wrapper.find('[data-test="it-ret20-hstech"]').text()).toContain('-6.2%');
+    expect(wrapper.find('[data-test="index-trend-note"]').text()).toContain('不构成买卖信号');
+    expect(wrapper.find('[data-test="index-trend-unavailable"]').exists()).toBe(false);
+  });
+
+  it('引擎D unavailable 降级：index-trend-unavailable 可见、无指数徽章', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    const run = makeRun();
+    run.summary = { index_trend: { status: 'unavailable', error: '指数日线数据集为空' } };
+    mListRuns.mockResolvedValue([run]);
+    mArtifact.mockResolvedValue(makeReview());
+
+    const { wrapper } = await mountDetail();
+
+    expect(wrapper.find('[data-test="index-trend-unavailable"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="index-trend-unavailable"]').text()).toContain('不影响其余评估');
+    expect(wrapper.find('[data-test="it-pos-ndx"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="it-trend-ndx"]').exists()).toBe(false);
+  });
+
+  it('旧 run 无 index_trend 键 → 「暂无指数趋势数据」空态（向后兼容）', async () => {
+    mGetPortfolio.mockResolvedValue(makePortfolio());
+    mListRuns.mockResolvedValue([makeRun()]);      // summary = {}（旧 run）
+    mArtifact.mockResolvedValue(makeReview());
+
+    const { wrapper } = await mountDetail();
+
+    expect(wrapper.find('[data-test="index-trend-unavailable"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="it-pos-ndx"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('暂无指数趋势数据');
+  });
 });

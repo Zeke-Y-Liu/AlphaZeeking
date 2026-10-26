@@ -128,6 +128,27 @@ def _macro_summary(review: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _index_trend_summary(review: dict[str, Any]) -> dict[str, Any]:
+    """引擎D 精简摘要（字段冻结，2026-10-26）：四指数位置/趋势一屏；unavailable 原样。
+
+    冻结字段：``status?`` / ``indexes`` / ``as_of`` / ``error?``，其中
+    ``indexes = {指数id: {position, pos_q, trend, ret_20d, close, name, market}}``。
+    引擎D 为市场级条件变量，不参与权重决策与门禁（纪律同引擎C）。
+    """
+    it = review.get("index_trend") or {}
+    if not it or it.get("status") == "unavailable":    # 缺失/降级 → unavailable 原样
+        return {"status": "unavailable", "error": (it or {}).get("error")}
+    idx = {}
+    for iid, e in (it.get("indexes") or {}).items():
+        if not isinstance(e, dict) or e.get("status") not in (None, "active"):
+            continue                                  # insufficient/unavailable/inactive 不入摘要
+        idx[iid] = {"position": e.get("position"), "pos_q": e.get("pos_q"),
+                    "trend": e.get("trend"), "ret_20d": e.get("ret_20d"),
+                    "close": e.get("close"), "name": e.get("name"),
+                    "market": e.get("market")}
+    return {"indexes": idx, "as_of": it.get("as_of")}
+
+
 def _build_summary(review: dict[str, Any]) -> dict[str, Any]:
     """组装 ``runs.summary``（字段冻结，供 T6.4 前端直接读）。
 
@@ -140,6 +161,7 @@ def _build_summary(review: dict[str, Any]) -> dict[str, Any]:
         "signal_count": len(review.get("signals") or []),
         "signal_states": _signal_states(review),
         "macro_liquidity": _macro_summary(review),
+        "index_trend": _index_trend_summary(review),
     }
 
 

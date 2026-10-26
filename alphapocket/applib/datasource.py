@@ -1166,6 +1166,54 @@ def _fetch_stock_news(ak, stocks, limit: int = 30) -> dict:
     return out
 
 
+# ── 引擎D 指数趋势数据面（2026-10-26 Goal）：第一批四指数日线 ──────────
+# 指数 id 集与 factors.INDEX_TREND_INDEXES 对拍（封闭集：改清单须两侧同步，
+# tests/test_factor_index_trend.py 锚定）；接口逐指数静态登记（2026-10-26 实测：
+# 四接口列名统一英文 date/close；港股指数须用代码 HSTECH，中文名报 KeyError）。
+_INDEX_FETCH = {
+    "ndx":     lambda ak: ak.index_us_stock_sina(symbol=".IXIC"),
+    "csi300":  lambda ak: ak.stock_zh_index_daily(symbol="sh000300"),
+    "hstech":  lambda ak: ak.stock_hk_index_daily_sina(symbol="HSTECH"),
+    "chinext": lambda ak: ak.stock_zh_index_daily(symbol="sz399006"),
+}
+
+
+def fetch_index_bars(ak, start: str, window: int = 280) -> dict:
+    """引擎D 指数日线数据集：``{指数id: [{dt, close, pct}, …]}``（近 ``window`` 根）。
+
+    单指数失败跳过（增量 ``fill_missing`` 用旧值兜底）；与持仓 universe 无关，
+    恒拉取（spec always=True）。``window`` 默认 280 > quantile_win(252)，保证
+    位置百分位窗口完整（factors.INDEX_TREND_REGIME）。
+    """
+    from . import factors as F          # 指数清单封闭集（id 集真源在 factors）
+    out: dict[str, list] = {}
+    for iid in F.INDEX_TREND_INDEXES:
+        fn = _INDEX_FETCH.get(iid)
+        if fn is None:                  # 清单新增指数未登记接口 → 告警跳过（封闭集对拍）
+            print(f"  ⚠ 指数 {iid} 未登记拉取接口（_INDEX_FETCH），跳过")
+            continue
+        try:
+            df = _retry(lambda fn=fn: fn(ak))
+        except Exception as e:          # noqa: BLE001 - 单指数失败不阻断整批
+            print(f"  ⚠ 指数 {iid} 拉取失败：{e}")
+            continue
+        if df is None or len(df) == 0:
+            continue
+        recs, prev = [], None
+        for _, r in df.iterrows():
+            c, d = _num(r.get("close")), _iso(r.get("date"))
+            if c is None or d is None or d < start:
+                continue
+            recs.append({"dt": d, "close": c,
+                         "pct": (c / prev - 1) if (prev and c) else None})
+            prev = c
+        if recs:
+            out[iid] = recs[-window:]
+    print(f"  ✓ 指数日线（引擎D）：{len(out)}/{len(F.INDEX_TREND_INDEXES)} 只"
+          f"（{start} 起·近 {window} 根）")
+    return out
+
+
 
 # ── 增量合并（T-fix：增量窗口不再整体覆盖历史）──────────────────
 
@@ -1651,6 +1699,8 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
     # 两数据集均 fill_missing：单板块/单标的失败 → 旧值兜底，不进对账口径（无 verify 关联）。
     industry_index = _fetch_industry_index(ak, a_stocks, start)
     stock_news = _fetch_stock_news(ak, a_stocks)
+    # 引擎D 指数趋势数据面（2026-10-26）：与持仓 universe 无关，恒拉取（spec always=True）
+    index_bars = fetch_index_bars(ak, start)
     # 人工确认豁免（见 _KNOWN_EX_DATES）：bootstrap 会整体重建 repo，仅靠增量 set_union
     # 无法保住上游缺失的公司行动日 → 每次拉取后强制并入。判定用 requested 而非 bars_qfq：
     # 本标的双源同时拉取失败时 bars_qfq 无键，但豁免仍须保留给后续增量使用。
@@ -1675,6 +1725,8 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
                                       merge_base.get("industry_index"), industry_index)
         stock_news = apply_policy(get_spec("stock_news"),
                                   merge_base.get("stock_news"), stock_news)
+        index_bars = apply_policy(get_spec("index_bars"),
+                                  merge_base.get("index_bars"), index_bars)
 
     _reg("dwd_daily_bar",
          {"start": start, "end": today, "note": "A股/港股 qfq 前复权；美股 腾讯序列（raw 口径，新浪美股qfq部分标的存在噪声，弃用）；ETF/LOF 无复权接口（raw）"}, bars_qfq, "market/daily_bars.json")
@@ -1707,6 +1759,13 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
         _reg("stock_news",
              {"limit": 30, "note": "东财个股新闻（A股，每标的近30条）；港美无公开接口"},
              stock_news, "news/stock_news.json")
+    if index_bars:
+        # 引擎D 指数趋势数据面（2026-10-26）：四指数日线（位置百分位 + 均线趋势输入）
+        _reg("index_bars",
+             {"window": 280, "indexes": sorted(index_bars),
+              "note": "指数日线近280根（>quantile_win 252 保位置百分位窗口完整）；"
+                      "单指数失败 fill_missing 用旧值兜底"},
+             index_bars, "market/index_bars.json")
 
     # ── ③ 维度表 / 组合 / 因子注册中心 / 港股通名单 / 汇率 / 港美日历 ──
 

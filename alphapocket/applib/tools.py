@@ -146,6 +146,25 @@ def factor_macro(args, ctx):
                                      meta=data.get("meta"))
 
 
+def factor_index_trend(args, ctx):
+    """引擎D：指数级别趋势（四指数当前位置百分位 + 均线趋势，市场级条件变量）。
+
+    数据源 ``market/index_bars.json``（``ap fetch`` 恒同步）。输出每指数
+    ``position``（high_zone/mid_zone/low_zone，近252根高低区间百分位）与
+    ``trend``（up/down/range，快线 MA20 与 20 日收益同向判定），仅供择时
+    参考；**不产生 signals 条目、不参与权重决策**（引擎D 纪律红线，
+    同引擎C）。指数清单 registry ``engines.index_trend.metrics`` 可启停。
+    """
+    p = ctx.local_repo / "market" / "index_bars.json"
+    if not p.exists():
+        return {"error": "指数日线数据未同步（先执行数据同步）"}
+    bars = _load(p)
+    if not isinstance(bars, dict) or not bars:
+        return {"error": "指数日线数据集为空（上游拉取失败，重跑同步）"}
+    return _engine("index_trend", ctx).run(bars, as_of=args.get("as_of"),
+                                           meta=F.INDEX_TREND_META)
+
+
 # ── engine.metrics：指标全生命周期（T-R7；写 sandbox 注册表，ap push 经门禁回流）──
 def _registry_read(ctx) -> dict:
     """加载 sandbox 注册表（缺失/损坏 → 内置默认透明降级；写回时建立完整文件）。"""
@@ -192,7 +211,7 @@ def engine_metrics_add(args, ctx):
     """新增指标（spec=完整声明，formula 须内置清单；hypothesis_id 必填）。"""
     eid, spec = args.get("engine"), args.get("spec")
     if not eid:
-        return {"error": "缺少 engine（alpha/beta/macro）"}
+        return {"error": "缺少 engine（alpha/beta/macro/index_trend）"}
     if not isinstance(spec, dict) or not spec.get("id"):
         return {"error": "缺少 spec.id（新指标完整声明，formula 必填）"}
     try:
@@ -367,6 +386,18 @@ def portfolio_review(args, ctx):
             macro_liquidity = {"status": "unavailable", "error": "宏观流动性序列为空"}
     except Exception as exc:                                   # noqa: BLE001 - 引擎C 失败不阻断评估
         macro_liquidity = {"status": "unavailable", "error": f"{type(exc).__name__}: {exc}"}
+    # 引擎D（指数趋势，市场级条件变量；位置/趋势判断不产生信号、不参与权重，失败透明降级）
+    index_trend = {"status": "unavailable", "error": "unknown"}
+    try:
+        ip = ctx.local_repo / "market" / "index_bars.json"
+        ibars = _load(ip) if ip.exists() else {}
+        if isinstance(ibars, dict) and ibars:
+            index_trend = _engine("index_trend", ctx).run(
+                ibars, as_of=port[-1][0], meta=F.INDEX_TREND_META)
+        else:
+            index_trend = {"status": "unavailable", "error": "指数日线数据集为空（待增量同步拉取）"}
+    except Exception as exc:                                   # noqa: BLE001 - 引擎D 失败不阻断评估
+        index_trend = {"status": "unavailable", "error": f"{type(exc).__name__}: {exc}"}
     return {
         "id": pf["id"], "name": pf["name"], "as_of": port[-1][0], "base_ccy": pf["base_ccy"],
         "note": pf["note"], "next_trade_date": next_td, "holiday_days": holiday_days,
@@ -375,6 +406,7 @@ def portfolio_review(args, ctx):
                               "ret_1y": ret(252), "max_dd_1y": mdd, "nav": series[-1][1],
                               "method": "等权·日再平衡·名义组合（真实行情合成；停牌/缺K线按0收益·权重冻结近似；最大回撤=近252交易日窗口）"},
         "macro_liquidity": macro_liquidity,
+        "index_trend": index_trend,
         "positions": positions, "signals": signals,
         "decay_caveats": decay_caveats,
         "factor_health": {"active": [f["id"] for f in entries if f.get("status") == "active"],
@@ -815,6 +847,7 @@ TOOLS = {
     "factor.compute_alpha": _tool(factor_compute_alpha, "引擎A：中长期因子（估值/质量/成长/动量/红利低波+五维）"),
     "factor.regime":   _tool(factor_regime, "H-0006：港美利率/汇率 regime 条件变量（carry_hk_us/peg_pressure，市场级择时）"),
     "factor.macro":    _tool(factor_macro, "引擎C：宏观流动性 regime（A/HK/US 三市场温度计与维度分，市场级条件变量）"),
+    "factor.index_trend": _tool(factor_index_trend, "引擎D：指数级别趋势（纳斯达克/沪深300/恒生科技/创业板指的位置百分位与均线趋势，市场级条件变量）"),
     "engine.metrics.list":   _tool(engine_metrics_list, "指标注册表清单（按引擎/状态过滤，含变更日志计数）"),
     "engine.metrics.add":    _tool(engine_metrics_add, "指标新增（formula 须 builtin 内置清单；hypothesis_id 必填；写 sandbox 注册表）"),
     "engine.metrics.update": _tool(engine_metrics_update, "指标修改（部分字段/参数深合并/启停；status 翻转需 hypothesis_id；version 自增）"),
