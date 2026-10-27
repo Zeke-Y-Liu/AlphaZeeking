@@ -3,45 +3,35 @@
   "with_live": false,
   "domains": [],
   "changes": [
-    "alphapocket-web/core/app/api/v1/engines.py",
-    "alphapocket-web/core/app/services/review.py",
+    "alphapocket-web/core/app/core/config.py",
+    "alphapocket-web/core/app/main.py",
     "alphapocket-web/core/tests/snapshots/openapi.json",
-    "alphapocket-web/core/tests/test_engines_api.py",
-    "alphapocket-web/core/tests/test_review.py",
-    "alphapocket-web/deploy/regression/reports/last.json",
+    "alphapocket-web/core/tests/test_openapi_snapshot.py",
     "alphapocket-web/deploy/regression/suite.py",
+    "alphapocket-web/web/src/api/index.ts",
     "alphapocket-web/web/src/api/types.ts",
-    "alphapocket-web/web/src/views/PortfolioDetailView.vue",
-    "alphapocket-web/web/src/views/__tests__/PortfolioDetailView.spec.ts",
-    "alphapocket-web/web/tests/typecheck-baseline.txt",
-    "alphapocket/applib/datasets/specs_market.py",
-    "alphapocket/applib/datasource.py",
-    "alphapocket/applib/engines/__init__.py",
-    "alphapocket/applib/engines/base.py",
-    "alphapocket/applib/factors.py",
-    "alphapocket/applib/report.py",
-    "alphapocket/applib/tools.py",
-    "alphapocket/remote/repo/factors/registry.json",
-    "alphapocket/tests/test_datasets_registry.py",
-    "alphapocket/tests/test_engines_alpha_cfg.py",
-    "alphapocket/tests/test_engines_registry.py",
-    "alphapocket/tests/test_engines_wrap.py",
-    "alphapocket/applib/engines/index_trend.py",
-    "alphapocket/tests/test_factor_index_trend.py"
+    "alphapocket-web/web/src/layouts/AppLayoutPC.vue",
+    "alphapocket-web/web/src/router/index.ts",
+    "alphapocket-web/core/app/api/v1/today.py",
+    "alphapocket-web/core/app/services/scheduler.py",
+    "alphapocket-web/core/app/services/today.py",
+    "alphapocket-web/core/tests/test_today.py",
+    "alphapocket-web/web/src/views/TodayView.vue",
+    "alphapocket-web/web/src/views/__tests__/TodayView.spec.ts"
   ],
   "changes_source": "git status（工作区 + 暂存区，含未跟踪）",
   "notes": [
-    "增量模式：冒烟 4 项 + 影响命中 11 项"
+    "增量模式：冒烟 4 项 + 影响命中 7 项"
   ],
-  "started_at": "2026-10-27T00:42:58+0800",
-  "duration_s": 396.9,
+  "started_at": "2026-10-27T12:11:12+0800",
+  "duration_s": 166.5,
   "items": [
     {
       "name": "core.smoke",
       "domain": "core",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 2.5,
+      "duration_s": 2.8,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -60,7 +50,7 @@
       "domain": "interaction-api",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 2.0,
+      "duration_s": 2.1,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -107,7 +97,7 @@
       "domain": "core",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 51.0,
+      "duration_s": 55.1,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -122,7 +112,7 @@
       "domain": "interaction-api",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 40.7,
+      "duration_s": 44.5,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -140,7 +130,7 @@
       "domain": "data",
       "kind": "script",
       "status": "pass",
-      "duration_s": 2.2,
+      "duration_s": 2.3,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -152,7 +142,7 @@
       "domain": "interaction-web",
       "kind": "vitest",
       "status": "pass",
-      "duration_s": 28.5,
+      "duration_s": 32.7,
       "detail": "",
       "cmd": [
         "pnpm",
@@ -166,7 +156,7 @@
       "domain": "interaction-web",
       "kind": "typecheck",
       "status": "pass",
-      "duration_s": 4.2,
+      "duration_s": 4.4,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -178,7 +168,7 @@
       "domain": "interaction-web",
       "kind": "build",
       "status": "pass",
-      "duration_s": 6.2,
+      "duration_s": 6.8,
       "detail": "",
       "cmd": [
         "pnpm",
@@ -192,7 +182,7 @@
       "domain": "interaction-e2e",
       "kind": "e2e",
       "status": "pass",
-      "duration_s": 10.0,
+      "duration_s": 13.1,
       "detail": "",
       "cmd": [
         "pnpm",
@@ -200,58 +190,10 @@
         "playwright",
         "test"
       ]
-    },
-    {
-      "name": "factor.units",
-      "domain": "factor",
-      "kind": "pytest",
-      "status": "pass",
-      "duration_s": 246.5,
-      "detail": "",
-      "cmd": [
-        "/workspace/alphapocket-web/core/.venv/bin/python",
-        "-m",
-        "pytest",
-        "-q",
-        "tests/test_factor_val_m7.py",
-        "tests/test_factor_gro_m7.py",
-        "tests/test_factor_qua_m7.py",
-        "tests/test_factor_mom_lowvol_m7.py",
-        "tests/test_factor_backtest.py",
-        "tests/test_macro_liquidity.py",
-        "tests/test_factor_index_trend.py",
-        "tests/test_engines_registry.py",
-        "tests/test_engines_wrap.py",
-        "tests/test_datasets_registry.py",
-        "--deselect",
-        "tests/test_factor_val_m7.py::test_val_defs_hypothesis_binding",
-        "--deselect",
-        "tests/test_factor_gro_m7.py::test_gro_defs_hypothesis_binding",
-        "--deselect",
-        "tests/test_factor_gro_m7.py::test_gro_earnings_surprise_gap_registered",
-        "--deselect",
-        "tests/test_factor_qua_m7.py::test_qua_defs_hypothesis_binding",
-        "--deselect",
-        "tests/test_factor_mom_lowvol_m7.py::test_defs_hypothesis_binding_and_direction"
-      ]
-    },
-    {
-      "name": "factor.golden",
-      "domain": "factor",
-      "kind": "script",
-      "status": "pass",
-      "duration_s": 0.2,
-      "detail": "",
-      "cmd": [
-        "/workspace/alphapocket-web/core/.venv/bin/python",
-        "/workspace/alphapocket-web/deploy/regression/checks/data_r1.py",
-        "--only",
-        "golden_test,pit_audit"
-      ]
     }
   ],
   "summary": {
-    "pass": 13,
+    "pass": 11,
     "fail": 0,
     "skip": 0,
     "timeout": 0

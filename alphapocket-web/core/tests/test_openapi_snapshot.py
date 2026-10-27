@@ -64,6 +64,8 @@ IMPLEMENTED_PATHS = {
     "/api/v1/analysis/{aid}/news",
     "/api/v1/analysis/{aid}/news/refresh",
     "/api/v1/analysis/{aid}/backtest",
+    # 今日结论（2026-10-26 快速获取组合操作结论页）
+    "/api/v1/today",
 }
 
 

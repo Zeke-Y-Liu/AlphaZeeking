@@ -15,6 +15,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: false, layout: 'blank', title: '登录' },
   },
   {
+    path: '/today',
+    name: 'today',
+    component: () => import('../views/TodayView.vue'),
+    meta: { title: '今日结论' },
+  },
+  {
     path: '/portfolios',
     name: 'portfolios',
     component: () => import('../views/PortfoliosView.vue'),

@@ -3370,6 +3370,30 @@
         ]
       }
     },
+    "/api/v1/today": {
+      "get": {
+        "description": "今日结论（快速获取组合操作结论）：当前时间 + 各组合 highlight。",
+        "operationId": "get_today_api_v1_today_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Today Api V1 Today Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Today",
+        "tags": [
+          "today"
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "description": "存活 + 依赖探测；依赖不可达时返回 200 + degraded，绝不 5xx。",

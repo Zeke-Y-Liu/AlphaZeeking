@@ -37,6 +37,8 @@ CORE_FUNCTIONS: dict[str, list[str]] = {
     "数据状态与验证查询": ["core/tests/test_data_status.py"],
     "组合 CRUD 与物化": ["core/tests/test_portfolios.py"],
     "组合评估（review）": ["core/tests/test_review.py"],
+    # 今日结论页 + 收盘自动评估（2026-10-26）：today 聚合 API + 调度决策
+    "今日结论与收盘自动评估": ["core/tests/test_today.py"],
     "回测（backtest）": ["core/tests/test_backtest_api.py", "core/tests/test_backtest_params.py"],
     "调仓与执行单": ["core/tests/test_plan.py", "core/tests/test_exec_flow.py",
                      "core/tests/test_exec_orders.py"],

@@ -33,6 +33,7 @@ import type {
   RebalancePlanSummary,
   Run,
   Security,
+  TodayPayload,
   VerifyResult,
 } from './types';
 
@@ -84,6 +85,8 @@ export const API_PATHS = {
   analysisBacktest: (aid: string) => `/v1/analysis/${aid}/backtest`,
   // 单标的手动数据拉取（组合/公司页面入口）
   dataSyncSecid: '/v1/data/sync-secid',
+  // 今日结论（2026-10-26 快速获取组合操作结论页）
+  today: '/v1/today',
 } as const;
 
 /* ── 已实现 ─────────────────────────────────────── */
@@ -487,5 +490,15 @@ export async function backtestAnalysis(
     API_PATHS.analysisBacktest(aid),
     body ?? {},
   );
+  return data;
+}
+
+/* ── 今日结论（2026-10-26） ─────────────────── */
+/**
+ * GET /v1/today：服务器当前时间 + 各组合 highlight 建议 + 收盘自动评估状态。
+ * 只读聚合（评估已由收盘后调度器跑完落 runs），无 job、无副作用。
+ */
+export async function getToday(): Promise<TodayPayload> {
+  const { data } = await apiClient.get<TodayPayload>(API_PATHS.today);
   return data;
 }

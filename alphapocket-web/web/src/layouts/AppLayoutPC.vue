@@ -6,6 +6,10 @@ const route = useRoute();
 
 const navGroups = [
   {
+    key: '总览',
+    items: [{ to: '/today', label: '今日结论' }],
+  },
+  {
     key: '组合',
     items: [
       { to: '/portfolios', label: '组合列表' },

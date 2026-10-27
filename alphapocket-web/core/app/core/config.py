@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     # 评估 run 缺口自愈开关（§9.3 T2.3；env: AP_REVIEW_AUTO_INCREMENTAL）
     review_auto_incremental: bool = True
 
+    # 收盘后自动评估调度（2026-10-26 今日结论页；默认关闭保证测试/离线环境无副作用，
+    # 生产以 AP_AUTO_REVIEW=1 显式开启）：交易日到达时点后对全部 active 组合逐个提交
+    # review job（params.trigger="close_auto" 幂等标记，一天一组合至多一次）
+    auto_review_enabled: bool = False
+    auto_review_time: str = "16:30"   # 触发时点（本地时区 HH:MM）
+
     # 运行时
     log_level: str = "INFO"
     core_port: int = 8082

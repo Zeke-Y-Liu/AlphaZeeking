@@ -18,6 +18,7 @@ from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import TraceIdMiddleware, configure_logging
 from app.services.jobs import JobRunner
+from app.services.scheduler import CloseReviewScheduler
 from app.services.workspace import WorkspaceManager
 
 # 单依赖探测超时（秒）；启动期不因依赖不可达而阻塞过久
@@ -60,7 +61,7 @@ async def lifespan(app: FastAPI):
     app.state.deps = probe_dependencies(settings)
     # T1.2：初始化默认 workspace 与进程级 job 运行器，挂 app.state 供后续任务取用
     workspace = WorkspaceManager(settings)
-    workspace.ensure()
+    ws_root = workspace.ensure()
     runner = JobRunner(workspace)
     app.state.workspace_manager = workspace
     app.state.job_runner = runner
@@ -71,7 +72,15 @@ async def lifespan(app: FastAPI):
         logging.getLogger(__name__).info("启动自愈完成：%d 个超时 running job 置为 failed", recovered)
     except Exception:  # noqa: BLE001 - 自愈失败不阻断启动
         logging.getLogger(__name__).exception("启动自愈失败（PG 可能不可达）")
+    # 收盘自动评估调度器（2026-10-26 今日结论页；默认关闭，AP_AUTO_REVIEW=1 开启）：
+    # 交易日触发时点后「增量同步 → 逐组合 review」，结果落 runs 表供 GET /today 聚合
+    scheduler: CloseReviewScheduler | None = None
+    if settings.auto_review_enabled:
+        scheduler = CloseReviewScheduler(settings, runner, ws_root)
+        scheduler.start()
     yield
+    if scheduler is not None:
+        scheduler.stop()
     runner.shutdown()
 
 

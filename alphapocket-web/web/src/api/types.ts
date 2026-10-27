@@ -844,6 +844,49 @@ export interface BacktestPayload {
   } | null;
 }
 
+/* ── 今日结论（2026-10-26 快速获取组合操作结论页，GET /v1/today 冻结契约）── */
+
+/** 收盘自动评估状态（enabled=false 时仅返回该键）。 */
+export interface TodayAutoReview {
+  enabled: boolean;
+  /** 触发时点 "HH:MM"（enabled 时必填）。 */
+  fire_time?: string;
+  /** 今日 close_auto 增量同步状态：null/queued/running/done/failed。 */
+  sync?: string | null;
+  /** 今日 close_auto review job 计数（submitted/done/failed）。 */
+  review_submitted?: number;
+  review_done?: number;
+  review_failed?: number;
+}
+
+/** 单组合今日结论条目（highlights 为服务端冻结中文短句，前端零计算）。 */
+export interface TodayPortfolioItem {
+  portfolio_id: number;
+  pid: string;
+  name: string;
+  run_uid?: string | null;
+  as_of?: string | null;
+  created_at?: string | null;
+  /** 结论日期是否为今天（收盘自动评估已跑当日）。 */
+  fresh: boolean;
+  position_count?: number | null;
+  metrics?: ReviewMetrics | null;
+  signal_states?: { above?: number; below?: number; neutral?: number } | null;
+  /** 中文 highlight 短句（按重要性排序：数据风险 > 收益 > 信号 > 宏观 > 指数）。 */
+  highlights: string[];
+  /** good | bad | warn | flat | stale。 */
+  level: 'good' | 'bad' | 'warn' | 'flat' | 'stale';
+}
+
+/** GET /v1/today 响应（字段冻结；server_time 供前端时钟校准）。 */
+export interface TodayPayload {
+  server_time: string;
+  date: string;
+  generated_at: string;
+  auto_review: TodayAutoReview;
+  portfolios: TodayPortfolioItem[];
+}
+
 /* ── 错误（§6.3 错误体 {code,message,detail}） ───────── */
 export interface ApiErrorBody {
   code: string;
