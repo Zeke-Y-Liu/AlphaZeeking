@@ -26,7 +26,7 @@ DEMO_ROLE = "owner"
 
 _pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
-# ── 十六标的（V4-β：A股9 + 港股4 + 美股3；字段逐字段对齐 α 元数据）──
+# ── 廿五标的（V4-β：A股9 + 港股4 + 美股12；字段逐字段对齐 α 元数据）──
 # CN4 股票：α datasource 未显式给出 settle/cost/ftype，按 §5.2 股票缺省填充
 _STOCK_SETTLE = "A股 T+1"
 _STOCK_COST = "印花税卖出0.05%+佣金"
@@ -95,9 +95,46 @@ SECURITIES: list[dict] = [
      "asset_type": "STOCK", "industry": "半导体·AI算力", "sina_symbol": "gb_nvda",
      "ftype": None, "settle": _US_SETTLE, "cost": _US_COST, "currency": "USD",
      "hk_connect": None},
+    # S26（美股策略组合，2026-10-27 用户提供权重，合计 93.18%）
+    {"secid": "PACS.US", "code": "PACS", "name": "PACS集团", "market": "US",
+     "asset_type": "STOCK", "industry": "医疗健康·养老护理", "sina_symbol": "gb_pacs",
+     "ftype": None, "settle": _US_SETTLE, "cost": _US_COST, "currency": "USD",
+     "hk_connect": None},
+    {"secid": "LITE.US", "code": "LITE", "name": "Lumentum", "market": "US",
+     "asset_type": "STOCK", "industry": "光通信·光器件", "sina_symbol": "gb_lite",
+     "ftype": None, "settle": _US_SETTLE, "cost": _US_COST, "currency": "USD",
+     "hk_connect": None},
+    {"secid": "AMZN.US", "code": "AMZN", "name": "亚马逊", "market": "US",
+     "asset_type": "STOCK", "industry": "电商·云计算", "sina_symbol": "gb_amzn",
+     "ftype": None, "settle": _US_SETTLE, "cost": _US_COST, "currency": "USD",
+     "hk_connect": None},
+    {"secid": "DAVE.US", "code": "DAVE", "name": "Dave", "market": "US",
+     "asset_type": "STOCK", "industry": "金融科技·数字银行", "sina_symbol": "gb_dave",
+     "ftype": None, "settle": _US_SETTLE, "cost": _US_COST, "currency": "USD",
+     "hk_connect": None},
+    {"secid": "SNDK.US", "code": "SNDK", "name": "闪迪", "market": "US",
+     "asset_type": "STOCK", "industry": "半导体·存储", "sina_symbol": "gb_sndk",
+     "ftype": None, "settle": _US_SETTLE, "cost": _US_COST, "currency": "USD",
+     "hk_connect": None},
+    {"secid": "VICR.US", "code": "VICR", "name": "Vicor", "market": "US",
+     "asset_type": "STOCK", "industry": "电源管理模块", "sina_symbol": "gb_vicr",
+     "ftype": None, "settle": _US_SETTLE, "cost": _US_COST, "currency": "USD",
+     "hk_connect": None},
+    {"secid": "TTMI.US", "code": "TTMI", "name": "TTM科技", "market": "US",
+     "asset_type": "STOCK", "industry": "PCB印制电路板", "sina_symbol": "gb_ttmi",
+     "ftype": None, "settle": _US_SETTLE, "cost": _US_COST, "currency": "USD",
+     "hk_connect": None},
+    {"secid": "SEZL.US", "code": "SEZL", "name": "Sezzle", "market": "US",
+     "asset_type": "STOCK", "industry": "金融科技·先买后付", "sina_symbol": "gb_sezl",
+     "ftype": None, "settle": _US_SETTLE, "cost": _US_COST, "currency": "USD",
+     "hk_connect": None},
+    {"secid": "CRDO.US", "code": "CRDO", "name": "Credo科技", "market": "US",
+     "asset_type": "STOCK", "industry": "半导体·高速互联", "sina_symbol": "gb_crdo",
+     "ftype": None, "settle": _US_SETTLE, "cost": _US_COST, "currency": "USD",
+     "hk_connect": None},
 ]
 
-# ── 三组合（cn4/multi5 对齐 α；globalmix 为 V4-β 混合市场组合）──
+# ── 四组合（cn4/multi5 对齐 α；globalmix 为 V4-β 混合市场组合；S26 为美股策略组合）──
 PORTFOLIOS: list[dict] = [
     {
         "pid": "cn4",
@@ -140,6 +177,25 @@ PORTFOLIOS: list[dict] = [
             ("09988.HK", Decimal("16.670")),
             ("AAPL.US", Decimal("16.660")),
             ("MSFT.US", Decimal("16.660")),
+        ],
+    },
+    {
+        "pid": "S26",
+        "name": "S26 · 美股策略组合（PACS/LITE/AMZN/DAVE/SNDK/VICR/SEZL/CRDO/TTMI）",
+        "note": "用户提供的 S26 美股策略组合：9 只美股实仓权重（合计 93.18%，余 6.82% 按现金/"
+                "备用仓处理，不补虚拟标的）；USD 计价；NAV 计算沿用系统等权·日再平衡·名义组合"
+                "口径，权重用于报告展示与调仓建议",
+        "base_ccy": "USD",
+        "positions": [
+            ("PACS.US", Decimal("14.190")),
+            ("LITE.US", Decimal("12.980")),
+            ("AMZN.US", Decimal("12.870")),
+            ("DAVE.US", Decimal("9.650")),
+            ("SNDK.US", Decimal("9.490")),
+            ("VICR.US", Decimal("9.260")),
+            ("SEZL.US", Decimal("8.790")),
+            ("CRDO.US", Decimal("8.240")),
+            ("TTMI.US", Decimal("7.710")),
         ],
     },
 ]

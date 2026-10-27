@@ -3,35 +3,22 @@
   "with_live": false,
   "domains": [],
   "changes": [
-    "alphapocket-web/core/app/core/config.py",
-    "alphapocket-web/core/app/main.py",
-    "alphapocket-web/core/tests/snapshots/openapi.json",
-    "alphapocket-web/core/tests/test_openapi_snapshot.py",
-    "alphapocket-web/deploy/regression/suite.py",
-    "alphapocket-web/web/src/api/index.ts",
-    "alphapocket-web/web/src/api/types.ts",
-    "alphapocket-web/web/src/layouts/AppLayoutPC.vue",
-    "alphapocket-web/web/src/router/index.ts",
-    "alphapocket-web/core/app/api/v1/today.py",
-    "alphapocket-web/core/app/services/scheduler.py",
-    "alphapocket-web/core/app/services/today.py",
-    "alphapocket-web/core/tests/test_today.py",
-    "alphapocket-web/web/src/views/TodayView.vue",
-    "alphapocket-web/web/src/views/__tests__/TodayView.spec.ts"
+    "alphapocket-web/core/app/seed.py",
+    "alphapocket-web/core/tests/test_seed.py"
   ],
   "changes_source": "git status（工作区 + 暂存区，含未跟踪）",
   "notes": [
-    "增量模式：冒烟 4 项 + 影响命中 7 项"
+    "增量模式：冒烟 4 项 + 影响命中 3 项"
   ],
-  "started_at": "2026-10-27T12:11:12+0800",
-  "duration_s": 166.5,
+  "started_at": "2026-10-27T16:21:13+0800",
+  "duration_s": 104.8,
   "items": [
     {
       "name": "core.smoke",
       "domain": "core",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 2.8,
+      "duration_s": 2.2,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -50,7 +37,7 @@
       "domain": "interaction-api",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 2.1,
+      "duration_s": 2.0,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -65,7 +52,7 @@
       "domain": "data",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 0.8,
+      "duration_s": 0.7,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -97,7 +84,7 @@
       "domain": "core",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 55.1,
+      "duration_s": 52.4,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -112,7 +99,7 @@
       "domain": "interaction-api",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 44.5,
+      "duration_s": 43.6,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -130,70 +117,16 @@
       "domain": "data",
       "kind": "script",
       "status": "pass",
-      "duration_s": 2.3,
+      "duration_s": 3.0,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
         "/workspace/alphapocket-web/deploy/regression/checks/data_r1.py"
       ]
-    },
-    {
-      "name": "web.vitest",
-      "domain": "interaction-web",
-      "kind": "vitest",
-      "status": "pass",
-      "duration_s": 32.7,
-      "detail": "",
-      "cmd": [
-        "pnpm",
-        "exec",
-        "vitest",
-        "run"
-      ]
-    },
-    {
-      "name": "web.typecheck",
-      "domain": "interaction-web",
-      "kind": "typecheck",
-      "status": "pass",
-      "duration_s": 4.4,
-      "detail": "",
-      "cmd": [
-        "/workspace/alphapocket-web/core/.venv/bin/python",
-        "/workspace/alphapocket-web/deploy/regression/checks/web_typecheck.py"
-      ]
-    },
-    {
-      "name": "web.build",
-      "domain": "interaction-web",
-      "kind": "build",
-      "status": "pass",
-      "duration_s": 6.8,
-      "detail": "",
-      "cmd": [
-        "pnpm",
-        "exec",
-        "vite",
-        "build"
-      ]
-    },
-    {
-      "name": "web.e2e",
-      "domain": "interaction-e2e",
-      "kind": "e2e",
-      "status": "pass",
-      "duration_s": 13.1,
-      "detail": "",
-      "cmd": [
-        "pnpm",
-        "exec",
-        "playwright",
-        "test"
-      ]
     }
   ],
   "summary": {
-    "pass": 11,
+    "pass": 7,
     "fail": 0,
     "skip": 0,
     "timeout": 0

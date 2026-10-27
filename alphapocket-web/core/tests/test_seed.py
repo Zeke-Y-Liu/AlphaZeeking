@@ -31,6 +31,32 @@ MULTI_MARKET_EXPECTED = {
     "NVDA.US": ("US", "USD", None),
 }
 
+# S26 美股策略组合（2026-10-27）：secid -> (market, currency)
+S26_EXPECTED = {
+    "PACS.US": ("US", "USD"),
+    "LITE.US": ("US", "USD"),
+    "AMZN.US": ("US", "USD"),
+    "DAVE.US": ("US", "USD"),
+    "SNDK.US": ("US", "USD"),
+    "VICR.US": ("US", "USD"),
+    "SEZL.US": ("US", "USD"),
+    "CRDO.US": ("US", "USD"),
+    "TTMI.US": ("US", "USD"),
+}
+
+# S26 持仓权重（用户提供实仓，合计 93.18%）
+S26_WEIGHTS = {
+    "PACS.US": Decimal("14.190"),
+    "LITE.US": Decimal("12.980"),
+    "AMZN.US": Decimal("12.870"),
+    "DAVE.US": Decimal("9.650"),
+    "SNDK.US": Decimal("9.490"),
+    "VICR.US": Decimal("9.260"),
+    "SEZL.US": Decimal("8.790"),
+    "CRDO.US": Decimal("8.240"),
+    "TTMI.US": Decimal("7.710"),
+}
+
 
 def _count(session: Session, model) -> int:
     return session.scalar(select(func.count()).select_from(model))
@@ -96,6 +122,21 @@ def test_seed_contents_and_idempotency(pg_engine: Engine, alembic_config: Config
         assert set(gm_secids) == {
             "601058.SH", "510300.SH", "00700.HK", "09988.HK", "AAPL.US", "MSFT.US",
         }
+
+        # S26 美股策略组合：九标的种子 + 权重逐位对拍 + USD 基准币种
+        for secid, (market, currency) in S26_EXPECTED.items():
+            security = session.get(Security, secid)
+            assert security is not None, f"{secid} 缺失"
+            assert security.market == market
+            assert security.currency == currency
+        s26 = session.scalar(select(Portfolio).where(Portfolio.pid == "S26"))
+        assert s26 is not None, "S26 组合缺失"
+        assert s26.base_ccy == "USD"
+        s26_rows = session.execute(
+            select(Position.secid, Position.weight)
+            .where(Position.portfolio_id == s26.id)
+        ).all()
+        assert {secid: w for secid, w in s26_rows} == S26_WEIGHTS
 
     # 第二次 seed：计数不变（幂等；口径见 _seed_counts 注释）
     run_seed()
