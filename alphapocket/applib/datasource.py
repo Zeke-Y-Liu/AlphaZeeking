@@ -1138,8 +1138,9 @@ def _news_dt(v) -> str | None:
 def _fetch_stock_news(ak, stocks, limit: int = 30) -> dict:
     """个股新闻数据集：东财 ``stock_news_em`` → ``{secid: [{dt,title,content,source,url}]}``。
 
-    仅 A 股有公开接口（港股/美股不登记，分析层按市场降级提示）；每标的保留最新
-    ``limit`` 条。单标的失败跳过（增量 ``fill_missing`` 用旧值兜底）。
+    A/港/美股统一接入（2026-10-28 实测三市场代码——``600519``/``00700``/``AAPL``——
+    该接口均返回同构列；港美股无行情/财务那种复权与币种问题，新闻为纯文本透传）。
+    每标的保留最新 ``limit`` 条。单标的失败跳过（增量 ``fill_missing`` 用旧值兜底）。
     """
     out: dict[str, list] = {}
     for u in stocks:
@@ -1185,7 +1186,7 @@ def fetch_index_bars(ak, start: str, window: int = 280) -> dict:
     恒拉取（spec always=True）。``window`` 默认 280 > quantile_win(252)，保证
     位置百分位窗口完整（factors.INDEX_TREND_REGIME）。
     """
-    from . import factors as F          # 指数清单封闭集（id 集真源在 factors）
+    from . import factors as F  # 指数清单封闭集（id 集真源在 factors）
     out: dict[str, list] = {}
     for iid in F.INDEX_TREND_INDEXES:
         fn = _INDEX_FETCH.get(iid)
@@ -1695,10 +1696,11 @@ def fetch_all(ctx, start: str = "2021-01-01", fin_start_year: str = "2019",
         print(f"  ✓ {u['name']} {u['secid']}：us bars={len(recs)}(tx:{tx_sym}) raw={len(sina_raw)}(sina) "
               f"tx_cross={len(cross_tx[u['secid']])} 除息日={len(ex_dates_us)} 报告期={len(us_reports)}")
 
-    # ── ②''''' 单公司分析辅助：行业现状（东财板块指数）+ 个股新闻（东财，仅A股）──
+    # ── ②''''' 单公司分析辅助：行业现状（东财板块指数）+ 个股新闻（东财，A/港/美股）──
     # 两数据集均 fill_missing：单板块/单标的失败 → 旧值兜底，不进对账口径（无 verify 关联）。
+    # 港股新闻 2026-10-28 起接入：stock_news_em 对 HK/US 代码同样可用（实测 00700/AAPL）。
     industry_index = _fetch_industry_index(ak, a_stocks, start)
-    stock_news = _fetch_stock_news(ak, a_stocks)
+    stock_news = _fetch_stock_news(ak, a_stocks + hk_stocks + us_stocks)
     # 引擎D 指数趋势数据面（2026-10-26）：与持仓 universe 无关，恒拉取（spec always=True）
     index_bars = fetch_index_bars(ak, start)
     # 人工确认豁免（见 _KNOWN_EX_DATES）：bootstrap 会整体重建 repo，仅靠增量 set_union

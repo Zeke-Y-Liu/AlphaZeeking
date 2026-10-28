@@ -138,10 +138,11 @@ SPECS: list[DatasetSpec] = [
         merge_policy="fill_missing", always=False, duckdb_table=None,
         verifications=[],
         sources=[SourceRef("em_news", "primary", "ak.stock_news_em(symbol=code)",
-                           "仅 A 股有公开接口（港股/美股不登记）；每标的近 30 条；"
-                           "单标的失败跳过（fill_missing 用旧值兜底）；分析用数据面，不进六项对账",
+                           "A/港/美股统一接入（2026-10-28 实测三市场代码均返回同构列）；"
+                           "每标的近 30 条；单标的失败跳过（fill_missing 用旧值兜底）；"
+                           "分析用数据面，不进六项对账",
                            "东方财富")],
-        note="个股新闻：单公司分析「最新消息」模块数据面（港美无公开接口）"),
+        note="个股新闻：单公司分析「最新消息」模块数据面"),
     DatasetSpec(
         name="index_bars", path="market/index_bars.json", category="market",
         merge_policy="fill_missing", always=True, duckdb_table=None,

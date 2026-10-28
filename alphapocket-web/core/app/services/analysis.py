@@ -355,7 +355,7 @@ def _news(repo: Path, security: Security, limit: int = NEWS_LIMIT) -> dict[str, 
     news = _load_json(repo / "news" / "stock_news.json", {})
     items = news.get(security.secid) or []
     if not items:
-        note = ("该市场暂无公开新闻源（当前仅 A 股接入东财个股新闻）"
+        note = ("该标的暂无新闻（东财新闻源已覆盖 A/港/美股；可尝试刷新或先完成数据同步）"
                 if security.market != "A" else "暂无新闻（可尝试刷新）")
         return {"available": False, "note": note, "items": []}
     return {"available": True, "items": items[:limit], "count": len(items)}

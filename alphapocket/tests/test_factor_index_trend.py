@@ -20,13 +20,12 @@ from __future__ import annotations
 import datetime as _d
 import inspect
 import json
-import sys
 import types
 
 import pytest
 
-from applib import factors as F
 from applib import datasource as DS
+from applib import factors as F
 
 
 def _mk_bars(n, base=100.0, drift=1.0, start="2026-01-01"):
@@ -318,8 +317,8 @@ def test_tool_index_trend_ok(tmp_path):
 
 def test_tool_index_trend_missing_file(tmp_path):
     """无 index_bars.json → error 不抛异常。"""
-    from applib.tools import call_tool
     from applib.ctx import Ctx
+    from applib.tools import call_tool
 
     res = call_tool("factor.index_trend", {}, Ctx(root=str(tmp_path)))
     assert res == {"error": "指数日线数据未同步（先执行数据同步）"}
