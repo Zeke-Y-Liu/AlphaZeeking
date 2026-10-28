@@ -3,22 +3,35 @@
   "with_live": false,
   "domains": [],
   "changes": [
-    "alphapocket-web/core/app/seed.py",
-    "alphapocket-web/core/tests/test_seed.py"
+    "alphapocket-web/core/app/services/analysis.py",
+    "alphapocket/applib/datasets/specs_market.py",
+    "alphapocket/applib/datasource.py",
+    "alphapocket/applib/engines/a_factors.py",
+    "alphapocket/applib/engines/b_signals.py",
+    "alphapocket/applib/engines/c_macro.py",
+    "alphapocket/applib/engines/config.py",
+    "alphapocket/tests/test_data_missing.py",
+    "alphapocket/tests/test_datasets_spec.py",
+    "alphapocket/tests/test_engines_base.py",
+    "alphapocket/tests/test_engines_config.py",
+    "alphapocket/tests/test_engines_wrappers.py",
+    "alphapocket/tests/test_factor_index_trend.py",
+    "alphapocket/tests/test_fetch_modes.py",
+    "alphapocket/tests/test_merge_convergence.py"
   ],
   "changes_source": "git status（工作区 + 暂存区，含未跟踪）",
   "notes": [
-    "增量模式：冒烟 4 项 + 影响命中 3 项"
+    "增量模式：冒烟 4 项 + 影响命中 5 项"
   ],
-  "started_at": "2026-10-27T16:21:13+0800",
-  "duration_s": 104.8,
+  "started_at": "2026-10-29T00:38:07+0800",
+  "duration_s": 335.0,
   "items": [
     {
       "name": "core.smoke",
       "domain": "core",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 2.2,
+      "duration_s": 2.8,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -37,7 +50,7 @@
       "domain": "interaction-api",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 2.0,
+      "duration_s": 2.1,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -84,7 +97,7 @@
       "domain": "core",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 52.4,
+      "duration_s": 55.6,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -99,7 +112,7 @@
       "domain": "interaction-api",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 43.6,
+      "duration_s": 41.1,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -123,10 +136,44 @@
         "/workspace/alphapocket-web/core/.venv/bin/python",
         "/workspace/alphapocket-web/deploy/regression/checks/data_r1.py"
       ]
+    },
+    {
+      "name": "factor.units",
+      "domain": "factor",
+      "kind": "pytest",
+      "status": "pass",
+      "duration_s": 229.0,
+      "detail": "",
+      "cmd": [
+        "/workspace/alphapocket-web/core/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_factor_val_m7.py",
+        "tests/test_factor_gro_m7.py",
+        "tests/test_factor_qua_m7.py",
+        "tests/test_factor_mom_lowvol_m7.py",
+        "tests/test_factor_backtest.py",
+        "tests/test_macro_liquidity.py",
+        "tests/test_factor_index_trend.py",
+        "tests/test_engines_registry.py",
+        "tests/test_engines_wrap.py",
+        "tests/test_datasets_registry.py",
+        "--deselect",
+        "tests/test_factor_val_m7.py::test_val_defs_hypothesis_binding",
+        "--deselect",
+        "tests/test_factor_gro_m7.py::test_gro_defs_hypothesis_binding",
+        "--deselect",
+        "tests/test_factor_gro_m7.py::test_gro_earnings_surprise_gap_registered",
+        "--deselect",
+        "tests/test_factor_qua_m7.py::test_qua_defs_hypothesis_binding",
+        "--deselect",
+        "tests/test_factor_mom_lowvol_m7.py::test_defs_hypothesis_binding_and_direction"
+      ]
     }
   ],
   "summary": {
-    "pass": 7,
+    "pass": 8,
     "fail": 0,
     "skip": 0,
     "timeout": 0
