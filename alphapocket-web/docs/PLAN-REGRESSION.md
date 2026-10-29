@@ -209,3 +209,46 @@ python deploy/regression/run.py --domain factor
   缓存再次丢失——已入库成果不受影响；下次跑回归（无论增量/全量）前需先按
   §3.7 的安装清单重建 venv 与 node_modules，数据面（data.r1/golden）恢复另需
   基础设施起服 + workspace 重建。
+
+### 3.8 港股新闻源接入 + 化石测试清理（2026-10-29 第四轮）
+
+**起因**：用户要求修复「港股新闻源缺失」。根因为 `datasource._fetch_stock_news`
+仅传入 A 股 universe；实测东财 `stock_news_em` 对港/美股代码（00700/AAPL）返回
+同构数据，当年「仅 A 股有公开接口」是保守假设而非接口限制。
+
+**功能修复（3 文件）**：
+
+- `alphapocket/applib/datasource.py`：新闻拉取改为 `a_stocks + hk_stocks + us_stocks`
+  三市场合并；docstring 更新（2026-10-28 实测口径）；
+- `alphapocket/applib/datasets/specs_market.py`：stock_news spec 来源声明同步；
+- `alphapocket-web/core/app/services/analysis.py`：单公司分析「最新消息」降级文案
+  同步（港美股不再提示"该市场暂无公开新闻源"）。
+
+**真实验证**：增量同步后 `news/stock_news.json` 18 标的（3 港股 + 11 美股 + A 股），
+`00700.HK` 10 条真实新闻落盘；ETF（510300.SH）0 条为接口对 ETF 返回空的设计内行为。
+
+**化石清理（同轮甄别，9 文件删除）**：排查中发现一批引用已消亡旧 API、零现役引用、
+且不在回归登记清单（suite CORE_FUNCTIONS/MAP）的断链文件——不清理则全仓 pytest
+无法收绿，回归登记面之外的漂移无人发现：
+
+| 类型 | 文件 | 断链原因 |
+|---|---|---|
+| 测试 | test_data_missing / test_datasets_spec / test_merge_convergence | `SourceSpec`/`validate_spec`/`check_data_missing` 等旧 API 已消亡（data_missing 能力整体下线） |
+| 测试 | test_engines_base / test_engines_wrappers | `validate_input`/`check_output_range` 已消亡；后者与现行 test_engines_wrap.py 重叠 |
+| 测试 | test_fetch_modes | `_resolve_mode` 旧三元组签名 + `_refresh_window` 已删（fetch 语义重构） |
+| 模块 | engines/{a_factors,b_signals,c_macro,config}.py | import 断裂死代码（`EngineSpec`/`EngineWrapper` 随 registry v2 移除）；`debug.py` 被 cli.py 现役引用故保留 |
+
+**教训**：API 消亡时应同步清理其测试与登记（本次化石全部游离于回归登记面之外，
+在 `pytest -x` 全量收口时才暴露）；后续新 API 落地须同步在 suite.py CORE_FUNCTIONS
+登记或明确删除旧测试。
+
+**测试与回归**：
+
+- 定向测试（数据面/注册表/引擎/新闻相关）85 passed；两仓 ruff 全绿；
+- 增量回归（变更集 15）：**8 pass / 0 fail / 0 skip / 0 timeout**（335s）——
+  core.smoke 2.8s / api.contract 2.1s / data.r0 0.7s / factor.audit 0.5s /
+  core.all 55.6s / api.semantics 41.1s / data.r1 3.0s / factor.units 229.0s；
+- 全仓 pytest 另有 32 个 M7 系列失败：均为 sandbox 生成物依赖（gitignore 外的
+  物化文件，第四次沙箱重置丢失），与代码无关；待 sandbox 物化重建后复验；
+- 入库：`9fa0bec`（15 files 功能修复 + 化石清理）+ `fb16c7b`（回归报告），
+  已推送 `trae/agent-LjfsH0`。
