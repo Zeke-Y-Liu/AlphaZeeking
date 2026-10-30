@@ -133,9 +133,23 @@ interface RetryableConfig extends InternalAxiosRequestConfig {
   __isRetry?: boolean;
 }
 
-/** 统一 API 客户端：baseURL=/api（dev 由 vite 代理到 bff），超时 120s。 */
+/** 统一 API 客户端：baseURL 默认 /api（dev 由 vite 代理到 bff），超时 120s。
+ * 优先级：localStorage['ap.api-base']（刷新生效，用于 GitHub Pages 等静态托管指向可达后端）
+ * > VITE_API_BASE（构建期）> '/api'（相对路径，dev/同源部署）。 */
+const RUNTIME_API_BASE_KEY = 'ap.api-base';
+
+function resolveApiBase(): string {
+  try {
+    const stored = localStorage.getItem(RUNTIME_API_BASE_KEY)?.trim();
+    if (stored) return stored.replace(/\/+$/, '');
+  } catch {
+    /* localStorage 不可用时退回构建期配置 */
+  }
+  return import.meta.env.VITE_API_BASE ?? '/api';
+}
+
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE ?? '/api',
+  baseURL: resolveApiBase(),
   timeout: 120_000,
 });
 

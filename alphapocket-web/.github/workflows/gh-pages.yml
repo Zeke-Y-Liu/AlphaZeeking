@@ -1,0 +1,49 @@
+# GitHub Pages 部署：构建 web 前端 → 推 gh-pages 分支（Pages source = gh-pages）。
+# 页面为纯静态托管，无后端：登录需可达后端——在浏览器 localStorage 设
+# `ap.api-base`（如 'https://your-host/api'）后刷新即可指向自建后端（见 README §GitHub Pages）。
+name: Deploy web to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ['web/**', '.github/workflows/gh-pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages-deploy
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+        working-directory: web
+
+      - name: Build（子路径 base）
+        run: pnpm exec vite build --base=/AlphaZeeking/
+        working-directory: web
+
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: web/dist
+          publish_branch: gh-pages
+          force_orphan: true

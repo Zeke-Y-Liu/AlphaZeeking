@@ -42,6 +42,24 @@ pnpm -C bff install && pnpm -C bff start:dev
 pnpm -C web install && pnpm -C web dev
 ```
 
+### GitHub Pages（前端静态托管）
+
+`web` 前端可发布到 GitHub Pages：`https://zeke-y-liu.github.io/AlphaZeeking/`。
+
+- **自动部署**：`.github/workflows/gh-pages.yml` 在 push `main`（改动 `web/**`）时构建并推
+  `gh-pages` 分支（Pages source = `gh-pages`）；也可在 Actions 页手动触发。
+- **手动部署**：`pnpm -C web exec vite build --base=/AlphaZeeking/` 后将 `web/dist` 内容
+  推到 `gh-pages` 分支即可。
+- **后端说明**：Pages 仅静态托管，不含 bff/core。页面默认请求同源 `/api`（不可达）；
+  在浏览器控制台设置自建后端地址后刷新即可登录（dev/生产镜像为同源 `/api`，无需设置）：
+
+  ```js
+  localStorage.setItem('ap.api-base', 'https://your-host/api'); // 指向任一可达 bff；清空恢复默认
+  ```
+
+- 子路径部署下路由自动切换为 hash 模式（`BASE_URL` 判断，见 `web/src/router/index.ts`），
+  规避静态托管无服务端重写的深链接 404。
+
 ## DoD 演练（新环境 10 步走通）
 
 对应实施书 §2.3「可运行判据」；有 docker 时 1–2 步即可，其余在浏览器完成。

@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router';
 import type { NavigationGuard, RouteRecordRaw, RouterHistory } from 'vue-router';
 
 import { useAuthStore } from '../stores/auth';
@@ -125,8 +125,15 @@ export const authGuard: NavigationGuard = (to) => {
   return true;
 };
 
-/** 工厂：便于测试注入 memory history；生产使用默认 web history。 */
-export function createAppRouter(history: RouterHistory = createWebHistory()) {
+/** 工厂：便于测试注入 memory history；生产使用默认 web history。
+ * 子路径静态托管（如 GitHub Pages base=/AlphaZeeking/）改用 hash 路由：
+ * 静态托管无服务端重写，history 深链接刷新/直达会 404。 */
+export function createAppRouter(
+  history: RouterHistory =
+    import.meta.env.BASE_URL === '/'
+      ? createWebHistory(import.meta.env.BASE_URL)
+      : createWebHashHistory(import.meta.env.BASE_URL),
+) {
   const router = createRouter({ history, routes });
   router.beforeEach(authGuard);
   // 页面标题（meta.title）→ document.title
