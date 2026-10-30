@@ -599,27 +599,13 @@ export interface AuthTokens {
   user: AuthUser;
 }
 
-/* ── 引擎C 宏观流动性（T-C6 冻结契约 + T-C7 前端） ───────────── */
+/* ── 引擎C 宏观流动性（T-C6/T-C7：summary 五键 + 报告层扩展） ───────────── */
 
-/** 引擎C 冻结五键（core ``runs.summary.macro_liquidity``，services.review._macro_summary
- * 产出；API.md §4.4 注释同步：字段级冻结，向后兼容只增不改）。 */
-export interface MacroLiquiditySummary {
-  /** 全局档位：-2…+2；unavailable 形态为 'unavailable'。 */
-  state: string;
-  /** 全局档位（数值）；降级为 'unavailable'。 */
-  global: number | string | null;
-  /** 三市场档位；降级态三市场均为 'unavailable'。 */
-  markets: { A: number | string | null; HK: number | string | null; US: number | string | null };
-  /** 全局打分（维度等权聚合）；降级为 null。 */
-  global_score: number | null;
-  /** 档位基准日（与评估同日）；降级为 null。 */
-  as_of: string | null;
-}
-
-/** 引擎C regime 块（applib review.json 全量产物，T-C2/T-C4：冻结五键 +
- *  status/detail/notes 扩展键；summary 层由 core 提炼为 MacroLiquiditySummary）。 */
+/** 引擎C regime 块：runs.summary.macro_liquidity 五键（MacroLiquiditySummary，
+ * core services.review._macro_summary 产出）+ 报告层扩展键（status/reason/detail/
+ * notes，applib review.json 全量产物带出；当前前端卡片仅消费 summary 五键）。 */
 export interface MacroLiquidityBlock extends MacroLiquiditySummary {
-  status?: string | null;
+  status?: 'unavailable';
   reason?: string | null;
   detail?: Record<string, unknown> | null;
   notes?: Record<string, unknown> | null;

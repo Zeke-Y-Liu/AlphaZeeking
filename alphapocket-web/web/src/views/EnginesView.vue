@@ -15,6 +15,7 @@ import {
   updateEngineMetric,
 } from '../api';
 import type {
+  EngineDataset,
   EngineDescribe,
   EngineMetric,
   MetricDataMissing,
@@ -256,7 +257,7 @@ async function submitRemove(): Promise<void> {
 }
 
 /* ── 数据集状态（右卡：与数据页共用端点） ───────── */
-const engineDatasets = ref<{ dataset: string; synced: boolean; as_of: string | null; series: number; hint?: string }[]>([]);
+const engineDatasets = ref<EngineDataset[]>([]);
 const datasetsMissing = ref(0);
 
 async function loadDatasets(): Promise<void> {
@@ -356,14 +357,14 @@ onMounted(() => {
         </template>
         <template #cell:actions="{ row }">
           <span class="ev-actions">
-            <ApButton size="sm" variant="ghost" :data-test="`ev-edit-${row.id}`" @click="openEdit(row as EngineMetric)">编辑</ApButton>
-            <ApButton size="sm" variant="ghost" :data-test="`ev-toggle-${row.id}`" @click="toggleStatus(row as EngineMetric)">
+            <ApButton size="sm" variant="ghost" :data-test="`ev-edit-${row.id}`" @click="openEdit(row as unknown as EngineMetric)">编辑</ApButton>
+            <ApButton size="sm" variant="ghost" :data-test="`ev-toggle-${row.id}`" @click="toggleStatus(row as unknown as EngineMetric)">
               {{ row.status === 'active' ? '停用' : '启用' }}
             </ApButton>
             <ApButton
               size="sm" variant="danger"
               :data-test="`ev-remove-${row.id}`"
-              @click="removeTarget = row as EngineMetric; removeForm = { hypothesis_id: '', reason: '' }; removeOpen = true"
+              @click="removeTarget = row as unknown as EngineMetric; removeForm = { hypothesis_id: '', reason: '' }; removeOpen = true"
             >
               删除
             </ApButton>
