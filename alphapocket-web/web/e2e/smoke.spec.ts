@@ -11,8 +11,8 @@
  */
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 
-const USER = 'demo';
-const PASS = 'alphapocket';
+const USER = 'z';
+const PASS = 'Alpha618';
 /** 每轮唯一 aid：软删（archived）后同 aid 不可重建 → 用时间戳避开（清理后不进默认列表）。 */
 const AID = `ca_e2e_${Date.now().toString(36)}`;
 /** 数据准备直连 core（E2E 校验的是前端交互；API 准备不经 bff 路径约定干扰）。 */

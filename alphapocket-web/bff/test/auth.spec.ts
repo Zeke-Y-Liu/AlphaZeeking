@@ -21,13 +21,13 @@ function tokenBundle(): Record<string, unknown> {
     refresh: 'REFRESH.JWT.TOKEN',
     token_type: 'bearer',
     expires_in: 900,
-    user: { id: 1, username: 'demo', role: 'owner' },
+    user: { id: 1, username: 'z', role: 'owner' },
   };
 }
 
 /**
  * 最小 auth mock core（随机端口，离线、确定性）：
- * - login：demo/alphapocket → 200 三件套；locked → 429；其余 → 401 统一错误体；
+ * - login：z/Alpha618 → 200 三件套；locked → 429；其余 → 401 统一错误体；
  * - refresh → 200 三件套；me → 200 用户；其它（业务代理）→ 200 回显。
  */
 async function startAuthMockCore(): Promise<MockAuthCore> {
@@ -43,7 +43,7 @@ async function startAuthMockCore(): Promise<MockAuthCore> {
 
       if (path === '/api/v1/auth/login') {
         const data = body ? JSON.parse(body) : {};
-        if (data.username === 'demo' && data.password === 'alphapocket') {
+        if (data.username === 'z' && data.password === 'Alpha618') {
           send(200, tokenBundle());
           return;
         }
@@ -63,7 +63,7 @@ async function startAuthMockCore(): Promise<MockAuthCore> {
         return;
       }
       if (path === '/api/v1/auth/me') {
-        send(200, { id: 1, username: 'demo', role: 'owner' });
+        send(200, { id: 1, username: 'z', role: 'owner' });
         return;
       }
       send(200, { ok: true, path, method: req.method });
@@ -113,7 +113,7 @@ describe('Auth (e2e, mock core)', () => {
   it('POST /api/auth/login 成功：透传 token 三件套与 user', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/auth/login')
-      .send({ username: 'demo', password: 'alphapocket' })
+      .send({ username: 'z', password: 'Alpha618' })
       .expect(200);
 
     expect(res.body).toEqual(tokenBundle());
@@ -122,7 +122,7 @@ describe('Auth (e2e, mock core)', () => {
   it('core 401 → BFF 原样透传状态码与统一错误体', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/auth/login')
-      .send({ username: 'demo', password: 'bad' })
+      .send({ username: 'z', password: 'bad' })
       .expect(401);
 
     expect(res.body).toEqual({
@@ -148,7 +148,7 @@ describe('Auth (e2e, mock core)', () => {
       .set('Authorization', `Bearer ${signToken()}`)
       .expect(200);
 
-    expect(res.body).toEqual({ id: 1, username: 'demo', role: 'owner' });
+    expect(res.body).toEqual({ id: 1, username: 'z', role: 'owner' });
   });
 
   it('无 token 访问 /api/v1/portfolios → 401 UNAUTHORIZED', async () => {

@@ -22,7 +22,7 @@ const TOKENS: AuthTokens = {
   refresh: 'ref-1',
   token_type: 'bearer',
   expires_in: 900,
-  user: { id: 1, username: 'demo', role: 'user' },
+  user: { id: 1, username: 'z', role: 'user' },
 };
 
 const Stub = { template: '<div />' };
@@ -40,7 +40,7 @@ async function mountLogin(query = ''): Promise<{ wrapper: ReturnType<typeof moun
   return { wrapper, router };
 }
 
-async function submit(wrapper: ReturnType<typeof mount>, username = 'demo', password = 'bad'): Promise<void> {
+async function submit(wrapper: ReturnType<typeof mount>, username = 'z', password = 'bad'): Promise<void> {
   await wrapper.find('[data-test="username"]').setValue(username);
   await wrapper.find('[data-test="password"]').setValue(password);
   await wrapper.find('form').trigger('submit');
@@ -85,7 +85,7 @@ describe('LoginView', () => {
     );
     const { wrapper } = await mountLogin();
 
-    await submit(wrapper, 'demo', 'alphapocket');
+    await submit(wrapper, 'z', 'Alpha618');
 
     const button = wrapper.find('[data-test="submit"]');
     expect(button.attributes('disabled')).toBeDefined();
@@ -99,7 +99,7 @@ describe('LoginView', () => {
     mockedLogin.mockResolvedValue(TOKENS);
     const { wrapper, router } = await mountLogin('?redirect=/data');
 
-    await submit(wrapper, 'demo', 'alphapocket');
+    await submit(wrapper, 'z', 'Alpha618');
 
     expect(router.currentRoute.value.path).toBe('/data');
     expect(localStorage.getItem('ap.access')).toBe('acc-1');
@@ -109,7 +109,7 @@ describe('LoginView', () => {
     mockedLogin.mockResolvedValue(TOKENS);
     const { wrapper, router } = await mountLogin();
 
-    await submit(wrapper, 'demo', 'alphapocket');
+    await submit(wrapper, 'z', 'Alpha618');
 
     expect(router.currentRoute.value.path).toBe('/portfolios');
   });

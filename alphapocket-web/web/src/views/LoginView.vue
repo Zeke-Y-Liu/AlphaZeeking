@@ -106,7 +106,7 @@ async function onSubmit(): Promise<void> {
         </form>
 
         <p class="login__demo ap-muted">
-          演示账号：<span class="ap-mono">demo / alphapocket</span>
+          登录账号：<span class="ap-mono">z / Alpha618</span>
         </p>
       </ApCard>
 

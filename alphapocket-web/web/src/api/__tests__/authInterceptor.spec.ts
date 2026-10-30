@@ -11,7 +11,7 @@ const TOKENS: AuthTokens = {
   refresh: 'ref-new',
   token_type: 'bearer',
   expires_in: 900,
-  user: { id: 1, username: 'demo', role: 'user' },
+  user: { id: 1, username: 'z', role: 'user' },
 };
 
 interface MockRoute {

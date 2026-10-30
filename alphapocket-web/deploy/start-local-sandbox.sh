@@ -62,7 +62,7 @@ gate_and_report() {
   local asof
   asof=$(curl -s -m 6 localhost:8082/api/v1/data/status \
     -H "Authorization: Bearer $(curl -s -m 6 -X POST localhost:8082/api/v1/auth/login \
-      -H 'Content-Type: application/json' -d '{"username":"demo","password":"alphapocket"}' \
+      -H 'Content-Type: application/json' -d '{"username":"z","password":"Alpha618"}' \
       | "$ROOT/core/.venv/bin/python" -c "import sys,json;print(json.load(sys.stdin).get('access',''))" 2>/dev/null)" 2>/dev/null \
     | "$ROOT/core/.venv/bin/python" -c "import sys,json;print(json.load(sys.stdin).get('as_of'))" 2>/dev/null || echo "")
 

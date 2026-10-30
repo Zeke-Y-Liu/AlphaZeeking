@@ -26,8 +26,8 @@
 
 ### POST `/api/auth/login`（core 亦有 `/api/v1/auth/login`）
 
-请求：`{"username": "demo", "password": "alphapocket"}`
-（演示账号由 `make seed` 创建：`demo` / `alphapocket`，role=owner）
+请求：`{"username": "z", "password": "Alpha618"}`
+（默认账号由 `make seed` 创建：`z` / `Alpha618`，role=owner；2026-10-31 前为 demo/alphapocket）
 
 响应 `200`：
 
@@ -37,7 +37,7 @@
   "refresh": "<JWT>",
   "token_type": "bearer",
   "expires_in": 900,
-  "user": {"id": 1, "username": "demo", "role": "owner"}
+  "user": {"id": 1, "username": "z", "role": "owner"}
 }
 ```
 
@@ -50,7 +50,7 @@
 
 ### GET `/api/auth/me`
 
-→ `{"id": 1, "username": "demo", "role": "owner"}`（需 Bearer access）。
+→ `{"id": 1, "username": "z", "role": "owner"}`（需 Bearer access）。
 
 ## 3. 统一响应约定
 
@@ -199,7 +199,7 @@ curl -s $BASE/healthz
 # 登录（演示账号）
 TOKEN=$(curl -s -X POST $BASE/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"demo","password":"alphapocket"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access"])')
+  -d '{"username":"z","password":"Alpha618"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access"])')
 
 AUTH="Authorization: Bearer $TOKEN"
 

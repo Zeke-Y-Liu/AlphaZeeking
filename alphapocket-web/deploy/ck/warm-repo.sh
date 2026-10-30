@@ -23,7 +23,7 @@ fi
 
 # 登录 + 触发增量同步
 TOK=$(curl -s -m 5 -X POST localhost:8082/api/v1/auth/login -H 'Content-Type: application/json' \
-  -d '{"username":"demo","password":"alphapocket"}' \
+  -d '{"username":"z","password":"Alpha618"}' \
   | "$CK_ROOT/core/.venv/bin/python" -c "import sys,json;print(json.load(sys.stdin)['access'])" 2>/dev/null)
 [ -n "$TOK" ] || { say "ERR: core 未起或登录失败"; exit 1; }
 

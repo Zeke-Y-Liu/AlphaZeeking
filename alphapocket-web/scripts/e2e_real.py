@@ -19,7 +19,7 @@ def step(name: str, ok: bool, detail: str = "") -> None:
 
 c = httpx.Client(base_url=BASE, timeout=60)
 
-r = c.post("/api/auth/login", json={"username": "demo", "password": "alphapocket"})
+r = c.post("/api/auth/login", json={"username": "z", "password": "Alpha618"})
 step("登录", r.status_code == 200, f"{r.status_code}")
 c.headers["Authorization"] = f"Bearer {r.json()['access']}"
 

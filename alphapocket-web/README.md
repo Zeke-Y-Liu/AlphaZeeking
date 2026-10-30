@@ -52,7 +52,7 @@ cp .env.example .env
 # 2) 启动 + 迁移 + 灌演示数据
 make up && make seed
 # 3) 打开工作台
-open http://localhost:8080          # 演示账号 demo / alphapocket
+open http://localhost:8080          # 登录账号 z / Alpha618
 ```
 
 4. 登录 → 进入「组合」列表（seed 已含 `cn4`、`multi5`）。

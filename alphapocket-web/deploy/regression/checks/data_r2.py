@@ -32,7 +32,7 @@ def _req(path: str, payload: dict | None = None, token: str | None = None):
 
 def main() -> int:
     token = _req("/api/v1/auth/login",
-                 {"username": "demo", "password": "alphapocket"})["access"]
+                 {"username": "z", "password": "Alpha618"})["access"]
     print("登录 OK")
 
     r = _req("/api/v1/data/sync", {"mode": "incremental"}, token)

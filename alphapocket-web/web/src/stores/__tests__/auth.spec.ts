@@ -20,7 +20,7 @@ const TOKENS: AuthTokens = {
   refresh: 'ref-1',
   token_type: 'bearer',
   expires_in: 900,
-  user: { id: 1, username: 'demo', role: 'user' },
+  user: { id: 1, username: 'z', role: 'user' },
 };
 
 beforeEach(() => {
@@ -34,23 +34,23 @@ describe('auth store', () => {
     mockedLogin.mockResolvedValue(TOKENS);
     const auth = useAuthStore();
 
-    await auth.login('demo', 'alphapocket');
+    await auth.login('z', 'Alpha618');
 
     expect(auth.access).toBe('acc-1');
     expect(auth.refresh).toBe('ref-1');
-    expect(auth.user?.username).toBe('demo');
+    expect(auth.user?.username).toBe('z');
     expect(auth.isAuthenticated).toBe(true);
     expect(auth.loading).toBe(false);
     expect(localStorage.getItem(ACCESS_KEY)).toBe('acc-1');
     expect(localStorage.getItem(REFRESH_KEY)).toBe('ref-1');
     expect(JSON.parse(localStorage.getItem(USER_KEY) as string)).toEqual(TOKENS.user);
-    expect(mockedLogin).toHaveBeenCalledWith({ username: 'demo', password: 'alphapocket' });
+    expect(mockedLogin).toHaveBeenCalledWith({ username: 'z', password: 'Alpha618' });
   });
 
   it('logout 清空 state + localStorage', async () => {
     mockedLogin.mockResolvedValue(TOKENS);
     const auth = useAuthStore();
-    await auth.login('demo', 'alphapocket');
+    await auth.login('z', 'Alpha618');
 
     auth.logout();
 
@@ -108,7 +108,7 @@ describe('auth store', () => {
     mockedLogin.mockRejectedValue(new ApiError('ACCOUNT_LOCKED', '账号已锁定，请 15 分钟后再试', 429));
     const auth = useAuthStore();
 
-    await expect(auth.login('demo', 'bad')).rejects.toBeInstanceOf(ApiError);
+    await expect(auth.login('z', 'bad')).rejects.toBeInstanceOf(ApiError);
 
     expect(auth.loading).toBe(false);
     expect(auth.error?.status).toBe(429);

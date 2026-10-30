@@ -394,7 +394,7 @@ function buildExecOrder(pf: PortfolioFixture, plan: ReturnType<typeof buildPlan>
       checks: [{ item: '整手', detail: '全部 100 份整数倍', status: 'pass' }],
       risks: ['QDII 场内价可偏离净值，下单前核对 IOPV 溢价'],
     },
-    timeline: [{ at: CREATED_AT, action: 'create', actor: 'demo', payload: {} }],
+    timeline: [{ at: CREATED_AT, action: 'create', actor: 'z', payload: {} }],
   };
 }
 
@@ -575,7 +575,7 @@ async function handle(route: Route, store: MockStore): Promise<void> {
     if (store.loginLocked) {
       return fail(route, 429, 'ACCOUNT_LOCKED', '登录失败次数过多，账号已被临时锁定');
     }
-    if (body?.username !== 'demo' || body?.password !== 'alphapocket') {
+    if (body?.username !== 'z' || body?.password !== 'Alpha618') {
       return fail(route, 401, 'UNAUTHORIZED', '用户名或密码错误');
     }
     return ok(route, {
@@ -583,7 +583,7 @@ async function handle(route: Route, store: MockStore): Promise<void> {
       refresh: 'e2e-refresh',
       token_type: 'bearer',
       expires_in: 3600,
-      user: { id: 1, username: 'demo', role: 'owner' },
+      user: { id: 1, username: 'z', role: 'owner' },
     });
   }
   if (method === 'POST' && path === '/auth/refresh') {
@@ -592,11 +592,11 @@ async function handle(route: Route, store: MockStore): Promise<void> {
       refresh: 'e2e-refresh',
       token_type: 'bearer',
       expires_in: 3600,
-      user: { id: 1, username: 'demo', role: 'owner' },
+      user: { id: 1, username: 'z', role: 'owner' },
     });
   }
   if (method === 'GET' && path === '/auth/me') {
-    return ok(route, { id: 1, username: 'demo', role: 'owner' });
+    return ok(route, { id: 1, username: 'z', role: 'owner' });
   }
   if (method === 'GET' && path === '/healthz') return ok(route, { status: 'ok' });
 
@@ -937,9 +937,9 @@ async function handle(route: Route, store: MockStore): Promise<void> {
       if (o.status !== 'draft') return fail(route, 409, 'INVALID_STATE', '仅 draft 可确认');
       o.status = 'confirmed';
       o.confirmed_at = CREATED_AT;
-      o.confirmed_by = 'demo';
+      o.confirmed_by = 'z';
       o.sheet.status = 'confirmed';
-      o.timeline.push({ at: CREATED_AT, action: 'confirm', actor: 'demo', payload: { ack_discipline: true } });
+      o.timeline.push({ at: CREATED_AT, action: 'confirm', actor: 'z', payload: { ack_discipline: true } });
       return ok(route, o);
     }
     if (action === 'fill') {
@@ -965,12 +965,12 @@ async function handle(route: Route, store: MockStore): Promise<void> {
         total_amount: 160063,
         partial: false,
       };
-      o.timeline.push({ at: CREATED_AT, action: 'fill', actor: 'demo', payload: { n: fills.length } });
+      o.timeline.push({ at: CREATED_AT, action: 'fill', actor: 'z', payload: { n: fills.length } });
       return ok(route, o);
     }
     o.status = 'cancelled';
     o.sheet.status = 'cancelled';
-    o.timeline.push({ at: CREATED_AT, action: 'cancel', actor: 'demo', payload: {} });
+    o.timeline.push({ at: CREATED_AT, action: 'cancel', actor: 'z', payload: {} });
     return ok(route, o);
   }
   if (method === 'GET' && (m = path.match(/^\/v1\/portfolios\/([^/]+)\/rebalance-history$/))) {

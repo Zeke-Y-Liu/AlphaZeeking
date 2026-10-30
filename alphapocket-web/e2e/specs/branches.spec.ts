@@ -51,8 +51,8 @@ test.describe('分支 · 门禁 / 互斥 / 限流', () => {
     store.loginLocked = true;
 
     await page.goto('/login');
-    await page.getByTestId('username').fill('demo');
-    await page.getByTestId('password').fill('alphapocket');
+    await page.getByTestId('username').fill('z');
+    await page.getByTestId('password').fill('Alpha618');
     await page.getByTestId('submit').click();
 
     await expect(page.getByTestId('locked')).toContainText('锁定');
@@ -63,7 +63,7 @@ test.describe('分支 · 门禁 / 互斥 / 限流', () => {
     await installApiMocks(page, store);
 
     await page.goto('/login');
-    await page.getByTestId('username').fill('demo');
+    await page.getByTestId('username').fill('z');
     await page.getByTestId('password').fill('wrong-password');
     await page.getByTestId('submit').click();
 

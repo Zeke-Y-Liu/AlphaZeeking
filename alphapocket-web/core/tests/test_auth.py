@@ -16,8 +16,8 @@ from app.core.config import get_settings
 from app.core.security import decode_token
 from app.db.redis import get_redis
 
-DEMO_USER = "demo"
-DEMO_PASSWORD = "alphapocket"
+DEMO_USER = "z"
+DEMO_PASSWORD = "Alpha618"
 UNKNOWN_USER = "no_such_user"
 FAIL_KEY = f"ap:login:fail:{DEMO_USER}"
 UNKNOWN_FAIL_KEY = f"ap:login:fail:{UNKNOWN_USER}"

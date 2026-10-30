@@ -19,9 +19,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.db.session import session_scope
 from app.models import Portfolio, Position, Security, User
 
-# ── 演示用户 ──────────────────────────────────────────────────
-DEMO_USERNAME = "demo"
-DEMO_PASSWORD = "alphapocket"
+# ── 默认用户（2026-10-31 起 z/Alpha618；旧 demo/alphapocket 已迁移）──────
+DEMO_USERNAME = "z"
+DEMO_PASSWORD = "Alpha618"
 DEMO_ROLE = "owner"
 
 _pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")

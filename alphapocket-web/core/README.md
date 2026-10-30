@@ -33,7 +33,7 @@ make seed-local      # cd core && .venv/bin/python -m app.seed（幂等）
 make psql-local      # psql -h 127.0.0.1 -U ap -d ap
 ```
 
-种子数据：用户 `demo/alphapocket`（argon2id）· 九标的（CN4 + MULTI5）· 组合 `cn4`/`multi5`
+种子数据：用户 `z/Alpha618`（argon2id；2026-10-31 起替换旧 demo/alphapocket）· 九标的（CN4 + MULTI5）· 组合 `cn4`/`multi5`
 及持仓；以自然键 upsert，可重复执行。
 
 ## 关于 `alphapocket` 依赖（V4-α 计算内核）

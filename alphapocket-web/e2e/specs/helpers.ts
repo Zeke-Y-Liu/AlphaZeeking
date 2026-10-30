@@ -14,7 +14,7 @@ export async function seedAuth(page: Page): Promise<void> {
   await page.addInitScript(() => {
     localStorage.setItem('ap.access', 'e2e-access');
     localStorage.setItem('ap.refresh', 'e2e-refresh');
-    localStorage.setItem('ap.user', JSON.stringify({ id: 1, username: 'demo', role: 'owner' }));
+    localStorage.setItem('ap.user', JSON.stringify({ id: 1, username: 'z', role: 'owner' }));
   });
 }
 
