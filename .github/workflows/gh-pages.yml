@@ -7,7 +7,7 @@ name: Deploy web to GitHub Pages
 
 on:
   push:
-    branches: [main, trae/agent-LjfsH0]
+    branches: [main]
     paths: ['alphapocket-web/web/**', '.github/workflows/gh-pages.yml']
   workflow_dispatch:
 
