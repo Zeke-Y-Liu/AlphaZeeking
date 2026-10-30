@@ -1,7 +1,8 @@
-# GitHub Pages 部署（workflow 模式）：构建 web 前端 → upload-pages-artifact → deploy-pages（2026-10-31）。
-# configure-pages 的 enablement 在 Pages 未启用时会自动创建站点（build_type=workflow）。
+# GitHub Pages 部署（branch 模式）：构建 web 前端 → 推 gh-pages 分支（Pages source = gh-pages branch）。
+# 不依赖 Pages site API（enablement 需 admin token 的硬限制）——首次启用请在网页
+# Settings → Pages → Source 选 "Deploy from a branch" + 分支 gh-pages + 目录 /(root)。
 # 页面为纯静态托管，无后端：登录需可达后端（浏览器 localStorage 设 ap.api-base）——
-# `ap.api-base`（如 https://your-host/api）后刷新即可指向自建后端（见 README §GitHub Pages）。
+# 见 alphapocket-web/README.md §GitHub Pages。
 name: Deploy web to GitHub Pages
 
 on:
@@ -11,16 +12,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: pages
+  group: gh-pages-deploy
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,20 +42,10 @@ jobs:
         run: pnpm exec vite build --base=/AlphaZeeking/
         working-directory: alphapocket-web/web
 
-      - uses: actions/configure-pages@v5
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          enablement: true
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: alphapocket-web/web/dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: alphapocket-web/web/dist
+          publish_branch: gh-pages
+          force_orphan: true

@@ -46,8 +46,11 @@ pnpm -C web install && pnpm -C web dev
 
 `web` 前端可发布到 GitHub Pages：`https://zeke-y-liu.github.io/AlphaZeeking/`。
 
+- **首次启用**（仅一次，需仓库 admin）：Settings → Pages → Source 选 **Deploy from a branch**
+  → 分支 **gh-pages** → 目录 **/(root)** → Save。
 - **自动部署**：仓库根 `.github/workflows/gh-pages.yml` 在 push `main`（改动
-  `alphapocket-web/web/**`）时构建并部署；也可在 Actions 页手动触发。
+  `alphapocket-web/web/**`）时构建并将 `web/dist` 推到 `gh-pages` 分支，Pages 随之自动发布；
+  也可在 Actions 页手动触发。
 - **手动部署**：`pnpm -C web exec vite build --base=/AlphaZeeking/` 后将 `web/dist` 内容
   推到 `gh-pages` 分支即可。
 - **后端说明**：Pages 仅静态托管，不含 bff/core。页面默认请求同源 `/api`（不可达）；
