@@ -26,8 +26,8 @@
 
 ### POST `/api/auth/login`（core 亦有 `/api/v1/auth/login`）
 
-请求：`{"username": "z", "password": "Alpha618"}`
-（默认账号由 `make seed` 创建：`z` / `Alpha618`，role=owner；2026-10-31 前为 demo/alphapocket）
+请求：`{"username": "z", "password": "<your-password>"}`
+（默认账号由 `make seed` 创建：`z`，密码为部署时设置值；生产部署必须修改默认密码）
 
 响应 `200`：
 
@@ -199,7 +199,7 @@ curl -s $BASE/healthz
 # 登录（演示账号）
 TOKEN=$(curl -s -X POST $BASE/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"z","password":"Alpha618"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access"])')
+  -d '{"username":"z","password":"<your-password>"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access"])')
 
 AUTH="Authorization: Bearer $TOKEN"
 

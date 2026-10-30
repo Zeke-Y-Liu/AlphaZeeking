@@ -2,7 +2,7 @@
 
 > 环境：本地沙箱三件套（web :5173 / bff :8081 / core :8082），代码 main `91b9103`（含 V4-α 因子库、引擎 C 与 AP-Checkpoint），数据 as_of 2026-10-16，15 标的。
 > 访问入口：preview URL（`https://run-agent-6acb8bb638408e60b61b2c22-37d9sfgv43xt6uxngt4-preview.agent-sandbox-bj-d1-gw.traecontent.cn/`）
-> 账号：`z` / `Alpha618`（2026-10-31 起替换旧 demo/alphapocket）
+> 账号：`z`（密码见部署管理员记录；2026-10-31 起替换旧 demo 账号）
 > 自动化基线：真实链路 API E2E 17/17 PASS · Playwright UI E2E 7/7 passed · core pytest 189 passed（本清单为人工复核补充）
 > v2 变更：新增 M9 引擎 C 宏观流动性；M3 补充宏观卡检查；注意事项补充降级语义。
 > **2026-10-18 执行记录**：41 条全部验证完成——40 ✅ / 1 ❌ → **41 ✅**（同日修复回填：M2-3 quotes 部分返回容错、M7-1 RunsView 前端实现；偏差注记已更新）。执行方式：API 批脚本（/tmp/manual_api_batch.py）+ 浏览器三轮（localhost:5173 直连）。
@@ -18,7 +18,7 @@
 | # | 用例 | 步骤 | 预期 | 结果 |
 |---|---|---|---|---|
 | M0-1 | 首页加载 | 浏览器打开 preview URL | 页面正常渲染，无白屏/控制台报错 | ✅ |
-| M0-2 | 正常登录 | 输入 z / Alpha618 → 登录 | 跳转到组合列表/首页，显示登录态 | ✅ |
+| M0-2 | 正常登录 | 输入部署账号与密码 → 登录 | 跳转到组合列表/首页，显示登录态 | ✅ |
 | M0-3 | 错误密码 | 输入 demo / wrongpass | 401 内联提示「用户名或密码错误」，不跳转 | ✅ |
 | M0-4 | 会话保持 | 登录后刷新页面（F5） | 仍保持登录态（token 持久化），不弹登录页 | ✅ |
 | M0-5 | 登录限流锁定（**放最后测**） | 连续 5 次错误密码后再登录 | 429「账号已锁定，请 N 分钟后重试」；解锁可 `redis-cli del ap:login:fail:demo` 或等 15 分钟 | ✅ |
