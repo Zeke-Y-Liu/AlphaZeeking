@@ -7,7 +7,7 @@ name: Deploy web to GitHub Pages
 on:
   push:
     branches: [main, trae/agent-LjfsH0]
-    paths: ['web/**', '.github/workflows/gh-pages.yml']
+    paths: ['alphapocket-web/web/**', '.github/workflows/gh-pages.yml']
   workflow_dispatch:
 
 permissions:
@@ -33,15 +33,15 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: alphapocket-web/web/pnpm-lock.yaml
 
       - name: Install deps
         run: pnpm install --frozen-lockfile
-        working-directory: web
+        working-directory: alphapocket-web/web
 
       - name: Build（子路径 base）
         run: pnpm exec vite build --base=/AlphaZeeking/
-        working-directory: web
+        working-directory: alphapocket-web/web
 
       - uses: actions/configure-pages@v5
         with:
@@ -49,7 +49,7 @@ jobs:
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: web/dist
+          path: alphapocket-web/web/dist
 
   deploy:
     needs: build
