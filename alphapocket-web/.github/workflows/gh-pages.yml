@@ -1,7 +1,7 @@
 # GitHub Pages 部署（workflow 模式）：构建 web 前端 → upload-pages-artifact → deploy-pages。
 # configure-pages 的 enablement 在 Pages 未启用时会自动创建站点（build_type=workflow）。
 # 页面为纯静态托管，无后端：登录需可达后端（浏览器 localStorage 设 ap.api-base）——
-# `ap.api-base`（如 'https://your-host/api'）后刷新即可指向自建后端（见 README §GitHub Pages）。
+# `ap.api-base`（如 https://your-host/api）后刷新即可指向自建后端（见 README §GitHub Pages）。
 name: Deploy web to GitHub Pages
 
 on:
