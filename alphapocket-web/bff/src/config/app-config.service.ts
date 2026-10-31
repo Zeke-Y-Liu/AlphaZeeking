@@ -43,4 +43,9 @@ export class AppConfigService {
   get throttleLimit(): number {
     return Number(this.config.get<number>('throttle.limit') ?? 100);
   }
+
+  /** CORS 额外白名单（逗号分隔 origin，精确匹配）；用于 GitHub Pages 等跨源静态托管 */
+  get corsOrigins(): string[] {
+    return (this.config.get<string[]>('corsOrigins') ?? []).filter(Boolean);
+  }
 }

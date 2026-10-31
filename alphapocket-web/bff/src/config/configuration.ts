@@ -19,4 +19,9 @@ export const bffConfiguration = (): Record<string, unknown> => ({
     ttlSeconds: Number(process.env.THROTTLE_TTL ?? 60),
     limit: Number(process.env.THROTTLE_LIMIT ?? 100),
   },
+  // CORS 额外白名单（逗号分隔 origin，精确匹配）：用于 GitHub Pages 等跨源静态托管指向 BFF
+  corsOrigins: (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
 });

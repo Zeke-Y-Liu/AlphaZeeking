@@ -10,8 +10,8 @@ import { AppConfigService } from './config/app-config.service';
  */
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
-  configureCors(app);
   const config = app.get(AppConfigService);
+  configureCors(app, config);
   await app.listen(config.port);
   // eslint-disable-next-line no-console
   console.log(`[bff] listening on http://localhost:${config.port}`);
