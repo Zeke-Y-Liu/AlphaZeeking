@@ -1,0 +1,1 @@
+import{d as o,c as t,y as n,ad as p,o as d,_ as c}from"./index-BwQT3FMn.js";const r=o({__name:"ApBadge",props:{tone:{default:"default"}},setup(e){const a=e;return(s,l)=>(d(),t("span",{class:n(["ap-badge",`ap-badge--${a.tone}`])},[p(s.$slots,"default",{},void 0)],2))}}),f=c(r,[["__scopeId","data-v-c2ae76fd"]]);export{f as A};
