@@ -3,21 +3,24 @@
   "with_live": false,
   "domains": [],
   "changes": [
-    "web/e2e/smoke.spec.ts"
+    "alphapocket-web/bff/src/auth/cors.ts",
+    "alphapocket-web/bff/src/config/configuration.ts",
+    "alphapocket-web/bff/src/config/app-config.service.ts",
+    "alphapocket-web/bff/src/main.ts"
   ],
   "changes_source": "--changed 显式指定",
   "notes": [
     "增量模式：冒烟 4 项 + 影响命中 1 项"
   ],
-  "started_at": "2026-10-31T00:43:57+0800",
-  "duration_s": 15.3,
+  "started_at": "2026-10-31T23:00:34+0800",
+  "duration_s": 19.7,
   "items": [
     {
       "name": "core.smoke",
       "domain": "core",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 2.3,
+      "duration_s": 2.7,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -36,7 +39,7 @@
       "domain": "interaction-api",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 2.0,
+      "duration_s": 2.2,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -51,7 +54,7 @@
       "domain": "data",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 0.9,
+      "duration_s": 0.8,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -82,9 +85,9 @@
       "name": "web.e2e",
       "domain": "interaction-e2e",
       "kind": "e2e",
-      "status": "fail",
-      "duration_s": 8.3,
-      "detail": " |     Error Context: test-results/smoke-回归冒烟（Chrome-基线）-数据状态页：universe-与验证区渲染-chromium-retry1/error-context.md |  |   1 failed |     [chromium] › e2e/smoke.spec.ts:83:3 › 回归冒烟（Chrome 基线） › 数据状态页：universe 与验证区渲染 ────────────────── |   3 did not run",
+      "status": "pass",
+      "duration_s": 12.3,
+      "detail": "",
       "cmd": [
         "pnpm",
         "exec",
@@ -94,8 +97,8 @@
     }
   ],
   "summary": {
-    "pass": 4,
-    "fail": 1,
+    "pass": 5,
+    "fail": 0,
     "skip": 0,
     "timeout": 0
   }
