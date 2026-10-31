@@ -1,0 +1,8 @@
+{
+  "schema": "ap-checkpoint/l1@v1",
+  "state_key": "eab089b+2026-10-14",
+  "git_head": "eab089b",
+  "as_of": "2026-10-14",
+  "built_at": "2026-10-31T14:33:44Z",
+  "contains": ["ap.dump", "minio-artifacts.tar.gz"]
+}
