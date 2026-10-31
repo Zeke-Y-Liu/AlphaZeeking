@@ -42,6 +42,11 @@ async function onSubmit(): Promise<void> {
       lockedMsg.value = apiErr.message || '登录失败次数过多，账号已被临时锁定';
     } else if (apiErr?.status === 401) {
       errorMsg.value = '用户名或密码错误';
+    } else if (apiErr?.status === 405) {
+      // 静态托管（如 GitHub Pages）只允许 GET/HEAD，POST 被边缘 CDN 以 405 拒绝：
+      // 说明当前站点未连接后端 API（ap.api-base / VITE_API_BASE）。
+      errorMsg.value =
+        '登录服务不可用（405）：当前站点为静态托管，未连接后端 API。请先配置后端服务地址（ap.api-base）再登录';
     } else {
       errorMsg.value = apiErr?.message || '登录失败，请稍后重试';
     }
@@ -105,13 +110,6 @@ async function onSubmit(): Promise<void> {
           </ApButton>
         </form>
       </ApCard>
-
-      <p
-        class="login__note ap-muted"
-        title="BFF 未提供 httpOnly Cookie，token 暂存 localStorage；同源 XSS 可读取，后续将切换 Cookie 方案。"
-      >
-        凭证暂存于浏览器 localStorage（无 httpOnly Cookie 时的降级方案，存在 XSS 读取风险）。
-      </p>
     </div>
   </div>
 </template>
@@ -202,15 +200,5 @@ async function onSubmit(): Promise<void> {
   width: 100%;
   margin-top: var(--ap-sp-2);
 }
-.login__demo {
-  margin-top: var(--ap-sp-4);
-  text-align: center;
-  font-size: var(--ap-fs-sm);
-}
-.login__note {
-  margin-top: var(--ap-sp-3);
-  text-align: center;
-  font-size: 11px;
-  line-height: 1.5;
-}
+
 </style>

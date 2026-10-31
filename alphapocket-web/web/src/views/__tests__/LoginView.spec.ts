@@ -75,6 +75,18 @@ describe('LoginView', () => {
     expect(wrapper.find('[data-test="error"]').exists()).toBe(false);
   });
 
+  it('405（静态托管未连后端 API）显示明确指引', async () => {
+    mockedLogin.mockRejectedValue(new ApiError('HTTP_405', '请求失败（HTTP 405）', 405));
+    const { wrapper } = await mountLogin();
+
+    await submit(wrapper);
+
+    expect(wrapper.find('[data-test="error"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="error"]').text()).toContain('405');
+    expect(wrapper.find('[data-test="error"]').text()).toContain('ap.api-base');
+    expect(wrapper.find('[data-test="locked"]').exists()).toBe(false);
+  });
+
   it('提交中按钮禁用', async () => {
     let resolveLogin: (tokens: AuthTokens) => void = () => {};
     mockedLogin.mockImplementation(
@@ -85,7 +97,7 @@ describe('LoginView', () => {
     );
     const { wrapper } = await mountLogin();
 
-    await submit(wrapper, 'z', 'Alpha618');
+    await submit(wrapper, 'z', 'secret-word');
 
     const button = wrapper.find('[data-test="submit"]');
     expect(button.attributes('disabled')).toBeDefined();
@@ -99,7 +111,7 @@ describe('LoginView', () => {
     mockedLogin.mockResolvedValue(TOKENS);
     const { wrapper, router } = await mountLogin('?redirect=/data');
 
-    await submit(wrapper, 'z', 'Alpha618');
+    await submit(wrapper, 'z', 'secret-word');
 
     expect(router.currentRoute.value.path).toBe('/data');
     expect(localStorage.getItem('ap.access')).toBe('acc-1');
@@ -109,7 +121,7 @@ describe('LoginView', () => {
     mockedLogin.mockResolvedValue(TOKENS);
     const { wrapper, router } = await mountLogin();
 
-    await submit(wrapper, 'z', 'Alpha618');
+    await submit(wrapper, 'z', 'secret-word');
 
     expect(router.currentRoute.value.path).toBe('/portfolios');
   });
