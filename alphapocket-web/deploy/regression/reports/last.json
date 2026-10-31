@@ -2,25 +2,20 @@
   "mode": "incremental",
   "with_live": false,
   "domains": [],
-  "changes": [
-    "alphapocket-web/bff/src/auth/cors.ts",
-    "alphapocket-web/bff/src/config/configuration.ts",
-    "alphapocket-web/bff/src/config/app-config.service.ts",
-    "alphapocket-web/bff/src/main.ts"
-  ],
-  "changes_source": "--changed 显式指定",
+  "changes": [],
+  "changes_source": "git status（工作区 + 暂存区，含未跟踪）",
   "notes": [
-    "增量模式：冒烟 4 项 + 影响命中 1 项"
+    "增量模式：冒烟 4 项 + 影响命中 0 项"
   ],
-  "started_at": "2026-10-31T23:00:34+0800",
-  "duration_s": 19.7,
+  "started_at": "2026-10-31T23:34:31+0800",
+  "duration_s": 5.7,
   "items": [
     {
       "name": "core.smoke",
       "domain": "core",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 2.7,
+      "duration_s": 2.3,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -39,7 +34,7 @@
       "domain": "interaction-api",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 2.2,
+      "duration_s": 2.1,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -54,7 +49,7 @@
       "domain": "data",
       "kind": "pytest",
       "status": "pass",
-      "duration_s": 0.8,
+      "duration_s": 0.7,
       "detail": "",
       "cmd": [
         "/workspace/alphapocket-web/core/.venv/bin/python",
@@ -80,24 +75,10 @@
         "-q",
         "tests/test_factor_completeness.py"
       ]
-    },
-    {
-      "name": "web.e2e",
-      "domain": "interaction-e2e",
-      "kind": "e2e",
-      "status": "pass",
-      "duration_s": 12.3,
-      "detail": "",
-      "cmd": [
-        "pnpm",
-        "exec",
-        "playwright",
-        "test"
-      ]
     }
   ],
   "summary": {
-    "pass": 5,
+    "pass": 4,
     "fail": 0,
     "skip": 0,
     "timeout": 0
