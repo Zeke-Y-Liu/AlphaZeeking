@@ -83,7 +83,7 @@ describe('LoginView', () => {
 
     expect(wrapper.find('[data-test="error"]').exists()).toBe(true);
     expect(wrapper.find('[data-test="error"]').text()).toContain('405');
-    expect(wrapper.find('[data-test="error"]').text()).toContain('ap.api-base');
+    expect(wrapper.find('[data-test="error"]').text()).toContain('连接设置');
     expect(wrapper.find('[data-test="locked"]').exists()).toBe(false);
   });
 

@@ -120,8 +120,13 @@ onMounted(load);
 <style scoped>
 .pf-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  /* min() 防止轨道最小宽超过窄屏可用宽（溢出元凶之一） */
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: var(--ap-sp-4);
+}
+/* grid item 自动最小尺寸会让卡片拒绝收缩到内容 min-content 以下 → 允许收缩 */
+.pf-card {
+  min-width: 0;
 }
 .pf-head {
   display: flex;
@@ -134,10 +139,16 @@ onMounted(load);
   flex-direction: column;
   min-width: 0;
 }
+.pf-head .ap-badge {
+  flex: none;
+}
 .pf-name {
   font-family: var(--ap-font-serif);
   font-size: var(--ap-fs-md);
   font-weight: 600;
+  min-width: 0;
+  /* 组合名含 PACS/LITE/... 等长串，浏览器默认不在此类串中断行 → 允许任意点换行 */
+  overflow-wrap: anywhere;
 }
 .pf-name:hover {
   color: var(--ap-seal);

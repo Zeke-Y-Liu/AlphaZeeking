@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // 「我的」（H5 tabbar 第 4 项）：快捷入口 + 账户/偏好占位（后续任务实现）。
-// 快捷入口：H5 4-tab 设计约束下，/companies 等无 tabbar 入口的页面从此进入
-//（PC 端已有侧栏「公司 → 单公司分析」，此处为 H5 兜底入口）。
+// 快捷入口：H5 4-tab 设计约束下，/today、/companies 等无 tabbar 入口的页面从此进入
+//（PC 端已有侧栏「总览 → 今日结论」「公司 → 单公司分析」，此处为 H5 兜底入口）。
 import { ApCard } from '../components/ui';
 
 const quickLinks = [
+  { to: '/today', label: '今日结论', desc: '各组合当日操作建议' },
   { to: '/companies', label: '单公司分析', desc: '基本面 / 行业 / 超卖 / 消息' },
   { to: '/engines', label: '引擎与因子', desc: '指标注册表' },
 ];

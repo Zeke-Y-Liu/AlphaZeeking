@@ -777,5 +777,12 @@ onMounted(load);
   .pd-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  /* 头部操作按钮行（拉取持仓/查看报告/评估）窄屏折行，避免推出视口 */
+  .pd-head {
+    flex-wrap: wrap;
+  }
+  .pd-head > .ap-row {
+    flex-wrap: wrap;
+  }
 }
 </style>

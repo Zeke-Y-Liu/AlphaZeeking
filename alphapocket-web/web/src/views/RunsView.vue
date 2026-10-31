@@ -107,31 +107,33 @@ onMounted(load);
       <p v-else-if="loading && !runs.length" class="ap-muted">加载中…</p>
       <p v-else-if="!rows.length" class="ap-muted">暂无运行记录</p>
       <template v-else>
-        <!-- PC：表格 -->
-        <table class="ck-table">
-          <thead>
-            <tr>
-              <th>类型</th>
-              <th>Run</th>
-              <th>as_of</th>
-              <th>时间</th>
-              <th>产物</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in rows" :key="r.run_uid">
-              <td><ApBadge :tone="r.type === 'review' ? 'info' : 'default'">{{ r.type_label }}</ApBadge></td>
-              <td class="ap-mono" :title="r.run_uid">{{ r.run_uid.slice(0, 24) }}</td>
-              <td>{{ r.as_of || '—' }}</td>
-              <td class="ap-mono">{{ r.created }}</td>
-              <td>
-                <button v-if="pickFile(r)" class="ck-link" type="button" @click="openArtifact(r)">预览</button>
-                <button v-if="pickFile(r)" class="ck-link" type="button" @click="downloadArtifact(r)">下载</button>
-                <span v-else class="ap-muted">—</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <!-- 表格：窄屏横向滚动（列较多，与 ApTable 的 wrap 行为一致） -->
+        <div class="ck-table-scroll">
+          <table class="ck-table">
+            <thead>
+              <tr>
+                <th>类型</th>
+                <th>Run</th>
+                <th>as_of</th>
+                <th>时间</th>
+                <th>产物</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in rows" :key="r.run_uid">
+                <td><ApBadge :tone="r.type === 'review' ? 'info' : 'default'">{{ r.type_label }}</ApBadge></td>
+                <td class="ap-mono" :title="r.run_uid">{{ r.run_uid.slice(0, 24) }}</td>
+                <td>{{ r.as_of || '—' }}</td>
+                <td class="ap-mono">{{ r.created }}</td>
+                <td>
+                  <button v-if="pickFile(r)" class="ck-link" type="button" @click="openArtifact(r)">预览</button>
+                  <button v-if="pickFile(r)" class="ck-link" type="button" @click="downloadArtifact(r)">下载</button>
+                  <span v-else class="ap-muted">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </template>
     </ApCard>
 
@@ -167,6 +169,7 @@ onMounted(load);
   font-size: 13px;
 }
 .ck-chip--active { background: var(--ap-primary, #2563eb); color: #fff; border-color: transparent; }
+.ck-table-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .ck-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .ck-table th, .ck-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--ap-border, #e5e9ef); }
 .ck-table th { color: var(--ap-muted, #6b7280); font-weight: 500; }

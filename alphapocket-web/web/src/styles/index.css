@@ -155,3 +155,26 @@ button {
   border-top: 1px solid var(--ap-line);
   text-align: center;
 }
+
+/* ── H5 小屏适配（<768px） ───────────────────── */
+@media (max-width: 767px) {
+  /* 页面留白收紧为手机标准 16px */
+  .ap-page {
+    padding: var(--ap-sp-4);
+  }
+  /* 页头允许换行：标题占首行，操作区折到第二行并保持右对齐 */
+  .ap-page__head {
+    flex-wrap: wrap;
+    gap: var(--ap-sp-3);
+  }
+  .ap-row.ap-page__head > :nth-child(2) {
+    margin-left: auto;
+  }
+  /* iOS：输入控件字号 <16px 时聚焦会触发整页自动放大 → 手机端统一 16px
+   * （!important 用于压过各组件自身的 input 字号样式） */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
