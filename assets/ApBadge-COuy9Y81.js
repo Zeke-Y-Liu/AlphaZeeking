@@ -1,0 +1,1 @@
+import{d as o,c as t,z as n,af as p,o as c,_ as d}from"./index-DvgatJxK.js";const r=o({__name:"ApBadge",props:{tone:{default:"default"}},setup(e){const a=e;return(s,l)=>(c(),t("span",{class:n(["ap-badge",`ap-badge--${a.tone}`])},[p(s.$slots,"default",{},void 0)],2))}}),f=d(r,[["__scopeId","data-v-c2ae76fd"]]);export{f as A};
