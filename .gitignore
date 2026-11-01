@@ -41,3 +41,7 @@ test-results/
 .DS_Store
 .idea/
 .vscode/
+
+# 安全：密钥与含 secret 的备份严禁入库（本地保留，git 忽略）
+/.ssh/
+/alphapocket-ops/env.backup
