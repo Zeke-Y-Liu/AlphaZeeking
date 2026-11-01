@@ -45,3 +45,5 @@ test-results/
 # 安全：密钥与含 secret 的备份严禁入库（本地保留，git 忽略）
 /.ssh/
 /alphapocket-ops/env.backup
+# 备份 bundle 含重写前历史（含已作废密钥），严禁入库
+*.bundle
